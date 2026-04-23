@@ -1,0 +1,30 @@
+--- a/net/minecraft/world/level/pathfinder/NodeEvaluator.java
++++ b/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+@@ -14,7 +_,7 @@
+ public abstract class NodeEvaluator {
+     protected PathfindingContext currentContext;
+     protected Mob mob;
+-    public final Int2ObjectMap<Node> nodes = new Int2ObjectOpenHashMap<>();
++    protected final Int2ObjectMap<Node> nodes = new Int2ObjectOpenHashMap<>();
+     protected int entityWidth;
+     protected int entityHeight;
+     protected int entityDepth;
+@@ -36,6 +_,18 @@
+         this.currentContext = null;
+         this.mob = null;
+     }
++
++    // DivineMC start - Async Pathfinding
++    public void clearCache() {
++        if (this.currentContext != null) {
++            this.currentContext.cache = null;
++        }
++    }
++
++    public void clearNodes() {
++        this.nodes.clear();
++    }
++    // DivineMC end - Async Pathfinding
+ 
+     protected Node getNode(BlockPos pos) {
+         return this.getNode(pos.getX(), pos.getY(), pos.getZ());

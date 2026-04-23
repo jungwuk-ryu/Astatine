@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/level/pathfinder/PathfindingContext.java
++++ b/net/minecraft/world/level/pathfinder/PathfindingContext.java
+@@ -9,7 +_,7 @@
+ 
+ public class PathfindingContext {
+     private final CollisionGetter level;
+-    public @Nullable PathTypeCache cache;
++    @Nullable PathTypeCache cache;
+     private final BlockPos mobPosition;
+     private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
+ 

@@ -1,0 +1,32 @@
+--- a/net/minecraft/world/entity/animal/frog/Frog.java
++++ b/net/minecraft/world/entity/animal/frog/Frog.java
+@@ -473,6 +_,17 @@
+             super(mob, level);
+         }
+ 
++        // DivineMC start - Async Pathfinding
++        private static final org.bxteam.divinemc.async.pathfinding.NodeEvaluatorGenerator nodeEvaluatorGenerator = (org.bxteam.divinemc.async.pathfinding.NodeEvaluatorFeatures nodeEvaluatorFeatures) -> {
++            Frog.FrogNodeEvaluator nodeEvaluator = new Frog.FrogNodeEvaluator(true);
++            nodeEvaluator.setCanPassDoors(nodeEvaluatorFeatures.canPassDoors());
++            nodeEvaluator.setCanFloat(nodeEvaluatorFeatures.canFloat());
++            nodeEvaluator.setCanWalkOverFences(nodeEvaluatorFeatures.canWalkOverFences());
++            nodeEvaluator.setCanOpenDoors(nodeEvaluatorFeatures.canOpenDoors());
++            return nodeEvaluator;
++        };
++        // DivineMC end - Async Pathfinding
++
+         @Override
+         public boolean canCutCorner(PathType pathType) {
+             return pathType != PathType.WATER_BORDER && super.canCutCorner(pathType);
+@@ -481,6 +_,11 @@
+         @Override
+         protected PathFinder createPathFinder(int maxVisitedNodes) {
+             this.nodeEvaluator = new Frog.FrogNodeEvaluator(true);
++            // DivineMC start - Async Pathfinding
++            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                return new PathFinder(this.nodeEvaluator, maxVisitedNodes, nodeEvaluatorGenerator);
++            }
++            // DivineMC end - Async Pathfinding
+             return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
+         }
+     }

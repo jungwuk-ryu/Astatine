@@ -1,0 +1,17 @@
+--- a/net/minecraft/world/entity/animal/rabbit/Rabbit.java
++++ b/net/minecraft/world/entity/animal/rabbit/Rabbit.java
+@@ -612,6 +_,14 @@
+ 
+         @Override
+         public void vanillaTick() { // Purpur - Ridables
++            // DivineMC start - Async Pathfinding
++            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                Path path = this.rabbit.getNavigation().getPath();
++                if (path != null && !path.isProcessed()) {
++                    return;
++                }
++            }
++            // DivineMC end - Async Pathfinding
+             if (this.rabbit.onGround() && !this.rabbit.jumping && !((Rabbit.RabbitJumpControl)this.rabbit.jumpControl).wantJump()) {
+                 this.rabbit.setSpeedModifier(0.0);
+             } else if (this.hasWanted() || this.operation == MoveControl.Operation.JUMPING) {

@@ -67,10 +67,11 @@
          this.forceTicks = true;
          // CraftBukkit end
          ChunkLoadCounter chunkLoadCounter = new ChunkLoadCounter();
-@@ -1018,6 +_,7 @@
+@@ -1018,6 +_,8 @@
  
          LOGGER.info("Stopping server");
          Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
++        org.bxteam.divinemc.async.pathfinding.AsyncPath.shutdownExecutor(); // DivineMC - Async Pathfinding
 +        ShreddedPaperTickThread.stopServer(); // ShreddedPaper
          // Purpur start - UPnP Port Forwarding
          if (upnp) {

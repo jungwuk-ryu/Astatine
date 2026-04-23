@@ -1,0 +1,143 @@
+--- a/net/minecraft/world/entity/ai/behavior/MoveToTargetSink.java
++++ b/net/minecraft/world/entity/ai/behavior/MoveToTargetSink.java
+@@ -20,6 +_,7 @@
+     private static final int MAX_COOLDOWN_BEFORE_RETRYING = 40;
+     private int remainingCooldown;
+     private @Nullable Path path;
++    private boolean finishedProcessing; // DivineMC - Async Pathfinding
+     private @Nullable BlockPos lastTargetPos;
+     private float speedModifier;
+ 
+@@ -51,8 +_,10 @@
+             Brain<?> brain = owner.getBrain();
+             WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET).get();
+             boolean flag = this.reachedTarget(owner, walkTarget);
+-            if (!flag && this.tryComputePath(owner, walkTarget, level.getGameTime())) {
++            if (!org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding && !flag && this.tryComputePath(owner, walkTarget, level.getGameTime())) { // DivineMC - Async Pathfinding
+                 this.lastTargetPos = walkTarget.getTarget().currentBlockPosition();
++                return true;
++            } else if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding && !flag) { // DivineMC - Async Pathfinding
+                 return true;
+             } else {
+                 brain.eraseMemory(MemoryModuleType.WALK_TARGET);
+@@ -67,6 +_,7 @@
+ 
+     @Override
+     protected boolean canStillUse(ServerLevel level, Mob entity, long gameTime) {
++        if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding && !this.finishedProcessing) return true; // DivineMC - wait for processing
+         if (this.path != null && this.lastTargetPos != null) {
+             Optional<WalkTarget> memory = entity.getBrain().getMemory(MemoryModuleType.WALK_TARGET);
+             boolean flag = memory.map(MoveToTargetSink::isWalkTargetSpectator).orElse(false);
+@@ -93,27 +_,97 @@
+ 
+     @Override
+     protected void start(ServerLevel level, Mob entity, long gameTime) {
++        // DivineMC start - start processing
++        if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++            Brain<?> brain = entity.getBrain();
++            WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET).get();
++
++            this.finishedProcessing = false;
++            this.lastTargetPos = walkTarget.getTarget().currentBlockPosition();
++            this.path = this.computePath(entity, walkTarget);
++            return;
++        }
++        // DivineMC end - start processing
+         entity.getBrain().setMemory(MemoryModuleType.PATH, this.path);
+         entity.getNavigation().moveTo(this.path, (double)this.speedModifier);
+     }
+ 
+     @Override
+     protected void tick(ServerLevel level, Mob owner, long gameTime) {
+-        Path path = owner.getNavigation().getPath();
+-        Brain<?> brain = owner.getBrain();
+-        if (this.path != path) {
+-            this.path = path;
+-            brain.setMemory(MemoryModuleType.PATH, path);
+-        }
+-
+-        if (path != null && this.lastTargetPos != null) {
+-            WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET).get();
+-            if (walkTarget.getTarget().currentBlockPosition().distSqr(this.lastTargetPos) > 4.0 && this.tryComputePath(owner, walkTarget, level.getGameTime())) {
+-                this.lastTargetPos = walkTarget.getTarget().currentBlockPosition();
+-                this.start(level, owner, gameTime);
+-            }
+-        }
+-    }
++        // DivineMC start - Async Pathfinding
++        if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++            if (this.path != null && !this.path.isProcessed()) return;
++
++            if (!this.finishedProcessing) {
++                this.finishedProcessing = true;
++
++                Brain<?> brain = owner.getBrain();
++                boolean canReach = this.path != null && this.path.canReach();
++                if (canReach) {
++                    brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
++                } else if (!brain.hasMemoryValue(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE)) {
++                    brain.setMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE, gameTime);
++                }
++
++                if (!canReach) {
++                    Optional<WalkTarget> walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET);
++
++                    if (!walkTarget.isPresent()) return;
++
++                    BlockPos blockPos = walkTarget.get().getTarget().currentBlockPosition();
++                    Vec3 vec3 = DefaultRandomPos.getPosTowards((PathfinderMob) owner, 10, 7, Vec3.atBottomCenterOf(blockPos), (float) Math.PI / 2F);
++                    if (vec3 != null) {
++                        // try recalculating the path using a random position
++                        this.path = owner.getNavigation().createPath(vec3.x, vec3.y, vec3.z, 0);
++                        this.finishedProcessing = false;
++                        return;
++                    }
++                }
++
++                owner.getBrain().setMemory(MemoryModuleType.PATH, this.path);
++                owner.getNavigation().moveTo(this.path, this.speedModifier);
++            }
++
++            Path path = owner.getNavigation().getPath();
++            Brain<?> brain = owner.getBrain();
++
++            if (path != null && this.lastTargetPos != null && brain.hasMemoryValue(MemoryModuleType.WALK_TARGET)) {
++                WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET).get(); // we know isPresent = true
++                if (walkTarget.getTarget().currentBlockPosition().distSqr(this.lastTargetPos) > 4.0D) {
++                    this.start(level, owner, gameTime);
++                }
++            }
++        } else {
++            Path path = owner.getNavigation().getPath();
++            Brain<?> brain = owner.getBrain();
++            if (this.path != path) {
++                this.path = path;
++                brain.setMemory(MemoryModuleType.PATH, path);
++            }
++
++            if (path != null && this.lastTargetPos != null) {
++                WalkTarget walkTarget = brain.getMemory(MemoryModuleType.WALK_TARGET).get();
++                if (walkTarget.getTarget().currentBlockPosition().distSqr(this.lastTargetPos) > 4.0 && this.tryComputePath(owner, walkTarget, level.getGameTime())) {
++                    this.lastTargetPos = walkTarget.getTarget().currentBlockPosition();
++                    this.start(level, owner, gameTime);
++                }
++            }
++        }
++        // DivineMC end - Async Pathfinding
++    }
++
++    // DivineMC start - Async Pathfinding
++    @Nullable
++    private Path computePath(Mob entity, WalkTarget walkTarget) {
++        BlockPos blockPos = walkTarget.getTarget().currentBlockPosition();
++        this.speedModifier = walkTarget.getSpeedModifier();
++        Brain<?> brain = entity.getBrain();
++        if (this.reachedTarget(entity, walkTarget)) {
++            brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
++        }
++        return entity.getNavigation().createPath(blockPos, 0);
++    }
++    // DivineMC end - Async Pathfinding
+ 
+     private boolean tryComputePath(Mob mob, WalkTarget target, long time) {
+         BlockPos blockPos = target.getTarget().currentBlockPosition();

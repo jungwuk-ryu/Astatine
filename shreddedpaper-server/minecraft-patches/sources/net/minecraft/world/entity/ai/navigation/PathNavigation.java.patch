@@ -1,0 +1,114 @@
+--- a/net/minecraft/world/entity/ai/navigation/PathNavigation.java
++++ b/net/minecraft/world/entity/ai/navigation/PathNavigation.java
+@@ -36,7 +_,7 @@
+     private static final float STUCK_THRESHOLD_DISTANCE_FACTOR = 0.25F;
+     protected final Mob mob;
+     protected final Level level;
+-    public @Nullable Path path;
++    protected @Nullable Path path;
+     protected double speedModifier;
+     protected int tick;
+     protected int lastStuckCheck;
+@@ -49,8 +_,8 @@
+     protected boolean hasDelayedRecomputation;
+     protected long timeLastRecompute;
+     protected NodeEvaluator nodeEvaluator;
+-    public @Nullable BlockPos targetPos;
+-    public int reachRange;
++    private @Nullable BlockPos targetPos;
++    private int reachRange;
+     private float maxVisitedNodesMultiplier = 1.0F;
+     public final PathFinder pathFinder;
+     private boolean isStuck;
+@@ -161,6 +_,10 @@
+             return null;
+         } else if (!this.canUpdatePath()) {
+             return null;
++            // DivineMC start - Async Pathfinding
++        } else if (this.path instanceof org.bxteam.divinemc.async.pathfinding.AsyncPath asyncPath && !asyncPath.isProcessed() && asyncPath.hasSameTargetPositions(targets)) {
++            return this.path;
++            // DivineMC end - Async Pathfinding
+         } else if (this.path != null && !this.path.isDone() && targets.contains(this.targetPos)) {
+             return this.path;
+         } else {
+@@ -187,12 +_,30 @@
+             int i = (int)(followRange + regionOffset);
+             PathNavigationRegion pathNavigationRegion = new PathNavigationRegion(this.level, blockPos.offset(-i, -i, -i), blockPos.offset(i, i, i));
+             Path path = this.pathFinder.findPath(pathNavigationRegion, this.mob, targets, followRange, reachRange, this.maxVisitedNodesMultiplier);
+-            profilerFiller.pop();
+-            if (path != null && path.getTarget() != null) {
+-                this.targetPos = path.getTarget();
+-                this.reachRange = reachRange;
+-                this.resetStuckTimeout();
++            // DivineMC start - Async Pathfinding
++            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                // assign early a target position. most calls will only have 1 position
++                if (!targets.isEmpty()) this.targetPos = targets.iterator().next();
++
++                org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(path, processedPath -> {
++                    if (processedPath != this.path) return;
++
++                    if (processedPath != null && processedPath.getTarget() != null) {
++                        profilerFiller.pop();
++                        this.targetPos = processedPath.getTarget();
++                        this.reachRange = reachRange;
++                        this.resetStuckTimeout();
++                    }
++                });
++            } else {
++                profilerFiller.pop();
++                if (path != null && path.getTarget() != null) {
++                    this.targetPos = path.getTarget();
++                    this.reachRange = reachRange;
++                    this.resetStuckTimeout();
++                }
+             }
++            // DivineMC end - Async Pathfinding
+ 
+             return path;
+         }
+@@ -243,8 +_,8 @@
+             if (this.isDone()) {
+                 return false;
+             } else {
+-                this.trimPath();
+-                if (this.path.getNodeCount() <= 0) {
++                if (path.isProcessed()) this.trimPath(); // DivineMC - only trim if processed
++                if (path.isProcessed() && this.path.getNodeCount() <= 0) { // DivineMC - only check node count if processed
+                     return false;
+                 } else {
+                     this.speedModifier = speedModifier;
+@@ -266,6 +_,7 @@
+         if (this.hasDelayedRecomputation) {
+             this.recomputePath();
+         }
++        if (this.path != null && !this.path.isProcessed()) return; // DivineMC - skip pathfinding if we're still processing
+ 
+         if (!this.isDone()) {
+             if (this.canUpdatePath()) {
+@@ -294,6 +_,7 @@
+     }
+ 
+     protected void followThePath() {
++        if (!this.path.isProcessed()) return; // DivineMC - skip if not processed
+         Vec3 tempMobPos = this.getTempMobPos();
+         this.maxDistanceToWaypoint = this.mob.getBbWidth() > 0.75F ? this.mob.getBbWidth() / 2.0F : 0.75F - this.mob.getBbWidth() / 2.0F;
+         Vec3i nextNodePos = this.path.getNextNodePos();
+@@ -375,7 +_,7 @@
+         this.stop();
+     }
+ 
+-    public void resetStuckTimeout() {
++    private void resetStuckTimeout() {
+         this.timeoutCachedNode = Vec3i.ZERO;
+         this.timeoutTimer = 0L;
+         this.timeoutLimit = 0.0;
+@@ -450,7 +_,7 @@
+     public boolean shouldRecomputePath(BlockPos pos) {
+         if (this.hasDelayedRecomputation) {
+             return false;
+-        } else if (this.path != null && !this.path.isDone() && this.path.getNodeCount() != 0) {
++        } else if (this.path != null && this.path.isProcessed() && !this.path.isDone() && this.path.getNodeCount() != 0) { // DivineMC - Skip if not processed
+             Node endNode = this.path.getEndNode();
+             Vec3 vec3 = new Vec3((endNode.x + this.mob.getX()) / 2.0, (endNode.y + this.mob.getY()) / 2.0, (endNode.z + this.mob.getZ()) / 2.0);
+             return pos.closerToCenterThan(vec3, this.path.getNodeCount() - this.path.getNextNodeIndex());

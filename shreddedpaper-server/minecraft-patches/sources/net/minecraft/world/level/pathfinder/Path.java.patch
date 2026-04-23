@@ -1,0 +1,28 @@
+--- a/net/minecraft/world/level/pathfinder/Path.java
++++ b/net/minecraft/world/level/pathfinder/Path.java
+@@ -27,6 +_,17 @@
+         this.reached = reached;
+     }
+ 
++    // DivineMC start - Async Pathfinding
++    /**
++     * checks if the path is completely processed in the case of it being computed async
++     *
++     * @return true if the path is processed
++     */
++    public boolean isProcessed() {
++        return true;
++    }
++    // DivineMC end - Async Pathfinding
++
+     public void advance() {
+         this.nextNodeIndex++;
+     }
+@@ -98,6 +_,7 @@
+     }
+ 
+     public boolean sameAs(@Nullable Path path) {
++        if (path == this) return true; // DivineMC - Async Pathfinding
+         return path != null && this.nodes.equals(path.nodes);
+     }
+ 

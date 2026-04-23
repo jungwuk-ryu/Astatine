@@ -1,0 +1,28 @@
+--- a/net/minecraft/world/entity/monster/Strider.java
++++ b/net/minecraft/world/entity/monster/Strider.java
+@@ -556,9 +_,25 @@
+             super(strider, level);
+         }
+ 
++        // DivineMC start - Async Pathfinding
++        private static final org.bxteam.divinemc.async.pathfinding.NodeEvaluatorGenerator nodeEvaluatorGenerator = (org.bxteam.divinemc.async.pathfinding.NodeEvaluatorFeatures nodeEvaluatorFeatures) -> {
++            WalkNodeEvaluator nodeEvaluator = new WalkNodeEvaluator();
++            nodeEvaluator.setCanPassDoors(nodeEvaluatorFeatures.canPassDoors());
++            nodeEvaluator.setCanFloat(nodeEvaluatorFeatures.canFloat());
++            nodeEvaluator.setCanWalkOverFences(nodeEvaluatorFeatures.canWalkOverFences());
++            nodeEvaluator.setCanOpenDoors(nodeEvaluatorFeatures.canOpenDoors());
++            return nodeEvaluator;
++        };
++        // DivineMC end - Async Pathfinding
++
+         @Override
+         protected PathFinder createPathFinder(int maxVisitedNodes) {
+             this.nodeEvaluator = new WalkNodeEvaluator();
++            // DivineMC start - Async Pathfinding
++            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                return new PathFinder(this.nodeEvaluator, maxVisitedNodes, nodeEvaluatorGenerator);
++            }
++            // DivineMC end
+             return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
+         }
+ 

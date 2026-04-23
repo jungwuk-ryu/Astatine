@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.config;
 
 import io.papermc.paper.configuration.ConfigurationPart;
 import org.spongepowered.configurate.objectmapping.meta.Comment;
+import org.spongepowered.configurate.objectmapping.meta.Setting;
 
 import java.util.List;
 
@@ -84,6 +85,32 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
         @Comment("Equivalent to DivineMC's region-format.linear-use-virtual-threads.")
         public boolean linearUseVirtualThreads = true;
+    }
+
+    @Setting("async")
+    public AsyncOperations asyncOperations = new AsyncOperations();
+
+    public class AsyncOperations extends ConfigurationPart {
+
+        public Pathfinding pathfinding = new Pathfinding();
+
+        public class Pathfinding extends ConfigurationPart {
+
+            @Comment("Equivalent to DivineMC's async.pathfinding.enable.")
+            public boolean enable = true;
+
+            @Comment("Equivalent to DivineMC's async.pathfinding.max-threads. Use 0 for availableProcessors / 4, or a negative value to reserve that many processors.")
+            public int maxThreads = 1;
+
+            @Comment("Equivalent to DivineMC's async.pathfinding.keepalive, in seconds.")
+            public int keepalive = 60;
+
+            @Comment("Equivalent to DivineMC's async.pathfinding.queue-size. Values <= 0 use max-threads * 256.")
+            public int queueSize = 0;
+
+            @Comment("Equivalent to DivineMC's async.pathfinding.reject-policy. Valid values: CALLER_RUNS, FLUSH_ALL.")
+            public String rejectPolicy = "CALLER_RUNS";
+        }
     }
 
 
