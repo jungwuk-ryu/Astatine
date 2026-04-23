@@ -16,7 +16,76 @@ public final class DivineConfig {
 
     public static void syncFromShreddedPaper(final ShreddedPaperConfiguration configuration) {
         MiscCategory.sync(configuration);
+        VirtualThreadsCategory.sync(configuration);
         AsyncCategory.sync(configuration);
+    }
+
+    public static final class VirtualThreadsCategory {
+        public static boolean virtualThreadsEnabled = true;
+        public static boolean virtualBukkitScheduler = true;
+        public static boolean virtualChatScheduler = true;
+        public static boolean virtualTabCompleteScheduler = true;
+        public static boolean virtualAsyncExecutor = true;
+        public static boolean virtualCommandBuilderScheduler = true;
+        public static boolean virtualServerTextFilterPool = true;
+
+        private VirtualThreadsCategory() {
+        }
+
+        public static void sync(final ShreddedPaperConfiguration configuration) {
+            if (configuration == null) {
+                applyDefaults();
+                return;
+            }
+
+            ShreddedPaperConfiguration.VirtualThreads virtualThreads = configuration.virtualThreads;
+            if (virtualThreads == null) {
+                virtualThreads = configuration.new VirtualThreads();
+                configuration.virtualThreads = virtualThreads;
+            }
+
+            virtualThreadsEnabled = virtualThreads.enabled;
+            virtualBukkitScheduler = virtualThreads.bukkitScheduler;
+            virtualChatScheduler = virtualThreads.chatScheduler;
+            virtualTabCompleteScheduler = virtualThreads.tabCompleteScheduler;
+            virtualAsyncExecutor = virtualThreads.asyncExecutor;
+            virtualCommandBuilderScheduler = virtualThreads.commandBuilderScheduler;
+            virtualServerTextFilterPool = virtualThreads.serverTextFilterPool;
+        }
+
+        private static void applyDefaults() {
+            virtualThreadsEnabled = true;
+            virtualBukkitScheduler = true;
+            virtualChatScheduler = true;
+            virtualTabCompleteScheduler = true;
+            virtualAsyncExecutor = true;
+            virtualCommandBuilderScheduler = true;
+            virtualServerTextFilterPool = true;
+        }
+
+        public static boolean useBukkitScheduler() {
+            return virtualThreadsEnabled && virtualBukkitScheduler;
+        }
+
+        public static boolean useChatScheduler() {
+            return virtualThreadsEnabled && virtualChatScheduler;
+        }
+
+        public static boolean useTabCompleteScheduler() {
+            return virtualThreadsEnabled && virtualTabCompleteScheduler;
+        }
+
+        public static boolean useAsyncExecutor() {
+            return virtualThreadsEnabled && virtualAsyncExecutor;
+        }
+
+        public static boolean useCommandBuilderScheduler() {
+            return virtualThreadsEnabled && virtualCommandBuilderScheduler;
+        }
+
+        public static boolean useServerTextFilterPool() {
+            return virtualThreadsEnabled && virtualServerTextFilterPool;
+        }
     }
 
     public static final class AsyncCategory {

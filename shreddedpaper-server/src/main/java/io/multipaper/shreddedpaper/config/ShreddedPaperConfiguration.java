@@ -87,6 +87,33 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public boolean linearUseVirtualThreads = true;
     }
 
+    @Setting("virtual-threads")
+    public VirtualThreads virtualThreads = new VirtualThreads();
+
+    public class VirtualThreads extends ConfigurationPart {
+
+        @Comment("Enables use of virtual threads that were added in Java 21.")
+        public boolean enabled = true;
+
+        @Comment("Uses virtual threads for the Bukkit async scheduler.")
+        public boolean bukkitScheduler = true;
+
+        @Comment("Uses virtual threads for the chat scheduler.")
+        public boolean chatScheduler = true;
+
+        @Comment("Uses virtual threads for the tab-complete scheduler.")
+        public boolean tabCompleteScheduler = true;
+
+        @Comment("Uses virtual threads for the MCUtil async executor.")
+        public boolean asyncExecutor = true;
+
+        @Comment("Uses virtual threads for the async command builder thread pool.")
+        public boolean commandBuilderScheduler = true;
+
+        @Comment("Uses virtual threads for the server text filter pool.")
+        public boolean serverTextFilterPool = true;
+    }
+
     @Setting("async")
     public AsyncOperations asyncOperations = new AsyncOperations();
 

@@ -1,0 +1,38 @@
+--- a/src/main/java/org/bukkit/craftbukkit/scheduler/CraftAsyncScheduler.java
++++ b/src/main/java/org/bukkit/craftbukkit/scheduler/CraftAsyncScheduler.java
+@@ -31,6 +_,7 @@
+ import java.util.Iterator;
+ import java.util.List;
+ import java.util.concurrent.Executor;
++import java.util.concurrent.ExecutorService;
+ import java.util.concurrent.Executors;
+ import java.util.concurrent.SynchronousQueue;
+ import java.util.concurrent.ThreadPoolExecutor;
+@@ -38,7 +_,11 @@
+ 
+ public class CraftAsyncScheduler extends CraftScheduler {
+ 
+-    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(
++    // DivineMC start - Virtual Threads
++    private final ExecutorService executor = org.bxteam.divinemc.config.DivineConfig.VirtualThreadsCategory.useBukkitScheduler()
++        ? Executors.newVirtualThreadPerTaskExecutor()
++        : new ThreadPoolExecutor(
++    // DivineMC end - Virtual Threads
+             4, Integer.MAX_VALUE, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(),
+             new ThreadFactoryBuilder().setNameFormat("Craft Scheduler Thread - %1$d").build());
+     private final Executor management = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
+@@ -47,8 +_,12 @@
+ 
+     CraftAsyncScheduler() {
+         super(true);
+-        executor.allowCoreThreadTimeOut(true);
+-        executor.prestartAllCoreThreads();
++        // DivineMC start - Virtual Threads
++        if (this.executor instanceof ThreadPoolExecutor threadPoolExecutor) {
++            threadPoolExecutor.allowCoreThreadTimeOut(true);
++            threadPoolExecutor.prestartAllCoreThreads();
++        }
++        // DivineMC end - Virtual Threads
+     }
+ 
+     @Override
