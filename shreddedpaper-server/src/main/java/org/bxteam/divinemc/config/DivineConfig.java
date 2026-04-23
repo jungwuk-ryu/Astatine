@@ -1,6 +1,7 @@
 package org.bxteam.divinemc.config;
 
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
+import org.bxteam.divinemc.chunk.ChunkSystemAlgorithm;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
@@ -30,6 +31,18 @@ public final class DivineConfig {
     }
 
     public static final class PerformanceCategory {
+        public static long chunkDataCacheSoftLimit = 8192L;
+        public static long chunkDataCacheLimit = 32678L;
+        public static int maxViewDistance = 16;
+        public static int playerNearChunkDetectionRange = 128;
+        public static ChunkSystemAlgorithm chunkWorkerAlgorithm = ChunkSystemAlgorithm.C2ME_NEW;
+        public static boolean useEuclideanDistanceSquared = true;
+        public static boolean endBiomeCacheEnabled = true;
+        public static int endBiomeCacheCapacity = 2048;
+        public static boolean smoothBedrockLayer = false;
+        public static boolean enableDensityFunctionCompiler = true;
+        public static boolean enableStructureLayoutOptimizer = true;
+        public static boolean deduplicateShuffledTemplatePoolElementList = true;
         public static boolean disableMethodProfiler = true;
         public static boolean skipUselessSecondaryPoiSensor = true;
         public static boolean clumpOrbs = true;
@@ -73,6 +86,8 @@ public final class DivineConfig {
                 performance = configuration.new Performance();
                 configuration.performance = performance;
             }
+
+            syncChunkSettings(performance);
 
             ShreddedPaperConfiguration.Performance.Optimizations optimizations = performance.optimizations;
             if (optimizations == null) {
@@ -127,7 +142,62 @@ public final class DivineConfig {
             configureDabEntityTypes();
         }
 
+        private static void syncChunkSettings(ShreddedPaperConfiguration.Performance performance) {
+            ShreddedPaperConfiguration.Performance.Chunks chunks = performance.chunks;
+            if (chunks == null) {
+                chunks = performance.new Chunks();
+                performance.chunks = chunks;
+            }
+            ShreddedPaperConfiguration.Performance.Chunks.Experimental experimental = chunks.experimental;
+            if (experimental == null) {
+                experimental = chunks.new Experimental();
+                chunks.experimental = experimental;
+            }
+
+            chunkDataCacheSoftLimit = Math.max(1L, chunks.chunkDataCacheSoftLimit);
+            chunkDataCacheLimit = Math.max(chunkDataCacheSoftLimit, chunks.chunkDataCacheLimit);
+            maxViewDistance = Math.max(2, chunks.maxViewDistance);
+            playerNearChunkDetectionRange = Math.max(0, chunks.playerNearChunkDetectionRange);
+            chunkWorkerAlgorithm = parseChunkWorkerAlgorithm(chunks.chunkWorkerAlgorithm);
+            useEuclideanDistanceSquared = chunks.useEuclideanDistanceSquared;
+            endBiomeCacheEnabled = chunks.endBiomeCacheEnabled;
+            endBiomeCacheCapacity = Math.max(1, chunks.endBiomeCacheCapacity);
+            smoothBedrockLayer = chunks.smoothBedrockLayer;
+            enableDensityFunctionCompiler = experimental.enableDensityFunctionCompiler;
+            enableStructureLayoutOptimizer = experimental.enableStructureLayoutOptimizer;
+            deduplicateShuffledTemplatePoolElementList = experimental.deduplicateShuffledTemplatePoolElementList;
+
+            chunks.chunkDataCacheSoftLimit = chunkDataCacheSoftLimit;
+            chunks.chunkDataCacheLimit = chunkDataCacheLimit;
+            chunks.maxViewDistance = maxViewDistance;
+            chunks.playerNearChunkDetectionRange = playerNearChunkDetectionRange;
+            chunks.chunkWorkerAlgorithm = chunkWorkerAlgorithm.name();
+            chunks.endBiomeCacheCapacity = endBiomeCacheCapacity;
+        }
+
+        private static ChunkSystemAlgorithm parseChunkWorkerAlgorithm(String rawAlgorithm) {
+            if (rawAlgorithm != null) {
+                try {
+                    return ChunkSystemAlgorithm.valueOf(rawAlgorithm.trim().toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException ignored) {
+                    LOGGER.warn("Unknown chunk worker algorithm '{}', using C2ME_NEW", rawAlgorithm);
+                }
+            }
+            return ChunkSystemAlgorithm.C2ME_NEW;
+        }
         private static void applyDefaults() {
+            chunkDataCacheSoftLimit = 8192L;
+            chunkDataCacheLimit = 32678L;
+            maxViewDistance = 16;
+            playerNearChunkDetectionRange = 128;
+            chunkWorkerAlgorithm = ChunkSystemAlgorithm.C2ME_NEW;
+            useEuclideanDistanceSquared = true;
+            endBiomeCacheEnabled = true;
+            endBiomeCacheCapacity = 2048;
+            smoothBedrockLayer = false;
+            enableDensityFunctionCompiler = true;
+            enableStructureLayoutOptimizer = true;
+            deduplicateShuffledTemplatePoolElementList = true;
             disableMethodProfiler = true;
             skipUselessSecondaryPoiSensor = true;
             clumpOrbs = true;
@@ -211,7 +281,6 @@ public final class DivineConfig {
             virtualCommandBuilderScheduler = virtualThreads.commandBuilderScheduler;
             virtualServerTextFilterPool = virtualThreads.serverTextFilterPool;
         }
-
         private static void applyDefaults() {
             virtualThreadsEnabled = true;
             virtualBukkitScheduler = true;
@@ -340,7 +409,6 @@ public final class DivineConfig {
             multithreadedTracker.keepalive = asyncEntityTrackerKeepalive;
             multithreadedTracker.queueSize = asyncEntityTrackerQueueSize;
         }
-
         private static void applyDefaults() {
             multithreadedEnabled = true;
             multithreadedCompatModeEnabled = false;
@@ -416,7 +484,6 @@ public final class DivineConfig {
             LinearRegionFile.SAVE_THREAD_MAX_COUNT = linearIoThreadCount;
             LinearRegionFile.USE_VIRTUAL_THREAD = linearUseVirtualThreads;
         }
-
         private static void applyDefaults() {
             regionFileType = EnumRegionFileExtension.MCA;
             linearCompressionLevel = 1;

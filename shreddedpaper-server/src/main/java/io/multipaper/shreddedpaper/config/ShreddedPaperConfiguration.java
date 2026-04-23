@@ -77,6 +77,9 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         @Setting("optimizations")
         public Optimizations optimizations = new Optimizations();
 
+        @Setting("chunks")
+        public Chunks chunks = new Chunks();
+
         public class Optimizations extends ConfigurationPart {
 
             @Setting("disable-method-profiler")
@@ -140,6 +143,60 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
             }
         }
 
+        public class Chunks extends ConfigurationPart {
+            @Comment("Soft cap for cached serialized chunk data entries.")
+            @Setting("chunk-data-cache-soft-limit")
+            public long chunkDataCacheSoftLimit = 8192L;
+
+            @Comment("Hard cap for cached serialized chunk data entries.")
+            @Setting("chunk-data-cache-limit")
+            public long chunkDataCacheLimit = 32678L;
+
+            @Comment("Maximum server view distance advertised by chunk systems.")
+            @Setting("max-view-distance")
+            public int maxViewDistance = 16;
+
+            @Comment("Distance in blocks used by player-near-chunk checks.")
+            @Setting("player-near-chunk-detection-range")
+            public int playerNearChunkDetectionRange = 128;
+
+            @Comment("Chunk worker allocation algorithm: MOONRISE, C2ME, or C2ME_NEW.")
+            @Setting("chunk-worker-algorithm")
+            public String chunkWorkerAlgorithm = "C2ME_NEW";
+
+            @Comment("Use euclidean distance squared for chunk task ordering.")
+            @Setting("use-euclidean-distance-squared")
+            public boolean useEuclideanDistanceSquared = true;
+
+            @Comment("Enable The End biome cache for faster End world generation.")
+            @Setting("end-biome-cache-enabled")
+            public boolean endBiomeCacheEnabled = true;
+
+            @Comment("The End biome cache capacity.")
+            @Setting("end-biome-cache-capacity")
+            public int endBiomeCacheCapacity = 2048;
+
+            @Comment("Smooth bedrock layers during world generation.")
+            @Setting("smooth-bedrock-layer")
+            public boolean smoothBedrockLayer = false;
+
+            @Setting("experimental")
+            public Experimental experimental = new Experimental();
+
+            public class Experimental extends ConfigurationPart {
+                @Comment("Use the C2ME density function compiler to accelerate world generation.")
+                @Setting("enable-density-function-compiler")
+                public boolean enableDensityFunctionCompiler = true;
+
+                @Comment("Optimize jigsaw structure layout generation.")
+                @Setting("enable-structure-layout-optimizer")
+                public boolean enableStructureLayoutOptimizer = true;
+
+                @Comment("Deduplicate shuffled template pool element lists for faster structure layout generation.")
+                @Setting("deduplicate-shuffled-template-pool-element-list")
+                public boolean deduplicateShuffledTemplatePoolElementList = true;
+            }
+        }
         @Setting("dab")
         public Dab dab = new Dab();
 
