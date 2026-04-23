@@ -1,0 +1,28 @@
+--- a/ca/spottedleaf/moonrise/patches/chunk_system/io/MoonriseRegionFileIO.java
++++ b/ca/spottedleaf/moonrise/patches/chunk_system/io/MoonriseRegionFileIO.java
+@@ -20,6 +_,7 @@
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.level.chunk.storage.RegionFile;
+ import net.minecraft.world.level.chunk.storage.RegionFileStorage;
++import org.bxteam.divinemc.region.IRegionFile;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import java.io.DataInputStream;
+@@ -1274,7 +_,7 @@
+                 this.regionDataController.finishWrite(this.chunkX, this.chunkZ, writeData);
+                 // Paper start - flush regionfiles on save
+                 if (this.world.paperConfig().chunks.flushRegionsOnSave) {
+-                    final RegionFile regionFile = this.regionDataController.getCache().moonrise$getRegionFileIfLoaded(this.chunkX, this.chunkZ);
++                    final IRegionFile regionFile = this.regionDataController.getCache().moonrise$getRegionFileIfLoaded(this.chunkX, this.chunkZ);
+                     if (regionFile != null) {
+                         regionFile.flush();
+                     } // else: evicted from cache, which should have called flush
+@@ -1490,7 +_,7 @@
+ 
+         public static interface IORunnable {
+ 
+-            public void run(final RegionFile regionFile) throws IOException;
++            public void run(final IRegionFile regionFile) throws IOException;
+ 
+         }
+     }

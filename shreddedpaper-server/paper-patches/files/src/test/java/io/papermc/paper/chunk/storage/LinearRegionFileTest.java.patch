@@ -1,0 +1,242 @@
+--- /dev/null
++++ b/src/test/java/io/papermc/paper/chunk/storage/LinearRegionFileTest.java
+@@ -1,0 +_,239 @@
++package io.papermc.paper.chunk.storage;
++
++import com.github.luben.zstd.Zstd;
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfigurationLoader;
++import net.minecraft.core.registries.Registries;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.nbt.NbtIo;
++import net.minecraft.resources.Identifier;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
++import org.bxteam.divinemc.config.DivineConfig;
++import org.bxteam.divinemc.region.type.BufferedRegionFile;
++import org.bxteam.divinemc.region.type.LinearRegionFile;
++import org.bukkit.support.environment.Normal;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.io.ByteArrayOutputStream;
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++
++@Normal
++class LinearRegionFileTest {
++
++    private static final long LINEAR_SUPERBLOCK = 0xc3ff13183cca9d9aL;
++
++    static {
++        try {
++            ShreddedPaperConfigurationLoader.init(Files.createTempFile("shreddedpaper-test", ".yml").toFile());
++        } catch (final IOException ex) {
++            throw new ExceptionInInitializerError(ex);
++        }
++    }
++
++    @AfterEach
++    void resetConfig() {
++        DivineConfig.syncFromShreddedPaper(new ShreddedPaperConfiguration());
++    }
++
++    @Test
++    void linearRoundTripPersistsChunkData(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("linear-v3", 3);
++        final RegionStorageInfo storageInfo = storageInfo();
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), expected);
++        }
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1);
++             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
++            assertEquals(expected, NbtIo.read(in));
++            assertEquals(true, regionFile.doesChunkExist(pos));
++        }
++    }
++
++    @Test
++    void linearVersionOneWorldLoads(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("linear-v1", 1);
++        final RegionStorageInfo storageInfo = storageInfo();
++
++        writeLegacyLinearFile(file, (byte) 1, expected);
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1);
++             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
++            assertEquals(expected, NbtIo.read(in));
++            assertEquals(true, regionFile.doesChunkExist(pos));
++        }
++    }
++
++    @Test
++    void linearVersionTwoWorldLoads(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("linear-v2", 2);
++        final RegionStorageInfo storageInfo = storageInfo();
++
++        writeLegacyLinearFile(file, (byte) 2, expected);
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1);
++             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
++            assertEquals(expected, NbtIo.read(in));
++            assertEquals(true, regionFile.doesChunkExist(pos));
++        }
++    }
++
++    @Test
++    void linearMoonriseWriteIsDeferredUntilFinish(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("linear-deferred", 5);
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo(), file, tempDir, false, 1)) {
++            final var writeData = regionFile.moonrise$startWrite(expected, pos);
++            writeTag(writeData.output(), expected);
++
++            assertEquals(false, regionFile.hasChunk(pos));
++
++            writeData.write().run(regionFile);
++            assertEquals(true, regionFile.hasChunk(pos));
++        }
++    }
++
++    @Test
++    void bufferedRoundTripPersistsChunkData(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.b_linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("buffered", 7);
++
++        try (BufferedRegionFile regionFile = new BufferedRegionFile(file, 3)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), expected);
++        }
++
++        try (BufferedRegionFile regionFile = new BufferedRegionFile(file, 3);
++             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
++            assertEquals(expected, NbtIo.read(in));
++            assertEquals(true, regionFile.doesChunkExist(pos));
++        }
++    }
++
++    @Test
++    void bufferedMoonriseWriteIsDeferredUntilFinish(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.b_linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("buffered-deferred", 13);
++
++        try (BufferedRegionFile regionFile = new BufferedRegionFile(file, 3)) {
++            final var writeData = regionFile.moonrise$startWrite(expected, pos);
++            writeTag(writeData.output(), expected);
++
++            assertEquals(false, regionFile.hasChunk(pos));
++
++            writeData.write().run(regionFile);
++            assertEquals(true, regionFile.hasChunk(pos));
++        }
++    }
++
++    @Test
++    void bufferedFlushPublishesReadableHeaders(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.b_linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("buffered-flush", 11);
++
++        try (BufferedRegionFile regionFile = new BufferedRegionFile(file, 3)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), expected);
++            regionFile.flush();
++
++            try (BufferedRegionFile reopened = new BufferedRegionFile(file, 3);
++                 DataInputStream in = reopened.getChunkDataInputStream(pos)) {
++                assertEquals(expected, NbtIo.read(in));
++            }
++        }
++    }
++
++    @Test
++    void divineConfigSyncAppliesAllLinearOptions() {
++        final ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        configuration.regionFormat.type = "LINEAR";
++        configuration.regionFormat.compressionLevel = 8;
++        configuration.regionFormat.linearIoThreadCount = 3;
++        configuration.regionFormat.linearIoFlushDelayMs = 45;
++        configuration.regionFormat.linearUseVirtualThreads = false;
++
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        assertEquals("LINEAR", configuration.regionFormat.type);
++        assertEquals(8, DivineConfig.MiscCategory.linearCompressionLevel);
++        assertEquals(3, DivineConfig.MiscCategory.linearIoThreadCount);
++        assertEquals(45, DivineConfig.MiscCategory.linearIoFlushDelayMs);
++        assertFalse(DivineConfig.MiscCategory.linearUseVirtualThreads);
++        assertEquals(45, LinearRegionFile.SAVE_DELAY_MS);
++        assertEquals(3, LinearRegionFile.SAVE_THREAD_MAX_COUNT);
++        assertFalse(LinearRegionFile.USE_VIRTUAL_THREAD);
++    }
++
++    private static CompoundTag createTag(final String id, final int value) {
++        final CompoundTag tag = new CompoundTag();
++        tag.putString("id", id);
++        tag.putInt("value", value);
++        return tag;
++    }
++
++    private static RegionStorageInfo storageInfo() {
++        final ResourceKey<Level> overworld = ResourceKey.create(Registries.DIMENSION, Identifier.withDefaultNamespace("overworld"));
++        return new RegionStorageInfo("test", overworld, "chunk");
++    }
++
++    private static void writeTag(final DataOutputStream out, final CompoundTag tag) throws IOException {
++        try (out) {
++            NbtIo.write(tag, out);
++        }
++    }
++
++    private static byte[] serializeTag(final CompoundTag tag) throws IOException {
++        final ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
++        try (DataOutputStream dataOut = new DataOutputStream(byteOut)) {
++            NbtIo.write(tag, dataOut);
++        }
++        return byteOut.toByteArray();
++    }
++
++    private static void writeLegacyLinearFile(final Path file, final byte version, final CompoundTag tag) throws IOException {
++        final byte[] chunkData = serializeTag(tag);
++        final ByteArrayOutputStream rawBody = new ByteArrayOutputStream();
++        try (DataOutputStream rawOut = new DataOutputStream(rawBody)) {
++            for (int i = 0; i < 1024; ++i) {
++                rawOut.writeInt(i == 0 ? chunkData.length : 0);
++                rawOut.writeInt(0);
++            }
++            rawOut.write(chunkData);
++        }
++
++        final byte[] compressed = Zstd.compress(rawBody.toByteArray(), 1);
++        try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(file))) {
++            out.writeLong(LINEAR_SUPERBLOCK);
++            out.writeByte(version);
++            out.writeLong(0L);
++            out.writeByte(1);
++            out.writeShort(1);
++            out.writeInt(compressed.length);
++            out.writeLong(0L);
++            out.write(compressed);
++            out.writeLong(LINEAR_SUPERBLOCK);
++        }
++    }
++}

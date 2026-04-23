@@ -47,6 +47,7 @@ public class ShreddedPaperConfigurationLoader {
 
             ShreddedPaperConfiguration instance = node.require(ShreddedPaperConfiguration.class);
             transformLegacyConfig(node, instance);
+            org.bxteam.divinemc.config.DivineConfig.syncFromShreddedPaper(instance);
 
             for (Object key : node.childrenMap().keySet()) {
                 node.removeChild(key);
@@ -81,7 +82,7 @@ public class ShreddedPaperConfigurationLoader {
         return ObjectMapper.factoryBuilder()
                 .addConstraint(Constraint.class, new Constraint.Factory())
                 .addConstraint(Constraints.Min.class, Number.class, new Constraints.Min.Factory())
-                .addDiscoverer(InnerClassFieldDiscoverer.globalConfig(PaperConfigurations.defaultFieldProcessors()));
+                .addDiscoverer(InnerClassFieldDiscoverer.globalConfig((java.util.List) PaperConfigurations.defaultFieldProcessors()));
     }
 
     private static UnaryOperator<ConfigurationOptions> applyObjectMapperFactory(final ObjectMapper.Factory factory) {

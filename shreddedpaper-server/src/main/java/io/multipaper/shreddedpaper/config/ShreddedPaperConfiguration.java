@@ -18,6 +18,10 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
     private static ShreddedPaperConfiguration instance;
 
     public static ShreddedPaperConfiguration get() {
+        if (instance == null) {
+            instance = new ShreddedPaperConfiguration();
+            org.bxteam.divinemc.config.DivineConfig.syncFromShreddedPaper(instance);
+        }
         return instance;
     }
 
@@ -25,7 +29,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         ShreddedPaperConfiguration.instance = instance;
     }
 
-    public Multithreading multithreading;
+    public Multithreading multithreading = new Multithreading();
 
     public class Multithreading extends ConfigurationPart {
 
@@ -36,7 +40,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     }
 
-    public Optimizations optimizations;
+    public Optimizations optimizations = new Optimizations();
 
     public class Optimizations extends ConfigurationPart {
 
@@ -50,7 +54,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public long trackerFullUpdateFrequency = 20;
         public long purgeStaleTicketsFrequency = 20;
         public boolean writePlayerSavesAsync = true;
-        public ChunkPacketCaching chunkPacketCaching;
+        public ChunkPacketCaching chunkPacketCaching = new ChunkPacketCaching();
 
         public class ChunkPacketCaching extends ConfigurationPart {
 
@@ -60,6 +64,26 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
         }
 
+    }
+
+    public RegionFormat regionFormat = new RegionFormat();
+
+    public class RegionFormat extends ConfigurationPart {
+
+        @Comment("Equivalent to DivineMC's region-format.type. Valid values: MCA, LINEAR, B_LINEAR.")
+        public String type = "MCA";
+
+        @Comment("Equivalent to DivineMC's region-format.compression-level. Valid range: 1..22.")
+        public int compressionLevel = 1;
+
+        @Comment("Equivalent to DivineMC's region-format.linear-io-thread-count.")
+        public int linearIoThreadCount = 6;
+
+        @Comment("Equivalent to DivineMC's region-format.linear-io-flush-delay-ms.")
+        public int linearIoFlushDelayMs = 100;
+
+        @Comment("Equivalent to DivineMC's region-format.linear-use-virtual-threads.")
+        public boolean linearUseVirtualThreads = true;
     }
 
 

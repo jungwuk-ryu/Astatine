@@ -1,0 +1,15 @@
+--- /dev/null
++++ b/src/test/java/io/papermc/paper/chunk/storage/LinearRegionFileTestSuite.java
+@@ -1,0 +_,12 @@
++package io.papermc.paper.chunk.storage;
++
++import org.junit.platform.suite.api.SelectClasses;
++import org.junit.platform.suite.api.Suite;
++
++@Suite
++@SelectClasses({
++    LinearRegionFileTest.class,
++    net.minecraft.world.level.chunk.storage.RegionFileStorageRegionFormatTest.class
++})
++public class LinearRegionFileTestSuite {
++}

@@ -1,0 +1,77 @@
+--- /dev/null
++++ b/src/test/java/net/minecraft/world/level/chunk/storage/RegionFileStorageRegionFormatTest.java
+@@ -1,0 +_,74 @@
++package net.minecraft.world.level.chunk.storage;
++
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import net.minecraft.core.registries.Registries;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.nbt.NbtIo;
++import net.minecraft.resources.Identifier;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.Level;
++import org.bukkit.support.environment.Normal;
++import org.bxteam.divinemc.config.DivineConfig;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.io.DataOutputStream;
++import java.io.IOException;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++
++@Normal
++public class RegionFileStorageRegionFormatTest {
++
++    @AfterEach
++    void resetConfig() {
++        DivineConfig.syncFromShreddedPaper(new ShreddedPaperConfiguration());
++    }
++
++    @Test
++    void configuredLinearStillReadsExistingMcaRegion(@TempDir final Path tempDir) throws Exception {
++        final RegionStorageInfo storageInfo = storageInfo();
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag expected = createTag("mca-fallback", 19);
++
++        try (RegionFile regionFile = new RegionFile(storageInfo, tempDir.resolve("r.0.0.mca"), tempDir, false)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), expected);
++        }
++
++        final ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        configuration.regionFormat.type = "LINEAR";
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        try (TestRegionFileStorage storage = new TestRegionFileStorage(storageInfo, tempDir, false)) {
++            assertEquals(expected, storage.read(pos));
++        }
++    }
++
++    private static CompoundTag createTag(final String id, final int value) {
++        final CompoundTag tag = new CompoundTag();
++        tag.putString("id", id);
++        tag.putInt("value", value);
++        return tag;
++    }
++
++    private static RegionStorageInfo storageInfo() {
++        final ResourceKey<Level> overworld = ResourceKey.create(Registries.DIMENSION, Identifier.withDefaultNamespace("overworld"));
++        return new RegionStorageInfo("test", overworld, "chunk");
++    }
++
++    private static void writeTag(final DataOutputStream out, final CompoundTag tag) throws IOException {
++        try (out) {
++            NbtIo.write(tag, out);
++        }
++    }
++
++    private static final class TestRegionFileStorage extends RegionFileStorage {
++
++        private TestRegionFileStorage(final RegionStorageInfo info, final Path folder, final boolean sync) {
++            super(info, folder, sync);
++        }
++    }
++}
