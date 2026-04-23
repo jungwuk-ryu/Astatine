@@ -1,0 +1,61 @@
+--- a/net/minecraft/world/level/block/entity/EnderChestBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/EnderChestBlockEntity.java
+@@ -10,7 +_,7 @@ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
+ 
+-public class EnderChestBlockEntity extends BlockEntity implements LidBlockEntity {
++public class EnderChestBlockEntity extends BlockEntity implements LidBlockEntity, net.caffeinemc.mods.lithium.common.block.entity.SleepingBlockEntity { // DivineMC - lithium: sleeping_block_entity
+     private final ChestLidController chestLidController = new ChestLidController();
+     public final ContainerOpenersCounter openersCounter = new ContainerOpenersCounter() {
+         @Override
+@@ -58,11 +_,13 @@ public class EnderChestBlockEntity extends BlockEntity implements LidBlockEntity
+ 
+     public static void lidAnimateTick(Level level, BlockPos pos, BlockState state, EnderChestBlockEntity blockEntity) {
+         blockEntity.chestLidController.tickLid();
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) blockEntity.checkSleep(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     @Override
+     public boolean triggerEvent(int id, int type) {
+         if (id == 1) {
++            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && this.sleepingTicker != null) this.wakeUpNow(); // DivineMC - lithium: sleeping_block_entity
+             this.chestLidController.shouldBeOpen(type > 0);
+             return true;
+         } else {
+@@ -99,4 +_,35 @@ public class EnderChestBlockEntity extends BlockEntity implements LidBlockEntity
+     public float getOpenNess(float partialTick) {
+         return this.chestLidController.getOpenness(partialTick);
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    private net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper = null;
++    private TickingBlockEntity sleepingTicker = null;
++
++    @Override
++    public net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper lithium$getTickWrapper() {
++        return this.tickWrapper;
++    }
++
++    @Override
++    public void lithium$setTickWrapper(net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper) {
++        this.tickWrapper = tickWrapper;
++    }
++
++    @Override
++    public TickingBlockEntity lithium$getSleepingTicker() {
++        return this.sleepingTicker;
++    }
++
++    @Override
++    public void lithium$setSleepingTicker(TickingBlockEntity sleepingTicker) {
++        this.sleepingTicker = sleepingTicker;
++    }
++
++    private void checkSleep() {
++        if (this.getOpenNess(0.0F) == this.getOpenNess(1.0F)) {
++            this.lithium$startSleeping();
++        }
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

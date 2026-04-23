@@ -1,0 +1,28 @@
+--- a/net/minecraft/world/level/levelgen/Heightmap.java
++++ b/net/minecraft/world/level/levelgen/Heightmap.java
+@@ -30,7 +_,7 @@ public class Heightmap {
+     static final Predicate<BlockState> NOT_AIR = state -> !state.isAir();
+     static final Predicate<BlockState> MATERIAL_MOTION_BLOCKING = BlockBehaviour.BlockStateBase::blocksMotion;
+     private final BitStorage data;
+-    private final Predicate<BlockState> isOpaque;
++    public final Predicate<BlockState> isOpaque; // DivineMC - lithium combined heightmap update
+     private final ChunkAccess chunk;
+ 
+     public Heightmap(ChunkAccess chunk, Heightmap.Types type) {
+@@ -115,11 +_,15 @@ public class Heightmap {
+         return this.getFirstAvailable(getIndex(x, z)) - 1;
+     }
+ 
++    public Predicate<BlockState> isOpaque() { // DivineMC - lithium combined heightmap update
++        return this.isOpaque;
++    }
++
+     private int getFirstAvailable(int index) {
+         return this.data.get(index) + this.chunk.getMinY();
+     }
+ 
+-    private void setHeight(int x, int z, int value) {
++    public void setHeight(int x, int z, int value) { // DivineMC - lithium combined heightmap update
+         this.data.set(getIndex(x, z), value - this.chunk.getMinY());
+     }
+ 

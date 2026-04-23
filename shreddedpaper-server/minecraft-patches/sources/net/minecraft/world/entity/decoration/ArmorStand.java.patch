@@ -1,0 +1,22 @@
+--- a/net/minecraft/world/entity/decoration/ArmorStand.java
++++ b/net/minecraft/world/entity/decoration/ArmorStand.java
+@@ -90,7 +_,7 @@ public class ArmorStand extends LivingEntity {
+     // Paper start - Allow ArmorStands not to tick
+     public boolean canTick = true;
+     public boolean canTickSetByAPI = false;
+-    private boolean noTickEquipmentDirty = false;
++    public boolean noTickEquipmentDirty = false; // DivineMC - lithium: equipment_tracking
+     // Paper end - Allow ArmorStands not to tick
+     public boolean canMovementTick = true; // Purpur - Movement options for armor stands
+ 
+@@ -529,8 +_,9 @@ public class ArmorStand extends LivingEntity {
+         maxUpStep = level().purpurConfig.armorstandStepHeight; // Purpur - Add option to set armorstand step height
+         if (!this.canTick) {
+             if (this.noTickEquipmentDirty) {
+-                this.noTickEquipmentDirty = false;
++                if (!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.equipmentTracking) this.noTickEquipmentDirty = false; // DivineMC - lithium: equipment_tracking
+                 this.detectEquipmentUpdates();
++                if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.equipmentTracking) this.noTickEquipmentDirty = false; // DivineMC - lithium: equipment_tracking
+             }
+ 
+             return;

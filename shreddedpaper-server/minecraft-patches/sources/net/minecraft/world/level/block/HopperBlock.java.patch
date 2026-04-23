@@ -1,0 +1,61 @@
+--- a/net/minecraft/world/level/block/HopperBlock.java
++++ b/net/minecraft/world/level/block/HopperBlock.java
+@@ -37,7 +_,7 @@ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.jspecify.annotations.Nullable;
+ 
+-public class HopperBlock extends BaseEntityBlock {
++public class HopperBlock extends BaseEntityBlock implements net.caffeinemc.mods.lithium.common.block.entity.ShapeUpdateHandlingBlockBehaviour { // DivineMC - lithium: sleeping_block_entity
+     public static final MapCodec<HopperBlock> CODEC = simpleCodec(HopperBlock::new);
+     public static final EnumProperty<Direction> FACING = BlockStateProperties.FACING_HOPPER;
+     public static final BooleanProperty ENABLED = BlockStateProperties.ENABLED;
+@@ -97,6 +_,16 @@ public class HopperBlock extends BaseEntityBlock {
+     protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
+         if (!oldState.is(state.getBlock())) {
+             this.checkPoweredState(level, pos, state);
++            // DivineMC start - lithium: sleeping_block_entity
++            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && level.getBlockState(pos) != state) {
++                for (Direction direction : UPDATE_SHAPE_ORDER) {
++                    BlockEntity hopper = level.lithium$getLoadedExistingBlockEntity(pos.relative(direction));
++                    if (hopper instanceof net.caffeinemc.mods.lithium.common.hopper.UpdateReceiver updateReceiver) {
++                        updateReceiver.lithium$invalidateCacheOnNeighborUpdate(direction == Direction.DOWN);
++                    }
++                }
++            }
++            // DivineMC end - lithium: sleeping_block_entity
+         }
+     }
+ 
+@@ -111,6 +_,7 @@ public class HopperBlock extends BaseEntityBlock {
+ 
+     @Override
+     protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock, @Nullable Orientation orientation, boolean movedByPiston) {
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && level.lithium$getLoadedExistingBlockEntity(pos) instanceof net.caffeinemc.mods.lithium.common.hopper.UpdateReceiver updateReceiver) updateReceiver.lithium$invalidateCacheOnUndirectedNeighborUpdate(); // DivineMC - lithium: sleeping_block_entity
+         this.checkPoweredState(level, pos, state);
+     }
+ 
+@@ -164,4 +_,24 @@ public class HopperBlock extends BaseEntityBlock {
+     protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
+         return false;
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    @Override
++    public void lithium$handleShapeUpdate(net.minecraft.world.level.LevelReader levelReader, BlockState myBlockState, BlockPos myPos, BlockPos posFrom, BlockState newState) {
++        if (newState.getBlock() instanceof net.minecraft.world.WorldlyContainerHolder) {
++            this.updateHopper(levelReader, myBlockState, myPos, posFrom);
++        }
++    }
++
++    private void updateHopper(net.minecraft.world.level.LevelReader world, BlockState myBlockState, BlockPos myPos, BlockPos posFrom) {
++        Direction facing = myBlockState.getValue(HopperBlock.FACING);
++        boolean above = posFrom.getY() == myPos.getY() + 1;
++        if (above || posFrom.getX() == myPos.getX() + facing.getStepX() && posFrom.getY() == myPos.getY() + facing.getStepY() && posFrom.getZ() == myPos.getZ() + facing.getStepZ()) {
++            BlockEntity hopper = ((net.minecraft.world.level.Level) world).lithium$getLoadedExistingBlockEntity(myPos);
++            if (hopper instanceof net.caffeinemc.mods.lithium.common.hopper.UpdateReceiver updateReceiver) {
++                updateReceiver.lithium$invalidateCacheOnNeighborUpdate(above);
++            }
++        }
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

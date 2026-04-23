@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/level/dimension/end/EndDragonFight.java
 +++ b/net/minecraft/world/level/dimension/end/EndDragonFight.java
-@@ -9,6 +_,7 @@
+@@ -9,6 +_,7 @@ import com.google.common.collect.Sets;
  import com.mojang.logging.LogUtils;
  import com.mojang.serialization.Codec;
  import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -8,7 +8,7 @@
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import java.util.List;
  import java.util.Optional;
-@@ -157,6 +_,7 @@
+@@ -157,6 +_,7 @@ public class EndDragonFight {
          }
  
          if (!this.dragonEvent.getPlayers().isEmpty()) {
@@ -16,7 +16,7 @@
              this.level.getChunkSource().addTicketWithRadius(TicketType.DRAGON, new ChunkPos(0, 0), 9);
              boolean isArenaLoaded = this.isArenaLoaded();
              if (this.needsStateScanning && isArenaLoaded) {
-@@ -184,6 +_,13 @@
+@@ -184,6 +_,13 @@ public class EndDragonFight {
                      this.ticksSinceCrystalsScanned = 0;
                  }
              }
@@ -30,3 +30,87 @@
          } else {
              this.level.getChunkSource().removeTicketWithRadius(TicketType.DRAGON, new ChunkPos(0, 0), 9);
          }
+@@ -270,7 +_,71 @@ public class EndDragonFight {
+         return false;
+     }
+ 
++    // DivineMC start - Carpet-AMS-Addition: Optimized dragon respawn
++    private int cachePortalChunkIteratorX = -8;
++    private int cachePortalChunkIteratorZ = -8;
++    private int cachePortalOriginIteratorY = -1;
++    // DivineMC end - Carpet-AMS-Addition: Optimized dragon respawn
++
+     public BlockPattern.@Nullable BlockPatternMatch findExitPortal() {
++        // DivineMC start - Carpet-AMS-Addition: Optimized dragon respawn
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.optimizedDragonRespawn) {
++            ChunkPos originChunk = new ChunkPos(this.origin);
++            int i, j;
++            for (i = cachePortalChunkIteratorX; i <= 8; ++i) {
++                int startZ = i == cachePortalChunkIteratorX ? cachePortalChunkIteratorZ : -8;
++                for (j = startZ; j <= 8; ++j) {
++                    LevelChunk worldChunk = this.level.getChunk(originChunk.x + i, originChunk.z + j);
++                    for (BlockEntity blockEntity : worldChunk.getBlockEntities().values()) {
++                        if (blockEntity instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity) {
++                            continue;
++                        }
++                        if (blockEntity instanceof TheEndPortalBlockEntity) {
++                            BlockPattern.BlockPatternMatch blockPatternMatch = this.exitPortalPattern.find(this.level, blockEntity.getBlockPos());
++                            if (blockPatternMatch != null) {
++                                BlockPos blockPos = blockPatternMatch.getBlock(3, 3, 3).getPos();
++                                if (this.portalLocation == null) {
++                                    this.portalLocation = blockPos;
++                                }
++
++                                cachePortalChunkIteratorX = i;
++                                cachePortalChunkIteratorZ = j;
++                                return blockPatternMatch;
++                            }
++                        }
++                    }
++                }
++            }
++
++            if (this.needsStateScanning || this.portalLocation == null) {
++                BlockPos location = EndPodiumFeature.getLocation(this.origin);
++                if (cachePortalOriginIteratorY != -1) {
++                    i = cachePortalOriginIteratorY;
++                } else {
++                    i = this.level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, location).getY();
++                }
++                boolean notFirstSearch = false;
++                for (j = i; j >= this.level.getMinY(); --j) {
++                    BlockPattern.BlockPatternMatch result2 = null;
++                    if (notFirstSearch) {
++                        result2 = org.bxteam.divinemc.util.BlockPatternHelper.partialSearchAround(this.exitPortalPattern, this.level, new BlockPos(location.getX(), j, location.getZ()));
++                    } else {
++                        result2 = this.exitPortalPattern.find(this.level, new BlockPos(location.getX(), j, location.getZ()));
++                    }
++                    if (result2 != null) {
++                        if (this.portalLocation == null) {
++                            this.portalLocation = result2.getBlock(3, 3, 3).getPos();
++                        }
++                        cachePortalOriginIteratorY = j;
++                        return result2;
++                    }
++                    notFirstSearch = true;
++                }
++            }
++
++            return null;
++        }
++        // DivineMC end - Carpet-AMS-Addition: Optimized dragon respawn
+         ChunkPos chunkPos = new ChunkPos(this.origin);
+ 
+         for (int i = -8 + chunkPos.x; i <= 8 + chunkPos.x; i++) {
+@@ -567,6 +_,11 @@ public class EndDragonFight {
+     }
+ 
+     public boolean respawnDragon(List<EndCrystal> crystals) { // CraftBukkit - return boolean
++        // DivineMC start - Carpet-AMS-Addition: Optimized dragon respawn
++        cachePortalChunkIteratorX = -8;
++        cachePortalChunkIteratorZ = -8;
++        cachePortalOriginIteratorY = -1;
++        // DivineMC end - Carpet-AMS-Addition: Optimized dragon respawn
+         if (this.dragonKilled && this.respawnStage == null) {
+             for (BlockPattern.BlockPatternMatch blockPatternMatch = this.findExitPortal(); blockPatternMatch != null; blockPatternMatch = this.findExitPortal()) {
+                 for (int i = 0; i < this.exitPortalPattern.getWidth(); i++) {

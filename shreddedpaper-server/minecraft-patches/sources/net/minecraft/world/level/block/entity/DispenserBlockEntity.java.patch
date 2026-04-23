@@ -1,0 +1,35 @@
+--- a/net/minecraft/world/level/block/entity/DispenserBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/DispenserBlockEntity.java
+@@ -13,7 +_,7 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
+ 
+-public class DispenserBlockEntity extends RandomizableContainerBlockEntity {
++public class DispenserBlockEntity extends RandomizableContainerBlockEntity implements net.caffeinemc.mods.lithium.common.block.entity.inventory_change_tracking.InventoryChangeTracker, net.caffeinemc.mods.lithium.api.inventory.LithiumInventory { // DivineMC - lithium: sleeping_block_entity
+     public static final int CONTAINER_SIZE = 9;
+     private static final Component DEFAULT_NAME = Component.translatable("container.dispenser");
+     private NonNullList<ItemStack> items = NonNullList.withSize(9, ItemStack.EMPTY);
+@@ -135,10 +_,23 @@ public class DispenserBlockEntity extends RandomizableContainerBlockEntity {
+     @Override
+     protected void setItems(NonNullList<ItemStack> items) {
+         this.items = items;
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) this.lithium$emitStackListReplaced(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     @Override
+     protected AbstractContainerMenu createMenu(int id, Inventory player) {
+         return new DispenserMenu(id, player, this);
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    @Override
++    public net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> getInventoryLithium() {
++        return items;
++    }
++
++    @Override
++    public void setInventoryLithium(net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> inventory) {
++        items = inventory;
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

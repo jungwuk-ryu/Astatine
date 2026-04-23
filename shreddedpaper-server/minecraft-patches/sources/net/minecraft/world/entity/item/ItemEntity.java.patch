@@ -1,6 +1,15 @@
 --- a/net/minecraft/world/entity/item/ItemEntity.java
 +++ b/net/minecraft/world/entity/item/ItemEntity.java
-@@ -165,7 +_,7 @@
+@@ -35,7 +_,7 @@ import net.minecraft.world.level.storage.ValueOutput;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+ 
+-public class ItemEntity extends Entity implements TraceableEntity {
++public class ItemEntity extends Entity implements TraceableEntity, net.caffeinemc.mods.lithium.common.util.change_tracking.ChangePublisher<ItemEntity>, net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.CountChangeSubscriber<ItemStack> { // DivineMC - lithium: sleeping_block_entity
+     private static final EntityDataAccessor<ItemStack> DATA_ITEM = SynchedEntityData.defineId(ItemEntity.class, EntityDataSerializers.ITEM_STACK);
+     private static final float FLOAT_HEIGHT = 0.1F;
+     public static final float EYE_HEIGHT = 0.2125F;
+@@ -165,7 +_,7 @@ public class ItemEntity extends Entity implements TraceableEntity {
              } else if (this.isInLava() && this.getFluidHeight(FluidTags.LAVA) > 0.1F) {
                  this.setUnderLavaMovement();
              } else {
@@ -9,3 +18,105 @@
              }
  
              if (this.level().isClientSide()) {
+@@ -521,6 +_,25 @@ public class ItemEntity extends Entity implements TraceableEntity {
+     }
+ 
+     public void setItem(ItemStack stack) {
++        // DivineMC start - lithium: sleeping_block_entity
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && this.subscriber != null) {
++            ItemStack oldStack = this.getItem();
++            if (oldStack != stack) {
++                if (!oldStack.isEmpty()) {
++                    oldStack.lithium$unsubscribe(this);
++                }
++
++                if (!stack.isEmpty()) {
++                    stack.lithium$subscribe(this, this.subscriberData);
++                    this.subscriber.lithium$notify((ItemEntity) (Object) this, this.subscriberData);
++                } else {
++                    this.subscriber.lithium$forceUnsubscribe((ItemEntity) (Object) this, this.subscriberData);
++                    this.subscriber = null;
++                    this.subscriberData = 0;
++                }
++            }
++        }
++        // DivineMC end - lithium: sleeping_block_entity
+         this.getEntityData().set(DATA_ITEM, stack);
+         this.despawnRate = this.level().paperConfig().entities.spawning.altItemDespawnRate.enabled ? this.level().paperConfig().entities.spawning.altItemDespawnRate.items.getOrDefault(stack.getItem(), this.level().spigotConfig.itemDespawnRate) : this.level().spigotConfig.itemDespawnRate; // Paper - Alternative item-despawn-rate
+         // Purpur start - Item entity immunities
+@@ -602,4 +_,75 @@ public class ItemEntity extends Entity implements TraceableEntity {
+     public @Nullable SlotAccess getSlot(int slot) {
+         return slot == 0 ? SlotAccess.of(this::getItem, this::setItem) : super.getSlot(slot);
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    private net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.entity.item.ItemEntity> subscriber;
++    private int subscriberData;
++
++    private void startTrackingChanges() {
++        ItemStack stack = this.getItem();
++        if (!stack.isEmpty()) {
++            stack.lithium$subscribe(this, 0);
++        }
++    }
++
++    @Override
++    public void lithium$subscribe(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.entity.item.ItemEntity> subscriber, int subscriberData) {
++        if (this.subscriber == null) {
++            this.startTrackingChanges();
++        }
++        this.subscriber = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.combine(this.subscriber, this.subscriberData, subscriber, subscriberData);
++        if (this.subscriber instanceof net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.Multi<?>) {
++            this.subscriberData = 0;
++        } else {
++            this.subscriberData = subscriberData;
++        }
++    }
++
++    @Override
++    public int lithium$unsubscribe(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.entity.item.ItemEntity> subscriber) {
++        int retval = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.dataOf(this.subscriber, subscriber, this.subscriberData);
++        this.subscriberData = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.dataWithout(this.subscriber, subscriber, this.subscriberData);
++        this.subscriber = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.without(this.subscriber, subscriber);
++
++        if (this.subscriber == null) {
++            ItemStack stack = this.getItem();
++            if (!stack.isEmpty()) {
++                stack.lithium$unsubscribe(this);
++            }
++        }
++        return retval;
++    }
++
++    @Override
++    public void lithium$notify(ItemStack publisher, int subscriberData) {
++        if (publisher != this.getItem()) {
++            throw new IllegalStateException("Received notification from an unexpected publisher");
++        }
++
++        if (this.subscriber != null) {
++            this.subscriber.lithium$notify(this, this.subscriberData);
++        }
++    }
++
++    @Override
++    public void lithium$forceUnsubscribe(ItemStack publisher, int subscriberData) {
++        if (this.subscriber != null) {
++            this.subscriber.lithium$forceUnsubscribe(this, this.subscriberData);
++            this.subscriber = null;
++            this.subscriberData = 0;
++        }
++    }
++
++    @Override
++    public void lithium$notifyCount(ItemStack publisher, int subscriberData, int newCount) {
++        if (publisher != this.getItem()) {
++            throw new IllegalStateException("Received notification from an unexpected publisher");
++        }
++
++        if (this.subscriber instanceof net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.CountChangeSubscriber<ItemEntity> countChangeSubscriber) {
++            countChangeSubscriber.lithium$notifyCount(this, this.subscriberData, newCount);
++        }
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

@@ -30,6 +30,21 @@ public final class DivineConfig {
     }
 
     public static final class PerformanceCategory {
+        public static boolean disableMethodProfiler = true;
+        public static boolean skipUselessSecondaryPoiSensor = true;
+        public static boolean clumpOrbs = true;
+        public static boolean enableSuffocationOptimization = true;
+        public static boolean useCompactBitStorage = true;
+        public static boolean commandBlockParseResultsCaching = true;
+        public static boolean sheepOptimization = true;
+        public static boolean optimizedDragonRespawn = true;
+        public static boolean reduceChuckLoadAndLookup = true;
+        public static boolean createSnapshotOnRetrievingBlockState = true;
+        public static boolean sleepingBlockEntity = true;
+        public static boolean equipmentTracking = true;
+        public static boolean hopperThrottleWhenFull = true;
+        public static int hopperThrottleSkipTicks = 8;
+
         public static boolean dabEnabled = false;
         public static int dabStartDistance = 12;
         public static int dabStartDistanceSquared = dabStartDistance * dabStartDistance;
@@ -59,6 +74,35 @@ public final class DivineConfig {
                 configuration.performance = performance;
             }
 
+            ShreddedPaperConfiguration.Performance.Optimizations optimizations = performance.optimizations;
+            if (optimizations == null) {
+                optimizations = performance.new Optimizations();
+                performance.optimizations = optimizations;
+            }
+
+            ShreddedPaperConfiguration.Performance.Optimizations.HopperThrottleWhenFull hopperThrottle = optimizations.hopperThrottleWhenFull;
+            if (hopperThrottle == null) {
+                hopperThrottle = optimizations.new HopperThrottleWhenFull();
+                optimizations.hopperThrottleWhenFull = hopperThrottle;
+            }
+
+            disableMethodProfiler = optimizations.disableMethodProfiler;
+            skipUselessSecondaryPoiSensor = optimizations.skipUselessSecondaryPoiSensor;
+            clumpOrbs = optimizations.clumpOrbs;
+            enableSuffocationOptimization = optimizations.enableSuffocationOptimization;
+            useCompactBitStorage = optimizations.useCompactBitStorage;
+            commandBlockParseResultsCaching = optimizations.commandBlockParseResultsCaching;
+            sheepOptimization = optimizations.sheepOptimization;
+            optimizedDragonRespawn = optimizations.optimizedDragonRespawn;
+            reduceChuckLoadAndLookup = optimizations.reduceChunkLoadAndLookup;
+            createSnapshotOnRetrievingBlockState = optimizations.createSnapshotOnRetrievingBlockState;
+            sleepingBlockEntity = optimizations.sleepingBlockEntity;
+            equipmentTracking = optimizations.equipmentTracking;
+            hopperThrottleWhenFull = hopperThrottle.enabled;
+            hopperThrottleSkipTicks = Math.max(0, hopperThrottle.skipTicks);
+
+            hopperThrottle.skipTicks = hopperThrottleSkipTicks;
+
             ShreddedPaperConfiguration.Performance.Dab dab = performance.dab;
             if (dab == null) {
                 dab = performance.new Dab();
@@ -84,6 +128,20 @@ public final class DivineConfig {
         }
 
         private static void applyDefaults() {
+            disableMethodProfiler = true;
+            skipUselessSecondaryPoiSensor = true;
+            clumpOrbs = true;
+            enableSuffocationOptimization = true;
+            useCompactBitStorage = true;
+            commandBlockParseResultsCaching = true;
+            sheepOptimization = true;
+            optimizedDragonRespawn = true;
+            reduceChuckLoadAndLookup = true;
+            createSnapshotOnRetrievingBlockState = true;
+            sleepingBlockEntity = true;
+            equipmentTracking = true;
+            hopperThrottleWhenFull = true;
+            hopperThrottleSkipTicks = 8;
             dabEnabled = false;
             dabStartDistance = 12;
             dabStartDistanceSquared = dabStartDistance * dabStartDistance;

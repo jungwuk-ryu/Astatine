@@ -201,6 +201,14 @@
              serverPlayer.connection.resumeFlushing();
          }
  
+@@ -2742,6 +_,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     // CraftBukkit end
+ 
+     private ProfilerFiller createProfiler() {
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.disableMethodProfiler) return net.minecraft.util.profiling.InactiveProfiler.INSTANCE; // DivineMC - Option to disable method profiler
+         if (this.willStartRecordingMetrics) {
+             this.metricsRecorder = ActiveMetricsRecorder.createStarted(
+                 new ServerMetricsSamplersProvider(Util.timeSource, this.isDedicatedServer()),
 @@ -2871,8 +_,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          }
      }

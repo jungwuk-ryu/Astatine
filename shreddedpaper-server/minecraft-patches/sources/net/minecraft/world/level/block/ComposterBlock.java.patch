@@ -1,0 +1,35 @@
+--- a/net/minecraft/world/level/block/ComposterBlock.java
++++ b/net/minecraft/world/level/block/ComposterBlock.java
+@@ -440,7 +_,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+         }
+     }
+ 
+-    public static class EmptyContainer extends SimpleContainer implements WorldlyContainer {
++    public static class EmptyContainer extends SimpleContainer implements WorldlyContainer, net.caffeinemc.mods.lithium.common.hopper.BlockStateOnlyInventory { // DivineMC - lithium: sleeping_block_entity
+         public EmptyContainer(LevelAccessor levelAccessor, BlockPos blockPos) { // CraftBukkit
+             super(0);
+             this.bukkitOwner = new org.bukkit.craftbukkit.inventory.CraftBlockInventoryHolder(levelAccessor, blockPos, this); // CraftBukkit
+@@ -462,7 +_,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+         }
+     }
+ 
+-    public static class InputContainer extends SimpleContainer implements WorldlyContainer {
++    public static class InputContainer extends SimpleContainer implements WorldlyContainer, net.caffeinemc.mods.lithium.common.hopper.BlockStateOnlyInventory { // DivineMC - lithium: sleeping_block_entity
+         private final BlockState state;
+         private final LevelAccessor level;
+         private final BlockPos pos;
+@@ -508,12 +_,13 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+                 }
+                 // Paper end - Add CompostItemEvent and EntityCompostItemEvent
+                 this.level.levelEvent(LevelEvent.COMPOSTER_FILL, this.pos, blockState != this.state ? 1 : 0);
++                if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) this.changed = false; // DivineMC - lithium: sleeping_block_entity
+                 this.removeItemNoUpdate(0);
+             }
+         }
+     }
+ 
+-    public static class OutputContainer extends SimpleContainer implements WorldlyContainer {
++    public static class OutputContainer extends SimpleContainer implements WorldlyContainer, net.caffeinemc.mods.lithium.common.hopper.BlockStateOnlyInventory { // DivineMC - lithium: sleeping_block_entity
+         private final BlockState state;
+         private final LevelAccessor level;
+         private final BlockPos pos;

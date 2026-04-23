@@ -1,0 +1,28 @@
+--- a/net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.java
++++ b/net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.java
+@@ -22,7 +_,7 @@ import net.minecraft.world.level.storage.loot.LootTable;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+ 
+-public abstract class AbstractMinecartContainer extends AbstractMinecart implements ContainerEntity {
++public abstract class AbstractMinecartContainer extends AbstractMinecart implements ContainerEntity, net.caffeinemc.mods.lithium.api.inventory.LithiumInventory { // DivineMC - lithium: sleeping_block_entity
+     private NonNullList<ItemStack> itemStacks = NonNullList.withSize(this.getContainerSize(), ItemStack.EMPTY); // CraftBukkit - SPIGOT-3513
+     public @Nullable ResourceKey<LootTable> lootTable;
+     public long lootTableSeed;
+@@ -216,4 +_,16 @@ public abstract class AbstractMinecartContainer extends AbstractMinecart impleme
+         return this.getBukkitEntity().getLocation();
+     }
+     // CraftBukkit end
++
++    // DivineMC start - lithium: sleeping_block_entity
++    @Override
++    public net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> getInventoryLithium() {
++        return itemStacks;
++    }
++
++    @Override
++    public void setInventoryLithium(net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> inventory) {
++        itemStacks = inventory;
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

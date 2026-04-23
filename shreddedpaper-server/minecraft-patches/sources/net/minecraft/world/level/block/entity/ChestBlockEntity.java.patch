@@ -1,0 +1,87 @@
+--- a/net/minecraft/world/level/block/entity/ChestBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/ChestBlockEntity.java
+@@ -25,7 +_,7 @@ import net.minecraft.world.level.block.state.properties.ChestType;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
+ 
+-public class ChestBlockEntity extends RandomizableContainerBlockEntity implements LidBlockEntity {
++public class ChestBlockEntity extends RandomizableContainerBlockEntity implements LidBlockEntity, net.caffeinemc.mods.lithium.common.block.entity.inventory_change_tracking.InventoryChangeTracker, net.caffeinemc.mods.lithium.common.block.entity.inventory_change_tracking.InventoryChangeEmitter, net.caffeinemc.mods.lithium.common.block.entity.SetBlockStateHandlingBlockEntity, net.caffeinemc.mods.lithium.common.block.entity.SleepingBlockEntity, net.caffeinemc.mods.lithium.api.inventory.LithiumInventory { // DivineMC - lithium: sleeping_block_entity
+     private static final int EVENT_SET_OPEN_COUNT = 1;
+     public static final Component DEFAULT_NAME = Component.translatable("container.chest");
+     private NonNullList<ItemStack> items = NonNullList.withSize(27, ItemStack.EMPTY);
+@@ -133,6 +_,7 @@ public class ChestBlockEntity extends RandomizableContainerBlockEntity implement
+ 
+     public static void lidAnimateTick(Level level, BlockPos pos, BlockState state, ChestBlockEntity blockEntity) {
+         blockEntity.chestLidController.tickLid();
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) blockEntity.checkSleep(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     public static void playSound(Level level, BlockPos pos, BlockState state, SoundEvent sound) {
+@@ -154,6 +_,7 @@ public class ChestBlockEntity extends RandomizableContainerBlockEntity implement
+     @Override
+     public boolean triggerEvent(int id, int type) {
+         if (id == 1) {
++            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && this.sleepingTicker != null) this.wakeUpNow(); // DivineMC - lithium: sleeping_block_entity
+             this.chestLidController.shouldBeOpen(type > 0);
+             return true;
+         } else {
+@@ -189,6 +_,7 @@ public class ChestBlockEntity extends RandomizableContainerBlockEntity implement
+     @Override
+     protected void setItems(NonNullList<ItemStack> items) {
+         this.items = items;
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) this.lithium$emitStackListReplaced(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     @Override
+@@ -229,4 +_,51 @@ public class ChestBlockEntity extends RandomizableContainerBlockEntity implement
+         Block block = state.getBlock();
+         level.blockEvent(pos, block, 1, eventParam);
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    private net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper = null;
++    private TickingBlockEntity sleepingTicker = null;
++
++    private void checkSleep() {
++        if (this.getOpenNess(0.0F) == this.getOpenNess(1.0F)) {
++            this.lithium$startSleeping();
++        }
++    }
++
++    @Override
++    public net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper lithium$getTickWrapper() {
++        return this.tickWrapper;
++    }
++
++    @Override
++    public void lithium$setTickWrapper(net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper) {
++        this.tickWrapper = tickWrapper;
++    }
++
++    @Override
++    public TickingBlockEntity lithium$getSleepingTicker() {
++        return this.sleepingTicker;
++    }
++
++    @Override
++    public void lithium$setSleepingTicker(TickingBlockEntity sleepingTicker) {
++        this.sleepingTicker = sleepingTicker;
++    }
++
++    @Override
++    public void lithium$handleSetBlockState() {
++        //Handle switching double / single chest state
++        this.lithium$emitRemoved();
++    }
++
++    @Override
++    public net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> getInventoryLithium() {
++        return items;
++    }
++
++    @Override
++    public void setInventoryLithium(net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> inventory) {
++        items = inventory;
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

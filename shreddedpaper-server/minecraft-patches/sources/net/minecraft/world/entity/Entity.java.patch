@@ -167,3 +167,33 @@
              synchronized (this.posLock) { // Paper - detailed watchdog information
              this.deltaMovement = deltaMovement;
              } // Paper - detailed watchdog information
+@@ -5135,6 +_,18 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+             this.setBoundingBox(this.makeBoundingBox());
+         }
+         // Paper end - Block invalid positions and bounding box
++        // DivineMC start - lithium: sleeping_block_entity
++        if (!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) return;
++        if (this instanceof ItemEntity) {
++            long sectionKey = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionKey(this);
++            net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionItemEntityMovementTracker tracker = net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionItemEntityMovementTracker.itemEntityMovementTrackerMap.get(new net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionEntityMovementTracker.ChunkSectionIdentifier(sectionKey, level.getMinecraftWorld().uuid));
++            if (tracker != null) tracker.notifyAllListeners(level.getGameTime());
++        } else if (this instanceof net.minecraft.world.entity.vehicle.ContainerEntity) {
++            long sectionKey = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionKey(this);
++            net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionInventoryEntityTracker tracker = net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionInventoryEntityTracker.containerEntityMovementTrackerMap.get(new net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionEntityMovementTracker.ChunkSectionIdentifier(sectionKey, level.getMinecraftWorld().uuid));
++            if (tracker != null) tracker.notifyAllListeners(level.getGameTime());
++        }
++        // DivineMC end - lithium: sleeping_block_entity
+     }
+ 
+     public void checkDespawn() {
+@@ -5294,6 +_,10 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+         this.levelCallback = levelCallback;
+     }
+ 
++    public void lithium$notifyMovementListeners() { // DivineMC - lithium: sleeping_block_entity
++        this.levelCallback.onMove();
++    }
++
+     @Override
+     public boolean shouldBeSaved() {
+         return (this.removalReason == null || this.removalReason.shouldSave())

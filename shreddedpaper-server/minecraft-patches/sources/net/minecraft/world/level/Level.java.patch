@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
-@@ -3,6 +_,7 @@
+@@ -3,6 +_,7 @@ package net.minecraft.world.level;
  import com.google.common.collect.Lists;
  import com.mojang.serialization.Codec;
  import java.io.IOException;
@@ -8,7 +8,7 @@
  import java.util.Collection;
  import java.util.Iterator;
  import java.util.List;
-@@ -10,6 +_,10 @@
+@@ -10,6 +_,10 @@ import java.util.UUID;
  import java.util.function.Consumer;
  import java.util.function.Predicate;
  import java.util.stream.Collectors;
@@ -19,7 +19,7 @@
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
  import net.minecraft.ReportedException;
-@@ -75,6 +_,7 @@
+@@ -75,6 +_,7 @@ import net.minecraft.world.level.lighting.LevelLightEngine;
  import net.minecraft.world.level.material.FluidState;
  import net.minecraft.world.level.material.Fluids;
  import net.minecraft.world.level.redstone.CollectingNeighborUpdater;
@@ -27,7 +27,7 @@
  import net.minecraft.world.level.redstone.Orientation;
  import net.minecraft.world.level.saveddata.maps.MapId;
  import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-@@ -112,9 +_,9 @@
+@@ -112,9 +_,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
          .add(new ExplosionParticleInfo(ParticleTypes.POOF, 0.5F, 1.0F))
          .add(new ExplosionParticleInfo(ParticleTypes.SMOKE, 1.0F, 1.0F))
          .build();
@@ -40,7 +40,7 @@
      private boolean tickingBlockEntities;
      public final Thread thread;
      private final boolean isDebug;
-@@ -143,12 +_,11 @@
+@@ -143,12 +_,11 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      private final CraftWorld world;
      public org.bukkit.generator.@Nullable ChunkGenerator generator;
  
@@ -58,7 +58,7 @@
      public final it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap<SpawnCategory> ticksPerSpawnCategory = new it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap<>();
      // Paper start - EAR 2
      public int wakeupInactiveRemainingAnimals;
-@@ -156,7 +_,7 @@
+@@ -156,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      public int wakeupInactiveRemainingMonsters;
      public int wakeupInactiveRemainingVillagers;
      // Paper end - EAR 2
@@ -67,7 +67,7 @@
      public final org.spigotmc.SpigotWorldConfig spigotConfig; // Spigot
      // Paper start - add paper world config
      private final io.papermc.paper.configuration.WorldConfiguration paperConfig;
-@@ -167,9 +_,9 @@
+@@ -167,9 +_,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
  
      public final org.purpurmc.purpur.PurpurWorldConfig purpurConfig; // Purpur - Purpur config files
      public static @Nullable BlockPos lastPhysicsProblem; // Spigot
@@ -79,7 +79,7 @@
  
      // Purpur start - Add adjustable breeding cooldown to config
      private com.google.common.cache.Cache<BreedingCooldownPair, Object> playerBreedingCooldowns;
-@@ -907,7 +_,7 @@
+@@ -907,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
          this.thread = Thread.currentThread();
          this.biomeManager = new BiomeManager(this, biomeZoomSeed);
          this.isDebug = isDebug;
@@ -88,7 +88,7 @@
          this.registryAccess = registryAccess;
          this.palettedContainerFactory = PalettedContainerFactory.create(registryAccess);
          this.damageSources = new DamageSources(registryAccess);
-@@ -1025,8 +_,8 @@
+@@ -1025,8 +_,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      @Nullable
      public final BlockState getBlockStateIfLoaded(BlockPos pos) {
          // CraftBukkit start - tree generation
@@ -99,7 +99,7 @@
              if (previous != null) {
                  return previous.getHandle();
              }
-@@ -1090,15 +_,15 @@
+@@ -1090,15 +_,15 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      @Override
      public boolean setBlock(BlockPos pos, BlockState state, @Block.UpdateFlags int flags, int recursionLeft) {
          // CraftBukkit start - tree generation
@@ -118,7 +118,7 @@
              }
              blockstate.setData(state);
              blockstate.setFlags(flags);
-@@ -1114,14 +_,14 @@
+@@ -1114,14 +_,14 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
              Block block = state.getBlock();
              // CraftBukkit start - capture blockstates
              boolean captured = false;
@@ -137,7 +137,7 @@
                  }
                  snapshot.setFlags(flags); // Paper - always set the flag of the most recent call to mitigate issues with multiple update at the same pos with different flags
              }
-@@ -1130,8 +_,8 @@
+@@ -1130,8 +_,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
              // CraftBukkit end
              if (blockState == null) {
                  // CraftBukkit start - remove blockstate if failed (or the same)
@@ -148,7 +148,7 @@
                  }
                  // CraftBukkit end
                  return false;
-@@ -1168,7 +_,7 @@
+@@ -1168,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
                  */
  
                  // CraftBukkit start
@@ -157,7 +157,7 @@
                      // Modularize client and physic updates
                      // Spigot start
                      try {
-@@ -1334,8 +_,8 @@
+@@ -1334,8 +_,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      @Override
      public BlockState getBlockState(BlockPos pos) {
          // CraftBukkit start - tree generation
@@ -168,7 +168,7 @@
              if (previous != null) {
                  return previous.getHandle();
              }
-@@ -1433,15 +_,25 @@
+@@ -1433,15 +_,25 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      }
  
      public void addBlockEntityTicker(TickingBlockEntity ticker) {
@@ -199,7 +199,7 @@
  
          // Spigot start
          boolean runsNormally = this.tickRateManager().runsNormally();
-@@ -1449,8 +_,8 @@
+@@ -1449,12 +_,12 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
          int tickedEntities = 0; // Paper - rewrite chunk system
          var toRemove = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<TickingBlockEntity>(); // Paper - Fix MC-117075; use removeAll
          toRemove.add(null); // Paper - Fix MC-117075
@@ -210,7 +210,12 @@
              // Spigot end
              if (tickingBlockEntity.isRemoved()) {
                  toRemove.add(tickingBlockEntity); // Paper - Fix MC-117075; use removeAll
-@@ -1463,7 +_,7 @@
+-            } else if (runsNormally && this.shouldTickBlocksAt(tickingBlockEntity.getPos())) {
++            } else if (runsNormally && this.shouldTickBlockPosFilterNull(tickingBlockEntity.getPos())) { // DivineMC - lithium: sleeping_block_entity
+                 tickingBlockEntity.tick();
+                 // Paper start - rewrite chunk system
+                 if ((++tickedEntities & 7) == 0) {
+@@ -1463,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
                  // Paper end - rewrite chunk system
              }
          }
@@ -219,7 +224,7 @@
  
          this.tickingBlockEntities = false;
          this.spigotConfig.currentPrimedTnt = 0; // Spigot
-@@ -1480,7 +_,7 @@
+@@ -1480,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
              entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD);
              // Paper end - Prevent block entity and entity crashes
          }
@@ -228,7 +233,7 @@
      }
  
      // Paper start - Option to prevent armor stands from doing entity lookups
-@@ -1623,7 +_,7 @@
+@@ -1623,7 +_,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
      public @Nullable BlockEntity getBlockEntity(BlockPos pos) {
          // Paper start - Perf: Optimize capturedTileEntities lookup
          net.minecraft.world.level.block.entity.BlockEntity blockEntity;
@@ -237,7 +242,7 @@
              return blockEntity;
          }
          // Paper end - Perf: Optimize capturedTileEntities lookup
-@@ -1640,8 +_,8 @@
+@@ -1640,8 +_,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
          BlockPos blockPos = blockEntity.getBlockPos();
          if (this.isInValidBounds(blockPos)) {
              // CraftBukkit start
@@ -248,3 +253,29 @@
                  return;
              }
              // CraftBukkit end
+@@ -2146,4 +_,25 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
+         return getWorld().getEnvironment() == org.bukkit.World.Environment.THE_END;
+     }
+     // Purpur end - Add allow water in end world option
++
++    // DivineMC start - lithium: sleeping_block_entity
++    public BlockEntity lithium$getLoadedExistingBlockEntity(BlockPos pos) {
++        if (!this.isOutsideBuildHeight(pos)) {
++            if (this.isClientSide || Thread.currentThread() == this.thread) {
++                ChunkAccess chunk = this.getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
++                if (chunk != null) {
++                    return chunk.getBlockEntity(pos);
++                }
++            }
++        }
++        return null;
++    }
++
++    private boolean shouldTickBlockPosFilterNull(BlockPos pos) {
++        if (pos == null) {
++            return false;
++        }
++        return shouldTickBlocksAt(pos);
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

@@ -74,6 +74,72 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     public class Performance extends ConfigurationPart {
 
+        @Setting("optimizations")
+        public Optimizations optimizations = new Optimizations();
+
+        public class Optimizations extends ConfigurationPart {
+
+            @Setting("disable-method-profiler")
+            @Comment("Disables the method profiler to save some performance. Mainly used for debugging purposes.")
+            public boolean disableMethodProfiler = true;
+
+            @Setting("skip-useless-secondary-poi-sensor")
+            public boolean skipUselessSecondaryPoiSensor = true;
+
+            @Setting("clump-orbs")
+            @Comment("Clumps experience orbs together to reduce entity count.")
+            public boolean clumpOrbs = true;
+
+            @Setting("enable-suffocation-optimization")
+            @Comment("Optimizes the suffocation check by selectively skipping the check in a way that still appears vanilla.")
+            public boolean enableSuffocationOptimization = true;
+
+            @Setting("use-compact-bit-storage")
+            @Comment("Fixes memory waste caused by sending empty chunks as if they contain blocks.")
+            public boolean useCompactBitStorage = true;
+
+            @Setting("command-block-parse-results-caching")
+            @Comment("Caches the parse results of command blocks.")
+            public boolean commandBlockParseResultsCaching = true;
+
+            @Setting("sheep-optimization")
+            @Comment("Uses a prebaked list of all possible sheep color combinations.")
+            public boolean sheepOptimization = true;
+
+            @Setting("optimized-dragon-respawn")
+            @Comment("Improves performance and reduces lag during the dragon resurrection event.")
+            public boolean optimizedDragonRespawn = true;
+
+            @Setting("reduce-chunk-load-and-lookup")
+            @Comment("Reduces chunk accesses required during operations such as Enderman teleportation.")
+            public boolean reduceChunkLoadAndLookup = true;
+
+            @Setting("create-snapshot-on-retrieving-block-state")
+            @Comment("Whether to create a snapshot when plugins retrieve BlockState data.")
+            public boolean createSnapshotOnRetrievingBlockState = true;
+
+            @Setting("sleeping-block-entity")
+            @Comment("Allows inactive block entities to enter a sleeping state.")
+            public boolean sleepingBlockEntity = true;
+
+            @Setting("equipment-tracking")
+            @Comment("Skips repeated checks whether the equipment of an entity changed.")
+            public boolean equipmentTracking = true;
+
+            @Setting("hopper-throttle-when-full")
+            public HopperThrottleWhenFull hopperThrottleWhenFull = new HopperThrottleWhenFull();
+
+            public class HopperThrottleWhenFull extends ConfigurationPart {
+
+                @Comment("When enabled, hoppers will throttle if target container is full.")
+                public boolean enabled = true;
+
+                @Setting("skip-ticks")
+                @Comment("The amount of ticks to skip when the hopper is throttled.")
+                public int skipTicks = 8;
+            }
+        }
+
         @Setting("dab")
         public Dab dab = new Dab();
 

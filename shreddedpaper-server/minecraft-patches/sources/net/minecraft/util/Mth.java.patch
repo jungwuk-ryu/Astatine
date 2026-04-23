@@ -1,6 +1,15 @@
 --- a/net/minecraft/util/Mth.java
 +++ b/net/minecraft/util/Mth.java
-@@ -324,7 +_,7 @@
+@@ -31,7 +_,7 @@ public class Mth {
+     private static final int SIN_MASK = 65535;
+     private static final int COS_OFFSET = 16384;
+     private static final double SIN_SCALE = 10430.378350470453;
+-    private static final float[] SIN = Util.make(new float[65536], floats -> {
++    public static final float[] SIN = Util.make(new float[65536], floats -> { // DivineMC - lithium compact sine LUT
+         for (int i1 = 0; i1 < floats.length; i1++) {
+             floats[i1] = (float)Math.sin(i1 / 10430.378350470453);
+         }
+@@ -324,7 +_,7 @@ public class Mth {
          return l >> 16;
      }
  

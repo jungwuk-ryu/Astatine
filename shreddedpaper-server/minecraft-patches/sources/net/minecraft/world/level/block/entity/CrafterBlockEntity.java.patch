@@ -1,0 +1,76 @@
+--- a/net/minecraft/world/level/block/entity/CrafterBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/CrafterBlockEntity.java
+@@ -23,7 +_,7 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
+ 
+-public class CrafterBlockEntity extends RandomizableContainerBlockEntity implements CraftingContainer {
++public class CrafterBlockEntity extends RandomizableContainerBlockEntity implements CraftingContainer, net.caffeinemc.mods.lithium.common.block.entity.SleepingBlockEntity, net.caffeinemc.mods.lithium.common.block.entity.SetChangedHandlingBlockEntity { // DivineMC - lithium: sleeping_block_entity
+     public static final int CONTAINER_WIDTH = 3;
+     public static final int CONTAINER_HEIGHT = 3;
+     public static final int CONTAINER_SIZE = 9;
+@@ -171,6 +_,7 @@ public class CrafterBlockEntity extends RandomizableContainerBlockEntity impleme
+             }
+         });
+         this.containerData.set(9, input.getIntOr("triggered", 0));
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && this.isSleeping() && this.level != null) this.wakeUpNow(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     @Override
+@@ -280,10 +_,12 @@ public class CrafterBlockEntity extends RandomizableContainerBlockEntity impleme
+                 level.setBlock(pos, state.setValue(CrafterBlock.CRAFTING, false), Block.UPDATE_ALL);
+             }
+         }
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && i < 0) crafter.checkSleep(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     public void setCraftingTicksRemaining(int craftingTicksRemaining) {
+         this.craftingTicksRemaining = craftingTicksRemaining;
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && this.isSleeping() && this.level != null) this.wakeUpNow(); // DivineMC - lithium: sleeping_block_entity
+     }
+ 
+     public int getRedstoneSignal() {
+@@ -302,4 +_,43 @@ public class CrafterBlockEntity extends RandomizableContainerBlockEntity impleme
+     private boolean slotCanBeDisabled(int slot) {
+         return slot > -1 && slot < 9 && this.items.get(slot).isEmpty();
+     }
++
++    // DivineMC start - lithium: sleeping_block_entity
++    private net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper = null;
++    private TickingBlockEntity sleepingTicker = null;
++
++    @Override
++    public net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper lithium$getTickWrapper() {
++        return this.tickWrapper;
++    }
++
++    @Override
++    public void lithium$setTickWrapper(net.minecraft.world.level.chunk.LevelChunk.RebindableTickingBlockEntityWrapper tickWrapper) {
++        this.tickWrapper = tickWrapper;
++        this.lithium$setSleepingTicker(null);
++    }
++
++    @Override
++    public TickingBlockEntity lithium$getSleepingTicker() {
++        return this.sleepingTicker;
++    }
++
++    @Override
++    public void lithium$setSleepingTicker(TickingBlockEntity sleepingTicker) {
++        this.sleepingTicker = sleepingTicker;
++    }
++
++    private void checkSleep() {
++        if (this.craftingTicksRemaining == 0) {
++            this.lithium$startSleeping();
++        }
++    }
++
++    @Override
++    public void lithium$handleSetChanged() {
++        if (this.isSleeping() && this.level != null && !this.level.isClientSide()) {
++            this.wakeUpNow();
++        }
++    }
++    // DivineMC end - lithium: sleeping_block_entity
+ }

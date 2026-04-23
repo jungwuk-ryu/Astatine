@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/level/block/state/pattern/BlockPattern.java
++++ b/net/minecraft/world/level/block/state/pattern/BlockPattern.java
+@@ -57,7 +_,7 @@ public class BlockPattern {
+         return this.matches(pos, finger, thumb, loadingCache);
+     }
+ 
+-    private BlockPattern.@Nullable BlockPatternMatch matches(BlockPos pos, Direction finger, Direction thumb, LoadingCache<BlockPos, BlockInWorld> cache) {
++    public BlockPattern.@Nullable BlockPatternMatch matches(BlockPos pos, Direction finger, Direction thumb, LoadingCache<BlockPos, BlockInWorld> cache) { // DivineMC - Carpet-AMS-Addition: Optimized dragon respawn - make public
+         for (int i = 0; i < this.width; i++) {
+             for (int i1 = 0; i1 < this.height; i1++) {
+                 for (int i2 = 0; i2 < this.depth; i2++) {
