@@ -1,0 +1,19 @@
+--- a/net/minecraft/world/entity/ai/goal/GoalSelector.java
++++ b/net/minecraft/world/entity/ai/goal/GoalSelector.java
+@@ -36,10 +_,14 @@ public class GoalSelector {
+     }
+ 
+     // Paper start - EAR 2
+-    public boolean inactiveTick() {
++    // DivineMC start - Dynamic Activation of Brain
++    public boolean inactiveTick(int tickRate, boolean inactive) {
++        if (inactive && !org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabEnabled) tickRate = 4;
++        tickRate = Math.min(tickRate, 3);
+         this.curRate++;
+-        return this.curRate % 3 == 0; // TODO newGoalRate was already unused in 1.20.4, check if this is correct
++        return this.curRate % tickRate == 0;
+     }
++    // DivineMC end - Dynamic Activation of Brain
+ 
+     public boolean hasTasks() {
+         for (WrappedGoal task : this.availableGoals) {

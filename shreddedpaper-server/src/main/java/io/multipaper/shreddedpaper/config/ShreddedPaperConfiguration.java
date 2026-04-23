@@ -4,6 +4,8 @@ import io.papermc.paper.configuration.ConfigurationPart;
 import org.spongepowered.configurate.objectmapping.meta.Comment;
 import org.spongepowered.configurate.objectmapping.meta.Setting;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 @SuppressWarnings({ "InnerClassMayBeStatic" })
@@ -65,6 +67,47 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
         }
 
+    }
+
+    @Setting("performance")
+    public Performance performance = new Performance();
+
+    public class Performance extends ConfigurationPart {
+
+        @Setting("dab")
+        public Dab dab = new Dab();
+
+        public class Dab extends ConfigurationPart {
+
+            @Comment("Enables DivineMC's Dynamic Activation of Brain optimization.")
+            public boolean enabled = false;
+
+            @Setting("start-distance")
+            @Comment("How far away an entity has to be before DAB starts reducing brain tick frequency.")
+            public int startDistance = 12;
+
+            @Setting("maximum-activation-frequency")
+            @Comment("How often, in ticks, the furthest entities get their pathfinders and behaviors ticked.")
+            public int maximumActivationFrequency = 20;
+
+            @Setting("activation-distance-mod")
+            @Comment("Distance-to-frequency divisor exponent. Frequency is roughly distanceToPlayer^2 / 2^value.")
+            public int activationDistanceMod = 8;
+
+            @Setting("dont-enable-if-in-water")
+            @Comment("When enabled, non-aquatic entities in water are not affected by DAB.")
+            public boolean dontEnableIfInWater = false;
+
+            @Setting("blacked-entities")
+            @Comment("Entity ids that should not be affected by DAB.")
+            public List<String> blackedEntities = new ArrayList<>(Arrays.asList(
+                "villager",
+                "axolotl",
+                "hoglin",
+                "zombified_piglin",
+                "goat"
+            ));
+        }
     }
 
     public RegionFormat regionFormat = new RegionFormat();

@@ -1,11 +1,19 @@
 package org.bxteam.divinemc.config;
 
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.EntityType;
 import org.bxteam.divinemc.async.pathfinding.PathfindTaskRejectPolicy;
 import org.bxteam.divinemc.region.EnumRegionFileExtension;
 import org.bxteam.divinemc.region.type.LinearRegionFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 
 public final class DivineConfig {
 
@@ -16,8 +24,101 @@ public final class DivineConfig {
 
     public static void syncFromShreddedPaper(final ShreddedPaperConfiguration configuration) {
         MiscCategory.sync(configuration);
+        PerformanceCategory.sync(configuration);
         VirtualThreadsCategory.sync(configuration);
         AsyncCategory.sync(configuration);
+    }
+
+    public static final class PerformanceCategory {
+        public static boolean dabEnabled = false;
+        public static int dabStartDistance = 12;
+        public static int dabStartDistanceSquared = dabStartDistance * dabStartDistance;
+        public static int dabMaximumActivationFrequency = 20;
+        public static int dabActivationDistanceMod = 8;
+        public static boolean dabDontEnableIfInWater = false;
+        public static List<String> dabBlackedEntities = new ArrayList<>(Arrays.asList(
+            "villager",
+            "axolotl",
+            "hoglin",
+            "zombified_piglin",
+            "goat"
+        ));
+
+        private PerformanceCategory() {
+        }
+
+        public static void sync(final ShreddedPaperConfiguration configuration) {
+            if (configuration == null) {
+                applyDefaults();
+                return;
+            }
+
+            ShreddedPaperConfiguration.Performance performance = configuration.performance;
+            if (performance == null) {
+                performance = configuration.new Performance();
+                configuration.performance = performance;
+            }
+
+            ShreddedPaperConfiguration.Performance.Dab dab = performance.dab;
+            if (dab == null) {
+                dab = performance.new Dab();
+                performance.dab = dab;
+            }
+
+            dabEnabled = dab.enabled;
+            dabStartDistance = Math.max(0, dab.startDistance);
+            dabStartDistanceSquared = dabStartDistance * dabStartDistance;
+            dabMaximumActivationFrequency = Math.max(1, dab.maximumActivationFrequency);
+            dabActivationDistanceMod = Math.max(1, dab.activationDistanceMod);
+            dabDontEnableIfInWater = dab.dontEnableIfInWater;
+            dabBlackedEntities = dab.blackedEntities == null
+                ? new ArrayList<>()
+                : new ArrayList<>(dab.blackedEntities);
+
+            dab.startDistance = dabStartDistance;
+            dab.maximumActivationFrequency = dabMaximumActivationFrequency;
+            dab.activationDistanceMod = dabActivationDistanceMod;
+            dab.blackedEntities = dabBlackedEntities;
+
+            configureDabEntityTypes();
+        }
+
+        private static void applyDefaults() {
+            dabEnabled = false;
+            dabStartDistance = 12;
+            dabStartDistanceSquared = dabStartDistance * dabStartDistance;
+            dabMaximumActivationFrequency = 20;
+            dabActivationDistanceMod = 8;
+            dabDontEnableIfInWater = false;
+            dabBlackedEntities = new ArrayList<>(Arrays.asList(
+                "villager",
+                "axolotl",
+                "hoglin",
+                "zombified_piglin",
+                "goat"
+            ));
+            configureDabEntityTypes();
+        }
+
+        private static void configureDabEntityTypes() {
+            for (EntityType<?> entityType : BuiltInRegistries.ENTITY_TYPE) {
+                entityType.dabEnabled = true;
+            }
+
+            final String defaultPrefix = Identifier.DEFAULT_NAMESPACE + Identifier.NAMESPACE_SEPARATOR;
+            for (final String name : dabBlackedEntities) {
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                final String lowerName = name.toLowerCase(Locale.ROOT);
+                final String typeId = lowerName.startsWith(defaultPrefix) ? lowerName : defaultPrefix + lowerName;
+
+                EntityType.byString(typeId).ifPresentOrElse(
+                    entityType -> entityType.dabEnabled = false,
+                    () -> LOGGER.warn("Unknown entity {}, in performance.dab.blacked-entities", name)
+                );
+            }
+        }
     }
 
     public static final class VirtualThreadsCategory {

@@ -1,0 +1,30 @@
+--- a/net/minecraft/world/entity/monster/piglin/Piglin.java
++++ b/net/minecraft/world/entity/monster/piglin/Piglin.java
+@@ -135,6 +_,7 @@ public class Piglin extends AbstractPiglin implements CrossbowAttackMob, Invento
+     private static final com.mojang.serialization.Codec<java.util.Set<net.minecraft.world.item.Item>> ITEM_SET_CODEC = net.minecraft.core.registries.BuiltInRegistries.ITEM
+         .byNameCodec().listOf().xmap(java.util.HashSet::new, List::copyOf);
+     // CraftBukkit end
++    private int behaviorTick; // DivineMC - Dynamic Activation of Brain
+ 
+     public Piglin(EntityType<? extends AbstractPiglin> type, Level level) {
+         super(type, level);
+@@ -365,11 +_,14 @@ public class Piglin extends AbstractPiglin implements CrossbowAttackMob, Invento
+     protected void customServerAiStep(ServerLevel level) {
+         ProfilerFiller profilerFiller = Profiler.get();
+         profilerFiller.push("piglinBrain");
+-        if (getRider() == null || !this.isControllable()) // Purpur - only use brain if no rider
+-        this.getBrain().tick(level, this);
+-        profilerFiller.pop();
+-        PiglinAi.updateActivity(this);
+-        super.customServerAiStep(level);
++        // DivineMC start - Dynamic Activation of Brain
++        if ((getRider() == null || !this.isControllable()) && this.behaviorTick++ % this.activatedPriority == 0) { // Purpur - only use brain if no rider
++            this.getBrain().tick(level, this);
++            profilerFiller.pop();
++            PiglinAi.updateActivity(this);
++            super.customServerAiStep(level);
++        }
++        // DivineMC end - Dynamic Activation of Brain
+     }
+ 
+     @Override

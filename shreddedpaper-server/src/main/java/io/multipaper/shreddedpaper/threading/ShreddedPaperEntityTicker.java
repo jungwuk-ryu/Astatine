@@ -15,6 +15,7 @@ public class ShreddedPaperEntityTicker {
         ProfilerFiller profilerFiller = Profiler.get();
         ServerLevel level = (ServerLevel) entity.level();
 
+        entity.activatedPriorityReset = false; // DivineMC - Dynamic Activation of Brain
         if (!entity.isRemoved()) {
             if (!level.tickRateManager().isEntityFrozen(entity)) {
                 profilerFiller.push("checkDespawn");
