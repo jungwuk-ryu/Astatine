@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,6 +24,8 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Queue;
 
 public class ShreddedPaperChunkTicker {
 
@@ -33,6 +36,7 @@ public class ShreddedPaperChunkTicker {
     private final ServerChunkCache serverChunkCache;
 
     private final List<Entity> trackedEntitiesWorkerList = new ArrayList<>(); // Re-usable list for processing tracked entities in parallel
+    private final Queue<ChunkMap.TrackedEntity> asyncTrackerSendChanges = new ConcurrentLinkedQueue<>(); // DivineMC - Multithreaded tracker
 
     public ShreddedPaperChunkTicker(ServerChunkCache serverChunkCache) {
         this.serverChunkCache = serverChunkCache;
@@ -41,6 +45,7 @@ public class ShreddedPaperChunkTicker {
     public CompletableFuture<Void> tickChunks(final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
         ServerLevel level = this.serverChunkCache.chunkMap.level;
         List<CompletableFuture<Void>> futures = new ArrayList<>();
+        this.asyncTrackerSendChanges.clear(); // DivineMC - Multithreaded tracker
 
         level.chunkSource.tickingRegions.forEach(
                 region -> futures.add(this.tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState))
@@ -48,7 +53,11 @@ public class ShreddedPaperChunkTicker {
 
         CompletableFuture<Void> future = CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
 
-        if (ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) future = future.thenCompose(v -> this.processTrackQueueInParallel(level));
+        final boolean useDivineAsyncTracker = org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
+                && !org.bxteam.divinemc.async.tracking.MultithreadedTracker.requiresRegionThreadTracker();
+        final boolean forceRegionThreadTracker = org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
+                && org.bxteam.divinemc.async.tracking.MultithreadedTracker.requiresRegionThreadTracker();
+        if (!forceRegionThreadTracker && (useDivineAsyncTracker || ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel)) future = future.thenCompose(v -> this.processTrackQueueInParallel(level));
 
         if (ShreddedPaperConfiguration.get().optimizations.flushQueueInParallel) future = future.thenCompose(v -> this.flushQueueInParallel(level));
 
@@ -57,6 +66,16 @@ public class ShreddedPaperChunkTicker {
 
     /** processTrackQueue has been renamed to newTrackerTick */
     private CompletableFuture<Void> processTrackQueueInParallel(ServerLevel level) {
+        if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
+                && !org.bxteam.divinemc.async.tracking.MultithreadedTracker.requiresRegionThreadTracker()) {
+            final List<ChunkMap.TrackedEntity> trackers = new ArrayList<>();
+            ChunkMap.TrackedEntity tracker;
+            while ((tracker = this.asyncTrackerSendChanges.poll()) != null) {
+                trackers.add(tracker);
+            }
+            return org.bxteam.divinemc.async.tracking.MultithreadedTracker.sendChanges(trackers);
+        }
+
         level.getChunkSource().mainThreadProcessor.managedBlock(() -> level.chunkScheduler.getRegionLocker().globalLock().tryWriteLock() != 0);
         CompletableFuture<Void> allFuture = CompletableFuture.completedFuture(null);
         try {
@@ -143,7 +162,17 @@ public class ShreddedPaperChunkTicker {
 
             region.forEachTickingEntity(ShreddedPaperEntityTicker::tickEntity);
 
-            if (!ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) region.forEachTrackedEntity(ShreddedPaperEntityTicker::processTrackQueue);
+            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
+                    && !org.bxteam.divinemc.async.tracking.MultithreadedTracker.requiresRegionThreadTracker()) {
+                region.forEachTrackedEntity(entity -> {
+                    ChunkMap.TrackedEntity tracker = ShreddedPaperEntityTicker.processTrackQueueForAsyncSend(entity);
+                    if (tracker != null) {
+                        this.asyncTrackerSendChanges.add(tracker);
+                    }
+                });
+            } else if (!ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel
+                    || (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
+                    && org.bxteam.divinemc.async.tracking.MultithreadedTracker.requiresRegionThreadTracker())) region.forEachTrackedEntity(ShreddedPaperEntityTicker::processTrackQueue);
 
             level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
 

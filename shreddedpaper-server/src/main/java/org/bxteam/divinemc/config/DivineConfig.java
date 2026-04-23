@@ -20,6 +20,12 @@ public final class DivineConfig {
     }
 
     public static final class AsyncCategory {
+        public static boolean multithreadedEnabled = true;
+        public static boolean multithreadedCompatModeEnabled = false;
+        public static int asyncEntityTrackerMaxThreads = 1;
+        public static int asyncEntityTrackerKeepalive = 60;
+        public static int asyncEntityTrackerQueueSize = 384;
+
         public static boolean asyncPathfinding = true;
         public static int asyncPathfindingMaxThreads = 1;
         public static int asyncPathfindingKeepalive = 60;
@@ -41,22 +47,38 @@ public final class DivineConfig {
                 configuration.asyncOperations = async;
             }
 
+            ShreddedPaperConfiguration.AsyncOperations.MultithreadedTracker multithreadedTracker = async.multithreadedTracker;
+            if (multithreadedTracker == null) {
+                multithreadedTracker = async.new MultithreadedTracker();
+                async.multithreadedTracker = multithreadedTracker;
+            }
+
             ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = async.pathfinding;
             if (pathfinding == null) {
                 pathfinding = async.new Pathfinding();
                 async.pathfinding = pathfinding;
             }
 
-            asyncPathfinding = pathfinding.enable;
-            asyncPathfindingMaxThreads = pathfinding.maxThreads;
-            asyncPathfindingKeepalive = Math.max(1, pathfinding.keepalive);
-
             final int availableProcessors = Runtime.getRuntime().availableProcessors();
-            if (asyncPathfindingMaxThreads < 0) {
-                asyncPathfindingMaxThreads = Math.max(availableProcessors + asyncPathfindingMaxThreads, 1);
-            } else if (asyncPathfindingMaxThreads == 0) {
-                asyncPathfindingMaxThreads = Math.max(availableProcessors / 4, 1);
+
+            multithreadedEnabled = multithreadedTracker.enable;
+            multithreadedCompatModeEnabled = multithreadedTracker.compatMode;
+            asyncEntityTrackerMaxThreads = normalizeAsyncThreads(multithreadedTracker.maxThreads, availableProcessors);
+            asyncEntityTrackerKeepalive = Math.max(1, multithreadedTracker.keepalive);
+
+            if (!multithreadedEnabled) {
+                asyncEntityTrackerMaxThreads = 0;
+            } else {
+                LOGGER.info("Using {} threads for Async Entity Tracker", asyncEntityTrackerMaxThreads);
             }
+
+            asyncEntityTrackerQueueSize = multithreadedTracker.queueSize <= 0
+                ? Math.max(asyncEntityTrackerMaxThreads, 1) * 384
+                : multithreadedTracker.queueSize;
+
+            asyncPathfinding = pathfinding.enable;
+            asyncPathfindingMaxThreads = normalizeAsyncThreads(pathfinding.maxThreads, availableProcessors);
+            asyncPathfindingKeepalive = Math.max(1, pathfinding.keepalive);
 
             if (!asyncPathfinding) {
                 asyncPathfindingMaxThreads = 0;
@@ -83,14 +105,35 @@ public final class DivineConfig {
             pathfinding.keepalive = asyncPathfindingKeepalive;
             pathfinding.queueSize = asyncPathfindingQueueSize;
             pathfinding.rejectPolicy = asyncPathfindingRejectPolicy.name();
+
+            multithreadedTracker.enable = multithreadedEnabled;
+            multithreadedTracker.compatMode = multithreadedCompatModeEnabled;
+            multithreadedTracker.maxThreads = asyncEntityTrackerMaxThreads;
+            multithreadedTracker.keepalive = asyncEntityTrackerKeepalive;
+            multithreadedTracker.queueSize = asyncEntityTrackerQueueSize;
         }
 
         private static void applyDefaults() {
+            multithreadedEnabled = true;
+            multithreadedCompatModeEnabled = false;
+            asyncEntityTrackerMaxThreads = 1;
+            asyncEntityTrackerKeepalive = 60;
+            asyncEntityTrackerQueueSize = 384;
             asyncPathfinding = true;
             asyncPathfindingMaxThreads = 1;
             asyncPathfindingKeepalive = 60;
             asyncPathfindingQueueSize = 256;
             asyncPathfindingRejectPolicy = PathfindTaskRejectPolicy.CALLER_RUNS;
+        }
+
+        private static int normalizeAsyncThreads(final int configuredThreads, final int availableProcessors) {
+            if (configuredThreads < 0) {
+                return Math.max(availableProcessors + configuredThreads, 1);
+            }
+            if (configuredThreads == 0) {
+                return Math.max(availableProcessors / 4, 1);
+            }
+            return Math.max(configuredThreads, 1);
         }
     }
 

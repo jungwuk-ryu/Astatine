@@ -1,0 +1,15 @@
+--- a/net/minecraft/server/level/ServerBossEvent.java
++++ b/net/minecraft/server/level/ServerBossEvent.java
+@@ -13,7 +_,11 @@ import net.minecraft.util.Mth;
+ import net.minecraft.world.BossEvent;
+ 
+ public class ServerBossEvent extends BossEvent {
+-    private final Set<ServerPlayer> players = Sets.newHashSet();
++    // DivineMC start - Multithreaded tracker - players can be removed in async tracking
++    private final Set<ServerPlayer> players = org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled
++            ? Sets.newConcurrentHashSet()
++            : Sets.newHashSet();
++    // DivineMC end - Multithreaded tracker
+     private final Set<ServerPlayer> unmodifiablePlayers = Collections.unmodifiableSet(this.players);
+     public boolean visible = true;
+ 

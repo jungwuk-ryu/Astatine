@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/chunk_system/player/RegionizedPlayerChunkLoader.java
 +++ b/ca/spottedleaf/moonrise/patches/chunk_system/player/RegionizedPlayerChunkLoader.java
-@@ -17,6 +_,9 @@
+@@ -17,6 +_,9 @@ import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskSchedule
  import ca.spottedleaf.moonrise.patches.chunk_system.ticket.ChunkSystemTicketType;
  import ca.spottedleaf.moonrise.patches.chunk_system.util.ParallelSearchRadiusIteration;
  import com.google.gson.JsonObject;
@@ -10,7 +10,7 @@
  import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
  import it.unimi.dsi.fastutil.longs.LongArrayList;
  import it.unimi.dsi.fastutil.longs.LongComparator;
-@@ -305,6 +_,7 @@
+@@ -305,6 +_,7 @@ public final class RegionizedPlayerChunkLoader {
  
      public void tick() {
          TickThread.ensureTickThread("Cannot tick player chunk loader async");
@@ -18,7 +18,20 @@
          long currTime = System.nanoTime();
          for (final ServerPlayer player : new java.util.ArrayList<>(this.world.players())) {
              final PlayerChunkLoaderData loader = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
-@@ -387,6 +_,7 @@
+@@ -344,7 +_,11 @@ public final class RegionizedPlayerChunkLoader {
+         private boolean canGenerateChunks = true;
+ 
+         private final ArrayDeque<ChunkHolderManager.TicketOperation<?, ?>> delayedTicketOps = new ArrayDeque<>();
+-        private final LongOpenHashSet sentChunks = new LongOpenHashSet();
++        // DivineMC start - Multithreaded tracker
++        private final LongOpenHashSet sentChunks = org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled && !org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedCompatModeEnabled
++            ? new org.bxteam.divinemc.util.map.ConcurrentLongHashSet()
++            : new LongOpenHashSet();
++        // DivineMC end - Multithreaded tracker
+ 
+         private static final byte CHUNK_TICKET_STAGE_NONE           = 0;
+         private static final byte CHUNK_TICKET_STAGE_LOADING        = 1;
+@@ -387,6 +_,7 @@ public final class RegionizedPlayerChunkLoader {
                  Math.abs(c2x - centerX) + Math.abs(c2z - centerZ)
              );
          };
@@ -26,7 +39,7 @@
          private final LongHeapPriorityQueue sendQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue tickingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue generatingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
-@@ -641,7 +_,7 @@
+@@ -641,7 +_,7 @@ public final class RegionizedPlayerChunkLoader {
              return true;
          }
  
@@ -35,7 +48,7 @@
              TickThread.ensureTickThread(this.player, "Cannot tick player chunk loader async");
              if (this.removed) {
                  throw new IllegalStateException("Ticking removed player chunk loader");
-@@ -821,17 +_,31 @@
+@@ -821,17 +_,31 @@ public final class RegionizedPlayerChunkLoader {
              final long maxSends = Math.max(0L, Math.min(MAX_RATE, Integer.MAX_VALUE)); // note: no logic to track concurrent sends
              final int maxSendsThisTick = Math.min((int)this.chunkSendLimiter.takeAllocation(time, sendRate, maxSends), this.sendQueue.size());
              // we do not return sends that we took from the allocation back because we want to limit the max send rate, not target it
@@ -68,7 +81,7 @@
                      // not yet post-processed, need to do this so that tile entities can properly be sent to clients
                      chunk.postProcessGeneration(this.world);
                      // check if there was any recursive action
-@@ -841,7 +_,17 @@
+@@ -841,7 +_,17 @@ public final class RegionizedPlayerChunkLoader {
                  }
                  this.sendQueue.dequeueLong();
  
@@ -87,7 +100,7 @@
  
                  if (this.removed) {
                      // sendChunk may invoke plugin logic
-@@ -849,6 +_,15 @@
+@@ -849,6 +_,15 @@ public final class RegionizedPlayerChunkLoader {
                  }
              }
  
@@ -103,7 +116,7 @@
              this.flushDelayedTicketOps();
          }
  
-@@ -907,7 +_,7 @@
+@@ -907,7 +_,7 @@ public final class RegionizedPlayerChunkLoader {
              );
          }
  
@@ -112,7 +125,7 @@
              TickThread.ensureTickThread(this.player, "Cannot update player asynchronously");
              if (this.removed) {
                  throw new IllegalStateException("Updating removed player chunk loader");
-@@ -967,6 +_,7 @@
+@@ -967,6 +_,7 @@ public final class RegionizedPlayerChunkLoader {
                  this.player.connection.send(this.updateClientSimulationDistance(tickViewDistance));
              }
  
@@ -120,7 +133,7 @@
              this.sendQueue.clear();
              this.tickingQueue.clear();
              this.generatingQueue.clear();
-@@ -1073,6 +_,7 @@
+@@ -1073,6 +_,7 @@ public final class RegionizedPlayerChunkLoader {
              this.tickMap.remove();
  
              // purge queues

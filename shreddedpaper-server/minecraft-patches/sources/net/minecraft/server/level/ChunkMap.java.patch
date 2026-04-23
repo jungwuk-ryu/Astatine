@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
-@@ -8,6 +_,8 @@
+@@ -8,6 +_,8 @@ import com.google.common.collect.ImmutableList.Builder;
  import com.mojang.datafixers.DataFixer;
  import com.mojang.logging.LogUtils;
  import com.mojang.serialization.MapCodec;
@@ -9,7 +9,7 @@
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  import it.unimi.dsi.fastutil.longs.Long2ByteMap;
-@@ -20,6 +_,7 @@
+@@ -20,6 +_,7 @@ import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
  import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
  import it.unimi.dsi.fastutil.longs.LongSet;
  import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
@@ -17,7 +17,7 @@
  import java.io.IOException;
  import java.io.Writer;
  import java.nio.file.Path;
-@@ -32,11 +_,14 @@
+@@ -32,11 +_,14 @@ import java.util.Objects;
  import java.util.Optional;
  import java.util.Queue;
  import java.util.Set;
@@ -32,7 +32,7 @@
  import java.util.concurrent.atomic.AtomicInteger;
  import java.util.function.BooleanSupplier;
  import java.util.function.Consumer;
-@@ -105,6 +_,7 @@
+@@ -105,6 +_,7 @@ import net.minecraft.world.level.storage.DimensionDataStorage;
  import net.minecraft.world.level.storage.LevelStorageSource;
  import net.minecraft.world.phys.Vec3;
  import org.apache.commons.lang3.mutable.MutableBoolean;
@@ -40,7 +40,7 @@
  import org.jspecify.annotations.Nullable;
  import org.slf4j.Logger;
  
-@@ -139,7 +_,8 @@
+@@ -139,7 +_,8 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      public final ChunkMap.DistanceManager distanceManager;
      private final String storageName;
      private final PlayerMap playerMap = new PlayerMap();
@@ -50,17 +50,31 @@
      private final Long2ByteMap chunkTypeCache = new Long2ByteOpenHashMap();
      // Paper - rewrite chunk system
      public int serverViewDistance;
-@@ -262,7 +_,9 @@
+@@ -261,9 +_,21 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         }
  
          final ServerPlayer[] backingSet = inRange.getRawDataUnchecked();
-         for (int i = 0, len = inRange.size(); i < len; i++) {
-+            try { // ShreddedPaper - concurrent modification
-             ++(backingSet[i].mobCounts[index]);
-+            } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
+-        for (int i = 0, len = inRange.size(); i < len; i++) {
+-            ++(backingSet[i].mobCounts[index]);
++        // DivineMC start - Multithreaded Tracker
++        if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled) {
++            for (int i = 0, len = Math.min(backingSet.length, inRange.size()); i < len; i++) {
++                final ServerPlayer player = backingSet[i];
++                if (player == null) continue;
++                ++(player.mobCounts[index]);
++            }
++        } else {
++            for (int i = 0, len = inRange.size(); i < len; i++) {
++                try { // ShreddedPaper - concurrent modification
++                ++(backingSet[i].mobCounts[index]);
++                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
++            }
          }
++        // DivineMC end - Multithreaded Tracker
      }
  
-@@ -279,7 +_,9 @@
+     // Paper start - per player mob count backoff
+@@ -279,7 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
          }
          final ServerPlayer[] backingSet = inRange.getRawDataUnchecked();
          for (int i = 0, len = inRange.size(); i < len; i++) {
@@ -70,7 +84,7 @@
          }
      }
      // Paper end - per player mob count backoff
-@@ -431,7 +_,7 @@
+@@ -431,7 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      }
  
      private void processUnloads(BooleanSupplier hasMoreTime) {
@@ -79,7 +93,7 @@
          ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler().chunkHolderManager.autoSave(); // Paper - rewrite chunk system
      }
  
-@@ -708,7 +_,7 @@
+@@ -708,7 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      }
  
      // Paper start - optimise chunk tick iteration
@@ -88,7 +102,7 @@
          final ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkData chunkData = ((ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkSystemLevelChunk)levelChunk).moonrise$getChunkHolder().holderData;
          final ca.spottedleaf.moonrise.common.misc.NearbyPlayers.TrackedChunk nearbyPlayers = chunkData.nearbyPlayers;
          if (nearbyPlayers == null) {
-@@ -728,6 +_,7 @@
+@@ -728,6 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          Objects.checkFromIndexSize(0, len, raw.length);
          for (int i = 0; i < len; ++i) {
@@ -96,7 +110,7 @@
              // Paper start - PlayerNaturallySpawnCreaturesEvent
              com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent event = raw[i].playerNaturallySpawnedEvent;
              if (event == null || event.isCancelled()) {
-@@ -738,31 +_,34 @@
+@@ -738,31 +_,34 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                  // Paper end - PlayerNaturallySpawnCreaturesEvent
                  return true;
              }
@@ -150,7 +164,7 @@
  
      void forEachBlockTickingChunk(Consumer<LevelChunk> action) {
          this.distanceManager.forEachEntityTickingChunk(chunkPos -> {
-@@ -820,7 +_,9 @@
+@@ -820,7 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          Objects.checkFromIndexSize(0, len, raw.length);
          for (int i = 0; i < len; ++i) {
@@ -160,7 +174,7 @@
              // Paper start - PlayerNaturallySpawnCreaturesEvent
              com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent event;
              blockRange = 16384.0D;
-@@ -833,6 +_,7 @@
+@@ -833,6 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                  // Paper end - PlayerNaturallySpawnCreaturesEvent
                  return true;
              }
@@ -168,7 +182,7 @@
          }
  
          return false;
-@@ -855,7 +_,9 @@
+@@ -855,7 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          Objects.checkFromIndexSize(0, len, raw.length);
          for (int i = 0; i < len; ++i) {
@@ -178,7 +192,7 @@
              if (this.playerIsCloseEnoughForSpawning(player, chunkPos, 16384.0D)) { // Spigot
                  if (ret == null) {
                      ret = new ArrayList<>(len - i);
-@@ -864,6 +_,7 @@
+@@ -864,6 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                      ret.add(player);
                  }
              }
@@ -186,7 +200,7 @@
          }
  
          return ret == null ? new ArrayList<>() : ret;
-@@ -985,9 +_,9 @@
+@@ -985,9 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      public void addEntity(Entity entity) {
          org.spigotmc.AsyncCatcher.catchOp("entity track"); // Spigot
          // Paper start - ignore and warn about illegal addEntity calls instead of crashing server
@@ -198,7 +212,7 @@
              return;
          }
          // Paper end - ignore and warn about illegal addEntity calls instead of crashing server
-@@ -998,11 +_,12 @@
+@@ -998,11 +_,12 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
              i = org.spigotmc.TrackingRange.getEntityTrackingRange(entity, i); // Spigot
              if (i != 0) {
                  int updateInterval = type.updateInterval();
@@ -213,7 +227,7 @@
                      // Paper start - optimise entity tracker
                      if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$getTrackedEntity() != null) {
                          throw new IllegalStateException("Entity is already tracked");
-@@ -1012,8 +_,9 @@
+@@ -1012,8 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                      trackedEntity.updatePlayers(this.level.players());
                      if (entity instanceof ServerPlayer serverPlayer) {
                          this.updatePlayerStatus(serverPlayer, true);
@@ -224,7 +238,7 @@
                              if (trackedEntity1.entity != serverPlayer) {
                                  trackedEntity1.updatePlayer(serverPlayer);
                              }
-@@ -1029,13 +_,14 @@
+@@ -1029,13 +_,14 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
          if (entity instanceof ServerPlayer serverPlayer) {
              this.updatePlayerStatus(serverPlayer, false);
  
@@ -241,7 +255,7 @@
              trackedEntity1.broadcastRemoved();
          }
          ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$setTrackedEntity(null); // Paper - optimise entity tracker
-@@ -1043,22 +_,25 @@
+@@ -1043,22 +_,25 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
      // Paper start - optimise entity tracker
      private void newTrackerTick() {
@@ -281,7 +295,7 @@
      }
      // Paper end - optimise entity tracker
  
-@@ -1074,7 +_,7 @@
+@@ -1074,7 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
          List<ServerPlayer> list = Lists.newArrayList();
          List<ServerPlayer> list1 = this.level.players();
  
@@ -290,7 +304,7 @@
              SectionPos sectionPos = trackedEntity.lastSectionPos;
              SectionPos sectionPos1 = SectionPos.of(trackedEntity.entity);
              boolean flag = !Objects.equals(sectionPos, sectionPos1);
-@@ -1094,40 +_,40 @@
+@@ -1094,40 +_,40 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
          }
  
          if (!list.isEmpty()) {
@@ -337,50 +351,217 @@
              if (trackedEntity.seenBy.contains(player.connection)) {
                  action.accept(trackedEntity.entity);
              }
-@@ -1213,6 +_,7 @@
+@@ -1212,7 +_,52 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         final Entity entity;
          private final int range;
          SectionPos lastSectionPos;
-         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
+-        public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
++        // DivineMC start - Multithreaded tracker
++        public static final ServerPlayerConnection[] EMPTY_OBJECT_ARRAY = new ServerPlayerConnection[0];
++        private final it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<ServerPlayerConnection> nonSyncSeenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>() {
++            @Override
++            public boolean add(ServerPlayerConnection serverPlayerConnection) {
++                seenByUpdated = true;
++                return super.add(serverPlayerConnection);
++            }
++
++            @Override
++            public boolean remove(Object k) {
++                seenByUpdated = true;
++                return super.remove(k);
++            }
++
++            @Override
++            public void clear() {
++                seenByUpdated = true;
++                super.clear();
++            }
++        };
++        public final Set<ServerPlayerConnection> seenBy = org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled ? it.unimi.dsi.fastutil.objects.ReferenceSets.synchronize(nonSyncSeenBy) : nonSyncSeenBy; // Paper - Perf: optimise map impl
 +        public final ReentrantLock seenByLock = new ReentrantLock(); // ShreddedPaper - seenBy thread safety
++        private volatile boolean seenByUpdated = true;
++        private volatile ServerPlayerConnection[] seenByArray = EMPTY_OBJECT_ARRAY;
++
++        public ServerPlayerConnection[] seenBy() {
++            if (!this.seenByUpdated) {
++                return this.seenByArray;
++            }
++            this.seenByLock.lock();
++            try {
++                if (this.seenByUpdated) {
++                    this.seenByUpdated();
++                }
++                return this.seenByArray;
++            } finally {
++                this.seenByLock.unlock();
++            }
++        }
++
++        public void seenByUpdated() {
++            this.seenByArray = this.seenBy.toArray(EMPTY_OBJECT_ARRAY);
++            this.seenByUpdated = false;
++        }
++        // DivineMC end - Multithreaded tracker
  
          // Paper start - optimise entity tracker
          private long lastChunkUpdate = -1L;
-@@ -1238,21 +_,33 @@
+@@ -1238,28 +_,120 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
              this.lastChunkUpdate = currChunkUpdate;
              this.lastTrackedChunk = chunk;
  
 +            // ShreddedPaper start - trackerFullUpdateFrequency
 +            boolean fullTrackerUpdate = (level.getGameTime() ^ (long) this.entity.getId()) % ShreddedPaperConfiguration.get().optimizations.trackerFullUpdateFrequency == 0L;
-+            if (fullTrackerUpdate && this.entity instanceof ServerPlayer player) player.hasMaximumTrackerBypassPermission = player.getBukkitEntity().hasPermission("shreddedpaper.maximumtrackerbypass");
 +            if (players.size() > ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity) { updatePlayersLimitedAndOrdered(players, lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk, fullTrackerUpdate); return; }
 +            // ShreddedPaper end - trackerFullUpdateFrequency
 +
              final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
++            final int playersLength = Math.min(playersRaw.length, players.size()); // DivineMC - Multithreaded tracker
  
-             for (int i = 0, len = players.size(); i < len; ++i) {
+-            for (int i = 0, len = players.size(); i < len; ++i) {
++            for (int i = 0; i < playersLength; ++i) { // DivineMC - Multithreaded tracker
 +                try { // ShreddedPaper - concurrent modification
                  final ServerPlayer player = playersRaw[i];
 -                this.updatePlayer(player);
 +                if (fullTrackerUpdate || !this.seenBy.contains(player.connection)) this.updatePlayer(player); // ShreddedPaper - trackerFullUpdateFrequency
 +                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
              }
-+
-+            if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
  
++            if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
++
              if (lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk) {
                  // need to purge any players possible not in the chunk list
-+                this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
-                 for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
+-                for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
++                // DivineMC start - Multithreaded tracker
++                boolean removed = false;
++                for (final ServerPlayerConnection conn : this.seenBy()) {
                      final ServerPlayer player = conn.getPlayer();
                      if (!players.contains(player)) {
-                         this.removePlayer(player);
+-                        this.removePlayer(player);
++                        removed |= this.removePlayerMulti(player);
                      }
                  }
-+                } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
++
++                if (removed) {
++                    this.seenByUpdated();
++                }
++                // DivineMC end - Multithreaded tracker
              }
          }
  
-@@ -1304,6 +_,91 @@
++        // DivineMC start - Multithreaded tracker
++        public final @Nullable Runnable tickCompact(final ca.spottedleaf.moonrise.common.misc.NearbyPlayers.TrackedChunk chunk) {
++            if (chunk == null) {
++                this.moonrise$clearPlayers();
++                return null;
++            }
++
++            final ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players = chunk.getPlayers(ca.spottedleaf.moonrise.common.misc.NearbyPlayers.NearbyMapType.VIEW_DISTANCE);
++
++            if (players == null) {
++                this.moonrise$clearPlayers();
++                return null;
++            }
++
++            final long lastChunkUpdate = this.lastChunkUpdate;
++            final long currChunkUpdate = chunk.getUpdateCount();
++            final ca.spottedleaf.moonrise.common.misc.NearbyPlayers.TrackedChunk lastTrackedChunk = this.lastTrackedChunk;
++            this.lastChunkUpdate = currChunkUpdate;
++            this.lastTrackedChunk = chunk;
++
++            final boolean fullTrackerUpdate = (level.getGameTime() ^ (long) this.entity.getId()) % ShreddedPaperConfiguration.get().optimizations.trackerFullUpdateFrequency == 0L;
++            final boolean hasTrackerCandidatesChanged = lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk;
++
++            if (players.size() > ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity) {
++                final Runnable updateLimitedTask = () -> this.updatePlayersLimitedAndOrdered(players, hasTrackerCandidatesChanged, fullTrackerUpdate);
++                return this.entityTrackerTask(updateLimitedTask);
++            }
++
++            final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
++            final int playersLen = Math.min(playersRaw.length, players.size()); // Ensure length won't change in the future tasks
++
++            if (!org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled || !org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedCompatModeEnabled) {
++                throw new IllegalStateException();
++            }
++
++            final Runnable updatePlayerTasks = () -> {
++                for (int i = 0; i < playersLen; ++i) {
++                    try { // ShreddedPaper - concurrent modification
++                    final ServerPlayer player = playersRaw[i];
++                    if (fullTrackerUpdate || !this.seenBy.contains(player.connection)) this.updatePlayer(player); // ShreddedPaper - trackerFullUpdateFrequency
++                    } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
++                }
++
++                if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
++
++                if (hasTrackerCandidatesChanged) {
++                    boolean removed = false;
++                    for (final ServerPlayerConnection conn : this.seenBy()) {
++                        final ServerPlayer player = conn.getPlayer();
++                        if (!players.contains(player)) {
++                            removed |= this.removePlayerMulti(player);
++                        }
++                    }
++                    if (removed) {
++                        this.seenByUpdated();
++                    }
++                }
++            };
++
++            return this.entityTrackerTask(updatePlayerTasks);
++        }
++
++        private @Nullable Runnable entityTrackerTask(final Runnable updatePlayerTasks) {
++            final boolean isServerPlayer = this.entity instanceof ServerPlayer;
++            final boolean isRealPlayer = isServerPlayer && ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) this.entity).moonrise$isRealPlayer();
++
++            if (isRealPlayer || !isServerPlayer) {
++                return updatePlayerTasks;
++            }
++
++            updatePlayerTasks.run();
++            return null;
++        }
++        // DivineMC end - Multithreaded tracker
++
+         @Override
+         public final void moonrise$removeNonTickThreadPlayers() {
+             boolean foundToRemove = false;
+-            for (final ServerPlayerConnection conn : this.seenBy) {
++            for (final ServerPlayerConnection conn : this.seenBy()) { // DivineMC - Multithreaded tracker
+                 if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(conn.getPlayer())) {
+                     foundToRemove = true;
+                     break;
+@@ -1270,12 +_,13 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 return;
+             }
+ 
+-            for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
++            for (final ServerPlayerConnection conn : this.seenBy()) { // DivineMC - Multithreaded tracker
+                 ServerPlayer player = conn.getPlayer();
+                 if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(player)) {
+-                    this.removePlayer(player);
++                    this.removePlayerMulti(player); // DivineMC - Multithreaded tracker
+                 }
+             }
++            this.seenByUpdated(); // DivineMC - Multithreaded tracker
+         }
+ 
+         @Override
+@@ -1285,10 +_,11 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             if (this.seenBy.isEmpty()) {
+                 return;
+             }
+-            for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
++            for (final ServerPlayerConnection conn : this.seenBy()) { // DivineMC - Multithreaded tracker
+                 ServerPlayer player = conn.getPlayer();
+-                this.removePlayer(player);
++                this.removePlayerMulti(player); // DivineMC - Multithreaded tracker
+             }
++            this.seenByUpdated(); // DivineMC - Multithreaded tracker
+         }
+ 
+         @Override
+@@ -1304,6 +_,91 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
              this.lastSectionPos = SectionPos.of(entity);
          }
  
@@ -472,43 +653,61 @@
          @Override
          public boolean equals(Object other) {
              return other instanceof ChunkMap.TrackedEntity && ((ChunkMap.TrackedEntity)other).entity.getId() == this.entity.getId();
-@@ -1316,9 +_,13 @@
+@@ -1316,9 +_,13 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          @Override
          public void sendToTrackingPlayers(Packet<? super ClientGamePacketListener> packet) {
-+            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
-             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+-            for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
++            for (ServerPlayerConnection serverPlayerConnection : this.seenBy()) { // DivineMC - Multithreaded tracker
                  serverPlayerConnection.send(packet);
              }
-+            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
 +
-+            new io.multipaper.shreddedpaper.event.BroadcastPacketEvent(ChunkMap.this.level.getWorld(), packet, this.entity.getBukkitEntity()).callEvent(); // ShreddedPaper - BroadcastPacketEvent
++            if (io.multipaper.shreddedpaper.event.BroadcastPacketEvent.getHandlerList().getRegisteredListeners().length != 0) { // DivineMC - Multithreaded tracker
++                new io.multipaper.shreddedpaper.event.BroadcastPacketEvent(ChunkMap.this.level.getWorld(), packet, this.entity.getBukkitEntity()).callEvent(); // ShreddedPaper - BroadcastPacketEvent
++            } // DivineMC - Multithreaded tracker
          }
  
          @Override
-@@ -1331,27 +_,33 @@
+@@ -1331,7 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          @Override
          public void sendToTrackingPlayersFiltered(Packet<? super ClientGamePacketListener> packet, Predicate<ServerPlayer> filter) {
-+            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
-             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+-            for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
++            for (ServerPlayerConnection serverPlayerConnection : this.seenBy()) { // DivineMC - Multithreaded tracker
                  if (filter.test(serverPlayerConnection.getPlayer())) {
                      serverPlayerConnection.send(packet);
                  }
-             }
-+            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+@@ -1339,24 +_,45 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
          }
  
          public void broadcastRemoved() {
-+            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
-             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+-            for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
++            for (ServerPlayerConnection serverPlayerConnection : this.seenBy()) { // DivineMC - Multithreaded tracker
                  this.serverEntity.removePairing(serverPlayerConnection.getPlayer());
              }
-+            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
          }
  
++        // DivineMC start - Multithreaded tracker
++        public boolean removePlayerMulti(ServerPlayer player) {
++            if (player == null) {
++                return false;
++            }
++
++            this.seenByLock.lock();
++            try {
++                if (this.seenBy.remove(player.connection)) {
++                    this.serverEntity.removePairing(player);
++                    return true;
++                }
++                return false;
++            } finally {
++                this.seenByLock.unlock();
++            }
++        }
++        // DivineMC end - Multithreaded tracker
++
          public void removePlayer(ServerPlayer player) {
-             org.spigotmc.AsyncCatcher.catchOp("player tracker clear"); // Spigot
+-            org.spigotmc.AsyncCatcher.catchOp("player tracker clear"); // Spigot
 +            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
              if (this.seenBy.remove(player.connection)) {
                  this.serverEntity.removePairing(player);
@@ -517,18 +716,27 @@
                  }
              }
 +            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
++            this.seenByUpdated(); // DivineMC - Multithreaded tracker
          }
  
          public void updatePlayer(ServerPlayer player) {
-@@ -1383,6 +_,7 @@
+-            org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
+             if (player != this.entity) {
++                if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.multithreadedEnabled && player == null) return; // DivineMC - Multithreaded tracker
+                 // Paper start - remove allocation of Vec3D here
+                 // Vec3 vec3 = player.position().subtract(this.entity.position());
+                 double vec3_dx = player.getX() - this.entity.getX();
+@@ -1383,7 +_,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                  }
                  // CraftBukkit end
                  if (flag) {
 +                    this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
                      if (this.seenBy.add(player.connection)) {
++                        this.seenByUpdated(); // DivineMC - Multithreaded tracker
                          // Paper start - entity tracking events
                          if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
-@@ -1396,6 +_,7 @@
+                         this.serverEntity.addPairing(player);
+@@ -1396,6 +_,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                          // Paper end - entity tracking events
                          this.serverEntity.onPlayerAdd(); // Paper - fix desync when a player is added to the tracker
                      }

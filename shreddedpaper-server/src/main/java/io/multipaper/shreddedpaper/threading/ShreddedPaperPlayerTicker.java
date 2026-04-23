@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 public class ShreddedPaperPlayerTicker {
 
     public static void tickPlayer(ServerPlayer serverPlayer) {
+        serverPlayer.hasMaximumTrackerBypassPermission = serverPlayer.getBukkitEntity().hasPermission("shreddedpaper.maximumtrackerbypass");
         serverPlayer.connection.connection.tick();
         final RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader = serverPlayer.moonrise$getChunkLoader();
         if (loader != null) {

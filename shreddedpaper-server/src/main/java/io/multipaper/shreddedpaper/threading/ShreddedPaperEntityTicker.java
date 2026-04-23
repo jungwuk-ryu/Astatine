@@ -40,11 +40,23 @@ public class ShreddedPaperEntityTicker {
 
     /** processTrackQueue has been renamed to newTrackerTick */
     public static void processTrackQueue(Entity entity) {
+        ChunkMap.TrackedEntity tracker = processTrackQueueForAsyncSend(entity);
+        if (tracker != null) {
+            tracker.serverEntity.sendChanges();
+        }
+    }
+
+    public static ChunkMap.TrackedEntity processTrackQueueForAsyncSend(Entity entity) {
         ChunkMap.TrackedEntity tracker = Objects.requireNonNull(entity.moonrise$getTrackedEntity());
         ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$tick(((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkData().nearbyPlayers);
         if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$hasPlayers()
                 || ((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkStatus().isOrAfter(FullChunkStatus.ENTITY_TICKING)) {
-            tracker.serverEntity.sendChanges();
+            if (entity instanceof net.minecraft.world.entity.LivingEntity || entity instanceof net.minecraft.world.entity.decoration.ItemFrame) { // DivineMC - Multithreaded tracker - keep live attribute/Bukkit map sync on the region thread
+                tracker.serverEntity.sendChanges();
+                return null;
+            }
+            return tracker;
         }
+        return null;
     }
 }
