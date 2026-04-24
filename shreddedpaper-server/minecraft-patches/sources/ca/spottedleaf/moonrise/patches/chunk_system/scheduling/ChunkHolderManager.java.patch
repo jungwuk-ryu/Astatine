@@ -251,16 +251,21 @@
 +        final int toUnloadCount = 50;
 +        // ShreddedPaper end - use our own unload queue
          int processedCount = 0;
++        final Long2ObjectOpenHashMap<LongArrayList> unloadsByCell = region.removeUnloadsGroupedByCell(toUnloadCount); // ShreddedPaper - use our own unload queue
  
 -        for (final ChunkUnloadQueue.SectionToUnload sectionRef : unloadSectionsForRegion) {
-+        // for (final ChunkUnloadQueue.SectionToUnload sectionRef : unloadSectionsForRegion) { // ShreddedPaper - use our own unload queue
++        for (final Long2ObjectMap.Entry<LongArrayList> unloadBatch : unloadsByCell.long2ObjectEntrySet()) { // ShreddedPaper - use our own unload queue
++            if (processedCount >= toUnloadCount) {
++                break;
++            }
              final List<NewChunkHolder> stage1 = new ArrayList<>();
              final List<NewChunkHolder.UnloadState> stage2 = new ArrayList<>();
  
 -            final int sectionLowerX = sectionRef.sectionX() << sectionShift;
 -            final int sectionLowerZ = sectionRef.sectionZ() << sectionShift;
-+            final int sectionLowerX = region.getRegionPos().getLowerChunkX(); // sectionRef.sectionX() << sectionShift; // ShreddedPaper - use our own unload queue
-+            final int sectionLowerZ = region.getRegionPos().getLowerChunkZ(); // sectionRef.sectionZ() << sectionShift; // ShreddedPaper - use our own unload queue
++            final RegionPos unloadCell = new RegionPos(unloadBatch.getLongKey()); // ShreddedPaper - use our own unload queue
++            final int sectionLowerX = unloadCell.getLowerChunkX(); // sectionRef.sectionX() << sectionShift; // ShreddedPaper - use our own unload queue
++            final int sectionLowerZ = unloadCell.getLowerChunkZ(); // sectionRef.sectionZ() << sectionShift; // ShreddedPaper - use our own unload queue
  
              // stage 1: set up for stage 2 while holding critical locks
              ReentrantAreaLock.Node ticketLock = this.ticketLockArea.lock(sectionLowerX, sectionLowerZ);
@@ -303,14 +308,15 @@
 -                        }
 -                    }
 +                    // ShreddedPaper start - use our own unload queue
-+                    while (processedCount < toUnloadCount && !region.unloadQueue.isEmpty()) {
-+                        final NewChunkHolder holder = this.chunkHolders.get(region.unloadQueue.removeFirstLong());
++                    for (final LongIterator iterator = unloadBatch.getValue().iterator(); iterator.hasNext();) {
++                        final long chunkKey = iterator.nextLong();
++                        final NewChunkHolder holder = this.chunkHolders.get(chunkKey);
 +                        if (holder == null) {
 +                            continue;
 +                        }
 +                        stage1.add(holder);
-+                        processedCount++;
 +                    }
++                    processedCount += unloadBatch.getValue().size();
 +                    // ShreddedPaper end - use our own unload queue
 +                    // ShreddedPaper start - use our own unload queue
 +//                    final ChunkUnloadQueue.UnloadSection section
@@ -354,8 +360,8 @@
                      for (int i = 0, len = stage1.size(); i < len; ++i) {
 @@ -1298,10 +_,12 @@
  
-             processedCount += stage1.size();
- 
+-            processedCount += stage1.size();
+-
 -            if (processedCount >= toUnloadCount) {
 -                break;
 -            }
@@ -364,7 +370,7 @@
 +//            if (processedCount >= toUnloadCount) {
 +//                break;
 +//            }
-+//        }
++        }
 +        // ShreddedPaper end - use our own unload queue
      }
  

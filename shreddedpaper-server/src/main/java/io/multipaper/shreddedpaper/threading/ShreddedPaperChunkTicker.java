@@ -123,7 +123,7 @@ public class ShreddedPaperChunkTicker {
 
     public static boolean isCurrentlyTickingRegion(Level level, RegionPos regionPos) {
         LevelChunkRegion region = currentlyTickingRegion.get();
-        return region != null && level.equals(region.getLevel()) && regionPos.equals(region.getRegionPos());
+        return region != null && level.equals(region.getLevel()) && region.getOwner().ownsCell(regionPos);
     }
 
     private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState, final RegionTickBudget budget) {
@@ -132,7 +132,7 @@ public class ShreddedPaperChunkTicker {
             currentlyTickingRegion.set(region);
 
             if (!(ShreddedPaperTickThread.isShreddedPaperTickThread())) {
-                throw new IllegalStateException("Ticking region " + WorldUtil.getWorldName(level) + " " + region.getRegionPos() + " outside of ShreddedPaperTickThread!");
+                throw new IllegalStateException("Ticking region " + WorldUtil.getWorldName(level) + " " + region.getOwner() + " outside of ShreddedPaperTickThread!");
             }
 
             ShreddedPaperChangesBroadcaster.setAsWorkerThread();
@@ -159,8 +159,10 @@ public class ShreddedPaperChunkTicker {
             if (level.tickRateManager().runsNormally()) {
                 level.handlingTickThreadLocal.set(true);
 
-                level.blockTicks.tick(region.getRegionPos(), level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
-                level.fluidTicks.tick(region.getRegionPos(), level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
+                for (final RegionPos cell : region.getOwner().cellPositionsSnapshot()) {
+                    level.blockTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
+                    level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
+                }
 
                 if (budget == null || budget.canContinue(RegionWorkType.CHUNK_TICK)) {
                     region.forEach(chunk -> this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState));
@@ -198,7 +200,7 @@ public class ShreddedPaperChunkTicker {
             ShreddedPaperChangesBroadcaster.broadcastChanges();
 
             if (region.isEmpty()) {
-                level.chunkSource.tickingRegions.remove(region.getRegionPos());
+                level.chunkSource.tickingRegions.removeOwner(region.getOwner());
             }
         } finally {
             try {

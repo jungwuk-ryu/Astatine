@@ -4,6 +4,9 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Dynamic ownership handle above immutable region cells.
  *
@@ -51,11 +54,15 @@ public final class RegionOwner {
     }
 
     public boolean ownsCell(final RegionPos cell) {
-        return this.cells.contains(cell.longKey);
+        synchronized (this.cells) {
+            return this.cells.contains(cell.longKey);
+        }
     }
 
     public boolean isSingleCell() {
-        return this.cells.size() == 1;
+        synchronized (this.cells) {
+            return this.cells.size() == 1;
+        }
     }
 
     public void requireSingleCell(final String usage) {
@@ -65,15 +72,42 @@ public final class RegionOwner {
     }
 
     public int cellCount() {
-        return this.cells.size();
+        synchronized (this.cells) {
+            return this.cells.size();
+        }
     }
 
     public LongList cellsSnapshot() {
-        return new LongArrayList(this.cells);
+        synchronized (this.cells) {
+            return new LongArrayList(this.cells);
+        }
+    }
+
+    public List<RegionPos> cellPositionsSnapshot() {
+        final LongList snapshot = this.cellsSnapshot();
+        final List<RegionPos> positions = new ArrayList<>(snapshot.size());
+        for (final long cellKey : snapshot) {
+            positions.add(new RegionPos(cellKey));
+        }
+        return positions;
+    }
+
+    void absorbCellsFrom(final RegionOwner source) {
+        synchronized (this.cells) {
+            synchronized (source.cells) {
+                this.cells.addAll(source.cells);
+            }
+        }
+    }
+
+    void clearTransferredCells() {
+        synchronized (this.cells) {
+            this.cells.clear();
+        }
     }
 
     @Override
     public String toString() {
-        return "RegionOwner[id=" + this.id + ", primaryCell=" + this.primaryCell + ", cells=" + this.cells.size() + "]";
+        return "RegionOwner[id=" + this.id + ", primaryCell=" + this.primaryCell + ", cells=" + this.cellCount() + "]";
     }
 }

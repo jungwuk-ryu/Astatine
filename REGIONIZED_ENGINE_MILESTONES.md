@@ -164,7 +164,54 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Faraday reported no blockers for exact-cell-set owner locking APIs.
 - [x] Run `git diff --check` for exact-cell-set owner locking APIs.
 - [x] Commit exact-cell-set owner locking APIs.
-- [ ] Add merge-only quiescent owner aggregation.
+- [x] Add owner cell snapshots and `ownsCell(...)` checks for multi-cell owner
+  read paths.
+- [x] Convert independent scheduler owner locking from single primary cell to
+  exact owned-cell set locking.
+- [x] Convert current independent-region ownership checks to accept any cell
+  owned by the current owner.
+- [x] Convert block/fluid scheduled tick dispatch to iterate every cell owned by
+  the region owner.
+- [x] Convert empty-region cleanup to remove the whole owner, not just the
+  primary cell.
+- [x] Convert unload processing to scan each owned cell and drain only unloads
+  belonging to that cell.
+- [x] Convert main-thread internal task rescue to use exact owned-cell locking.
+- [x] Add merge-only quiescent owner aggregation API.
+- [x] Require source mailbox/internal-task quiescence before merge data
+  absorption.
+- [x] Require exact owner write lock across target and source cells before
+  merge data absorption.
+- [x] Gate merge-only owner aggregation behind independent region ticking so
+  merged owners never enter the legacy single-cell tick path.
+- [x] Absorb source chunks, players, entities, block entities, block events,
+  navigation mobs, unload queue, and redstone torch state into target region.
+- [x] Clear absorbed source region collections after transfer to avoid stale
+  retention and accidental double processing from lingering references.
+- [x] Clear transferred source owner cell set after remapping to make source
+  owner detachment destructive.
+- [x] Remove the runtime-state construction single-cell assertion; multi-cell
+  owners keep the primary cell only as a metrics/debug label.
+- [x] Remap every source cell to the target owner and detach the source runtime
+  state after successful merge.
+- [x] Update entity/player move paths so crossing cells inside one merged owner
+  updates previous-position bookkeeping without remove/add churn.
+- [x] Keep `LevelChunkRegion#getRegionPos` fail-closed for paths that still
+  assume single-cell ownership.
+- [x] Replace owner-cell unload queue rescans with a one-pass cell-batched
+  unload drain.
+- [x] Re-run `applyAllPatches` after multi-cell patch-file changes: passed.
+- [x] Re-run `compileJava` after multi-cell owner aggregation changes: passed.
+- [x] Receive sub-agent correctness review for merge-only owner aggregation:
+  Faraday reported no remaining blockers after re-review.
+- [x] Receive sub-agent concurrency/performance review for merge-only owner
+  aggregation.
+- [x] Aquinas reported no remaining blockers after re-review.
+- [x] Patch or explicitly defer every merge-only owner aggregation review
+  blocker.
+- [x] Run `git diff --check` for merge-only owner aggregation.
+- [x] Commit merge-only owner aggregation.
+- [ ] Add automatic merge trigger when adjacency/buffer invariants require one.
 - [ ] Add split-by-cell owner deaggregation with hysteresis.
 
 ### E. Tick Integration
@@ -480,6 +527,11 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   ticks.
 - [x] Re-run `applyAllPatches` after latest Minecraft patch changes.
 - [x] Re-run `compileJava` after latest `applyAllPatches`.
+- [x] Re-run `applyAllPatches` after multi-cell owner unload/rescue patch
+  updates: passed.
+- [x] Re-run `compileJava` after multi-cell owner merge safety updates: passed.
+- [x] Re-run `applyAllPatches` after cell-batched unload optimization: passed.
+- [x] Re-run `compileJava` after cell-batched unload optimization: passed.
 
 ## Milestone 1 - Build Baseline And Runtime Harness
 

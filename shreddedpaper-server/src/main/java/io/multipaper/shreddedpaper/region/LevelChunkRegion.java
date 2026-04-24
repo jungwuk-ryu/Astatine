@@ -7,8 +7,11 @@ import io.multipaper.shreddedpaper.threading.region.RegionOverloadController;
 import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
@@ -58,7 +61,6 @@ public class LevelChunkRegion {
     public ArrayDeque<RedstoneTorchBlock.Toggle> redstoneUpdateInfos;
 
     public LevelChunkRegion(ServerLevel level, RegionOwner owner) {
-        owner.requireSingleCell("LevelChunkRegion construction");
         this.level = level;
         this.owner = owner;
         this.regionPos = owner.primaryCell();
@@ -91,8 +93,9 @@ public class LevelChunkRegion {
     }
 
     public boolean isPlayerTickingRequested(final ChunkPos chunkPos) {
-        if (chunkPos.getRegionPos().toLong() != this.regionPos.toLong()) {
-            throw new IllegalStateException("Chunk %s is not in region %s".formatted(chunkPos, this.regionPos));
+        final RegionPos chunkRegion = chunkPos.getRegionPos();
+        if (!this.owner.ownsCell(chunkRegion)) {
+            throw new IllegalStateException("Chunk %s is not owned by region owner %s".formatted(chunkPos, this.owner));
         }
 
         return this.playerTickingChunkRequests.contains(chunkPos.toLong());
@@ -225,6 +228,71 @@ public class LevelChunkRegion {
         return this.owner;
     }
 
+    public RegionPos getPrimaryRegionPos() {
+        return this.regionPos;
+    }
+
+    public boolean isMergeQuiescent() {
+        return !this.runtimeState.mailbox().hasPendingTasks()
+                && this.internalTasks.getTotalTasksExecuted() >= this.internalTasks.getTotalTasksScheduled();
+    }
+
+    public void absorbFrom(final LevelChunkRegion source) {
+        if (this.level != source.level) {
+            throw new IllegalArgumentException("Cannot merge regions from different worlds");
+        }
+        if (!source.isMergeQuiescent()) {
+            throw new IllegalStateException("Cannot merge non-quiescent region owner " + source.getOwner());
+        }
+
+        final List<Entity> sourceTickingEntities = new ArrayList<>();
+        source.forEachTickingEntity(sourceTickingEntities::add);
+        final List<ServerPlayer> sourcePlayers = source.getPlayers();
+
+        synchronized (this) {
+            synchronized (source) {
+                this.levelChunks.addAll(source.levelChunks);
+                this.playerTickingChunkRequests.addAll(source.playerTickingChunkRequests);
+                for (final Entity entity : sourceTickingEntities) {
+                    this.tickingEntities.add(entity);
+                }
+                this.trackedEntities.addAll(source.trackedEntities);
+                this.players.addAll(sourcePlayers);
+                this.unloadQueue.addAll(source.unloadQueue);
+                this.tickingBlockEntities.addAll(source.tickingBlockEntities);
+                this.pendingBlockEntityTickers.addAll(source.pendingBlockEntityTickers);
+                this.navigatingMobs.addAll(source.navigatingMobs);
+                this.blockEvents.addAll(source.blockEvents);
+                if (source.redstoneUpdateInfos != null) {
+                    if (this.redstoneUpdateInfos == null) {
+                        this.redstoneUpdateInfos = new ArrayDeque<>();
+                    }
+                    this.redstoneUpdateInfos.addAll(source.redstoneUpdateInfos);
+                }
+
+                source.levelChunks.clear();
+                source.playerTickingChunkRequests.clear();
+                for (final Entity entity : sourceTickingEntities) {
+                    source.tickingEntities.remove(entity);
+                }
+                source.trackedEntities.clear();
+                source.players.clear();
+                source.unloadQueue.clear();
+                source.tickingBlockEntities.clear();
+                source.pendingBlockEntityTickers.clear();
+                source.navigatingMobs.clear();
+                source.blockEvents.clear();
+                if (source.redstoneUpdateInfos != null) {
+                    source.redstoneUpdateInfos.clear();
+                }
+            }
+        }
+
+        for (final ServerPlayer player : sourcePlayers) {
+            player.currentRegion = this;
+        }
+    }
+
     public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos) {
         tickDurationNanos = Math.max(0L, tickDurationNanos);
         pruneTickStats(tickStartNanos);
@@ -314,6 +382,32 @@ public class LevelChunkRegion {
 
     public synchronized void removeBlockEventsIf(Predicate<BlockEventData> predicate) {
         this.blockEvents.removeIf(predicate);
+    }
+
+    public synchronized long removeFirstUnloadForCell(final RegionPos cell) {
+        final LongIterator iterator = this.unloadQueue.iterator();
+        while (iterator.hasNext()) {
+            final long chunkKey = iterator.nextLong();
+            if (RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)) == cell.longKey) {
+                iterator.remove();
+                return chunkKey;
+            }
+        }
+        return Long.MIN_VALUE;
+    }
+
+    public synchronized Long2ObjectOpenHashMap<LongArrayList> removeUnloadsGroupedByCell(final int maxCount) {
+        final Long2ObjectOpenHashMap<LongArrayList> chunksByCell = new Long2ObjectOpenHashMap<>();
+        int removed = 0;
+        final LongIterator iterator = this.unloadQueue.iterator();
+        while (removed < maxCount && iterator.hasNext()) {
+            final long chunkKey = iterator.nextLong();
+            final long cellKey = RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+            chunksByCell.computeIfAbsent(cellKey, ignored -> new LongArrayList()).add(chunkKey);
+            iterator.remove();
+            removed++;
+        }
+        return chunksByCell;
     }
 
     public boolean isEmpty() {

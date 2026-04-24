@@ -247,8 +247,6 @@ public final class RegionTickScheduler {
                 this.retired.set(true);
                 return;
             }
-            region.getOwner().requireSingleCell("RegionTickScheduler owner lock");
-
             final long actualStart = System.nanoTime();
             final long scheduledStart = this.scheduledStartNanos;
             final long scheduleLag = Math.max(0L, actualStart - scheduledStart);
@@ -258,7 +256,7 @@ public final class RegionTickScheduler {
             ShreddedPaperRegionLocker.RegionLock ownerLock = null;
 
             try {
-                ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeLockNow(this.state.regionPos(), 0);
+                ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(region.getOwner().cellPositionsSnapshot());
                 if (ownerLock != null) {
                     RegionTickBudget.setCurrent(budget);
                     this.ticker.tickRegionFromIndependentScheduler(

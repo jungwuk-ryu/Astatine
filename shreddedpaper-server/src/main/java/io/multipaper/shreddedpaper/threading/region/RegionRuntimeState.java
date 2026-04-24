@@ -22,7 +22,6 @@ public final class RegionRuntimeState {
     private final AtomicReference<LevelChunkRegion> currentRegion = new AtomicReference<>();
 
     private RegionRuntimeState(final ServerLevel level, final RegionOwner owner) {
-        owner.requireSingleCell("RegionRuntimeState construction");
         this.key = new RegionRuntimeKey(level.uuid, owner.id());
         this.level = level;
         this.ownerId = owner.id();
