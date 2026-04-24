@@ -318,18 +318,40 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 
 ### I. Load-Test Plugin
 
-- [ ] Create a local Bukkit/Paper plugin project for hostile-load testing.
-- [ ] Add command: spawn a single-region TNT grid.
-- [ ] Add command: spawn distributed TNT grids across multiple independent
+- [x] Create a local Bukkit/Paper plugin project for hostile-load testing.
+- [x] Add command: spawn a single-region TNT grid.
+- [x] Add command: spawn distributed TNT grids across multiple independent
   regions.
-- [ ] Add command: generate entity/pathfinding load in one region.
-- [ ] Add command: create tracker/broadcast update flood.
-- [ ] Add command: create plugin scheduler/mailbox flood.
-- [ ] Add command: force chunk generation load away from players.
-- [ ] Add command: place a normal-region probe that records tick cadence/MSPT.
-- [ ] Build the plugin jar.
-- [ ] Put the plugin in `D:\worldgen\plugins`.
-- [ ] Verify plugin commands load on the modified server.
+- [x] Add command: generate entity/pathfinding load in one region.
+- [x] Add command: create tracker/broadcast update flood.
+- [x] Add command: create plugin scheduler/mailbox flood.
+- [x] Add command: force chunk generation load away from players.
+- [x] Add command: place a normal-region probe that records tick cadence/MSPT.
+- [x] Build the plugin jar with
+  `./gradlew -p tools/region-load-test-plugin clean build`.
+- [x] Request sub-agent review for the load-test plugin before committing.
+- [x] Fix load-test plugin review blockers: remove cross-region player target
+  access, make queued work cancellable/tracked, avoid caller-thread entity
+  cleanup access, and add batch-generation abort checks so old queued work does
+  not revive after a new test starts.
+- [x] Rebuild the load-test plugin after review fixes:
+  `./gradlew -p tools/region-load-test-plugin clean build` passed.
+- [x] Request final load-test plugin sub-agent re-review after review fixes:
+  Carver reported no blockers.
+- [x] Put the plugin in `D:\worldgen\plugins` as
+  `D:\worldgen\plugins\region-load-test-plugin-0.1.0-SNAPSHOT.jar`.
+- [x] Verify plugin commands load on the modified server with RCON:
+  `/regionloadtest help`, `/regionloadtest scheduler global 4 5000`,
+  `/regionloadtest cleanup`, `/tps`, and clean `stop` all responded.
+- [x] Fix first runtime plugin smoke issue: add `folia-supported: true` so the
+  load-test plugin does not enter `SynchronousPluginExecution` and distort
+  scheduler/load measurements.
+- [x] Re-run plugin smoke after `folia-supported: true`; `RegionLoadTest`
+  enabled without a synchronous-execution warning. Existing third-party plugins
+  still reported Folia support warnings and are tracked in compatibility TODOs.
+- [x] Capture plugin smoke JFR:
+  `D:\worldgen\logs\codex-regionload-plugin-foliaflag-20260425-064052.jfr`.
+- [x] Restore `D:\worldgen\server.properties` after temporary RCON testing.
 
 ### J. Hostile-Load Acceptance Tests
 
@@ -352,6 +374,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 ### K. Compatibility Repair Loop
 
 - [ ] For every plugin startup error, identify plugin jar and version.
+- [ ] Investigate Folia/ShreddedPaper synchronous-execution warnings seen during
+  `D:\worldgen` smoke for LuckPerms, Essentials, EssentialsSpawn,
+  UltimateAntiBot, Parties, and OldCombatMechanics; decide which are true
+  compatibility/performance blockers for hostile-load testing.
 - [ ] Check whether the plugin is open source.
 - [ ] Fetch source or release repository for open-source incompatible plugins.
 - [ ] Patch unsafe main-thread assumptions to use region/entity/global scheduler
@@ -497,8 +523,8 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 
 ## Milestone 7 - Load Test Plugin And Soak
 
-- [ ] Create or import a local open-source-compatible load-test plugin.
-- [ ] Add commands for TNT grid, distributed TNT grids, entity/pathfinding load,
+- [x] Create or import a local open-source-compatible load-test plugin.
+- [x] Add commands for TNT grid, distributed TNT grids, entity/pathfinding load,
   chunk-generation load, plugin scheduler flood, and tracker/broadcast flood.
 - [ ] Build plugin and place it in `D:\worldgen\plugins`.
 - [ ] Run single-heavy-region test: heavy region MSPT > 1000ms while far normal
