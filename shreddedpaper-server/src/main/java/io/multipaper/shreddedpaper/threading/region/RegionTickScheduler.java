@@ -87,8 +87,8 @@ public final class RegionTickScheduler {
             final ShreddedPaperChunkTicker ticker,
             final ShreddedPaperChunkTicker.ScheduledTickContext tickContext
     ) {
-        final RegionKey key = new RegionKey(level.uuid, region.getRegionPos().longKey);
         final RegionRuntimeState state = region.getRuntimeState();
+        final RegionKey key = new RegionKey(level.uuid, state.ownerId());
         state.attach(region);
         this.regions.compute(key, (ignored, previous) -> {
             if (previous != null && !previous.retired.get()) {
@@ -247,6 +247,7 @@ public final class RegionTickScheduler {
                 this.retired.set(true);
                 return;
             }
+            region.getOwner().requireSingleCell("RegionTickScheduler owner lock");
 
             final long actualStart = System.nanoTime();
             final long scheduledStart = this.scheduledStartNanos;

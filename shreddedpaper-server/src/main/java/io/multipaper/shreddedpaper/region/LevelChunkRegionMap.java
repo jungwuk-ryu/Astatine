@@ -29,7 +29,8 @@ public class LevelChunkRegionMap {
 
     private final ServerLevel level;
     private final SimpleStampedLock regionsLock = new SimpleStampedLock();
-    private final Long2ObjectOpenHashMap<LevelChunkRegion> regions = new Long2ObjectOpenHashMap<>(2048, 0.5f);
+    private final Long2ObjectOpenHashMap<RegionOwner> ownersByCell = new Long2ObjectOpenHashMap<>(2048, 0.5f);
+    private final Long2ObjectOpenHashMap<RegionOwner> ownersById = new Long2ObjectOpenHashMap<>(2048, 0.5f);
 
     public LevelChunkRegionMap(ServerLevel level) {
         this.level = level;
@@ -42,12 +43,25 @@ public class LevelChunkRegionMap {
             return levelChunkRegion;
         }
 
-        return regionsLock.write(() -> regions.computeIfAbsent(regionPos.longKey, k -> new LevelChunkRegion(level, regionPos)));
+        return regionsLock.write(() -> {
+            RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
+            if (owner != null) {
+                return owner.region();
+            }
+
+            owner = RegionOwner.singleCell(regionPos);
+            final LevelChunkRegion created = new LevelChunkRegion(this.level, owner);
+            owner.attachRegion(created);
+            this.ownersByCell.put(regionPos.longKey, owner);
+            this.ownersById.put(owner.id(), owner);
+            return created;
+        });
     }
 
     public LevelChunkRegion get(RegionPos regionPos) {
         return regionsLock.optimisticRead(() -> {
-            LevelChunkRegion levelChunkRegion = regions.get(regionPos.longKey);
+            final RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
+            final LevelChunkRegion levelChunkRegion = owner == null ? null : owner.region();
             if (levelChunkRegion != null) {
                 levelChunkRegion.bumpLastAccess();
             }
@@ -57,14 +71,19 @@ public class LevelChunkRegionMap {
 
     public void remove(RegionPos regionPos) {
         regionsLock.write(() -> {
-            LevelChunkRegion region = regions.remove(regionPos.longKey);
+            final RegionOwner owner = this.ownersByCell.remove(regionPos.longKey);
+            final LevelChunkRegion region = owner == null ? null : owner.region();
             if (region == null) {
                 return;
             }
+            owner.requireSingleCell("LevelChunkRegionMap#remove");
             if (!region.isEmpty()) {
                 // Guess this region has been modified by another thread, re-add it
-                regions.put(regionPos.longKey, region);
+                this.ownersByCell.put(regionPos.longKey, owner);
+                this.ownersById.put(owner.id(), owner);
             } else {
+                this.ownersById.remove(owner.id());
+                owner.detachRegion(region);
                 region.getRuntimeState().detach(region);
             }
         });
@@ -79,8 +98,15 @@ public class LevelChunkRegionMap {
     }
 
     public void forEach(Consumer<LevelChunkRegion> consumer) {
-        List<LevelChunkRegion> regionsCopy = new ArrayList<>(regions.size());
-        regionsLock.read(() -> regionsCopy.addAll(regions.values()));
+        List<LevelChunkRegion> regionsCopy = new ArrayList<>(ownersById.size());
+        regionsLock.read(() -> {
+            for (final RegionOwner owner : this.ownersById.values()) {
+                final LevelChunkRegion region = owner.region();
+                if (region != null) {
+                    regionsCopy.add(region);
+                }
+            }
+        });
         regionsCopy.forEach(consumer);
     }
 

@@ -131,6 +131,34 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [ ] Add NUMA/home-worker affinity only after correctness and hostile-load tests
   pass.
 
+### D2. Dynamic Region Ownership Foundation
+
+- [x] Receive Faraday's dynamic regionizer code-map review.
+- [x] Accept review direction: keep `RegionPos` as immutable fixed cell
+  coordinates and add a separate dynamic owner-handle layer above cells.
+- [x] Add `RegionOwner` as the future dynamic ownership handle.
+- [x] Keep initial owner behavior as one owner per fixed cell.
+- [x] Preserve pending mailbox/runtime identity by using the cell key as the
+  initial single-cell owner id.
+- [x] Route `LevelChunkRegion` runtime state creation through `RegionOwner`.
+- [x] Replace `LevelChunkRegionMap`'s direct cell-to-region map with
+  cell-to-owner and owner-id-to-owner maps while preserving current behavior.
+- [x] Route `RegionTickScheduler` registration keys through
+  `RegionRuntimeState.ownerId()`.
+- [x] Add explicit single-cell-owner guards to fail closed until exact-cell-set
+  locking and owner aggregation are implemented.
+- [x] Compile owner abstraction foundation with
+  `./gradlew shreddedpaper-server:compileJava --stacktrace`.
+- [x] Receive sub-agent review for owner abstraction foundation and patch every
+  blocker before commit.
+- [x] Re-run sub-agent review after guard fixes: Faraday reported no blockers.
+- [x] Run `git diff --check` for owner abstraction foundation.
+- [x] Commit owner abstraction foundation as a no-behavior-change migration
+  step.
+- [ ] Add exact-cell-set owner locking APIs.
+- [ ] Add merge-only quiescent owner aggregation.
+- [ ] Add split-by-cell owner deaggregation with hysteresis.
+
 ### E. Tick Integration
 
 - [x] Add `ScheduledTickContext` snapshot to carry spawn/timing inputs into

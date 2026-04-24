@@ -38,6 +38,7 @@ public class LevelChunkRegion {
     private static final long TICK_STATS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
     private final ServerLevel level;
+    private final RegionOwner owner;
     private final RegionPos regionPos;
     private final List<LevelChunk> levelChunks = new ArrayList<>(RegionPos.REGION_SIZE * RegionPos.REGION_SIZE);
     private final LongOpenHashSet playerTickingChunkRequests = new LongOpenHashSet(); // ChunkPos.longKey
@@ -56,10 +57,12 @@ public class LevelChunkRegion {
     private volatile long lastAccessTick;
     public ArrayDeque<RedstoneTorchBlock.Toggle> redstoneUpdateInfos;
 
-    public LevelChunkRegion(ServerLevel level, RegionPos regionPos) {
+    public LevelChunkRegion(ServerLevel level, RegionOwner owner) {
+        owner.requireSingleCell("LevelChunkRegion construction");
         this.level = level;
-        this.regionPos = regionPos;
-        this.runtimeState = RegionRuntimeState.getOrCreate(level, regionPos);
+        this.owner = owner;
+        this.regionPos = owner.primaryCell();
+        this.runtimeState = RegionRuntimeState.getOrCreate(level, owner);
         this.runtimeState.attach(this);
 
         this.bumpLastAccess();
@@ -214,7 +217,12 @@ public class LevelChunkRegion {
     }
 
     public RegionPos getRegionPos() {
+        this.owner.requireSingleCell("LevelChunkRegion#getRegionPos");
         return regionPos;
+    }
+
+    public RegionOwner getOwner() {
+        return this.owner;
     }
 
     public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos) {

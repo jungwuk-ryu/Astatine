@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.threading.region;
 
 import io.multipaper.shreddedpaper.region.LevelChunkRegion;
+import io.multipaper.shreddedpaper.region.RegionOwner;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import net.minecraft.server.level.ServerLevel;
 
@@ -14,22 +15,29 @@ public final class RegionRuntimeState {
 
     private final RegionRuntimeKey key;
     private final ServerLevel level;
+    private final long ownerId;
     private final RegionPos regionPos;
     private final RegionMailbox mailbox;
     private final RegionOverloadController overloadController;
     private final AtomicReference<LevelChunkRegion> currentRegion = new AtomicReference<>();
 
-    private RegionRuntimeState(final ServerLevel level, final RegionPos regionPos) {
-        this.key = new RegionRuntimeKey(level.uuid, regionPos.longKey);
+    private RegionRuntimeState(final ServerLevel level, final RegionOwner owner) {
+        owner.requireSingleCell("RegionRuntimeState construction");
+        this.key = new RegionRuntimeKey(level.uuid, owner.id());
         this.level = level;
-        this.regionPos = regionPos;
-        this.mailbox = new RegionMailbox(level, regionPos);
-        this.overloadController = new RegionOverloadController(level, regionPos);
+        this.ownerId = owner.id();
+        this.regionPos = owner.primaryCell();
+        this.mailbox = new RegionMailbox(level, owner.primaryCell());
+        this.overloadController = new RegionOverloadController(level, owner.primaryCell());
+    }
+
+    public static RegionRuntimeState getOrCreate(final ServerLevel level, final RegionOwner owner) {
+        final RegionRuntimeKey key = new RegionRuntimeKey(level.uuid, owner.id());
+        return STATES.computeIfAbsent(key, ignored -> new RegionRuntimeState(level, owner));
     }
 
     public static RegionRuntimeState getOrCreate(final ServerLevel level, final RegionPos regionPos) {
-        final RegionRuntimeKey key = new RegionRuntimeKey(level.uuid, regionPos.longKey);
-        return STATES.computeIfAbsent(key, ignored -> new RegionRuntimeState(level, regionPos));
+        return getOrCreate(level, RegionOwner.singleCell(regionPos));
     }
 
     public static void removeIfIdle(final RegionRuntimeState state) {
@@ -55,6 +63,10 @@ public final class RegionRuntimeState {
         return this.level;
     }
 
+    public long ownerId() {
+        return this.ownerId;
+    }
+
     public RegionPos regionPos() {
         return this.regionPos;
     }
@@ -67,6 +79,6 @@ public final class RegionRuntimeState {
         return this.overloadController;
     }
 
-    private record RegionRuntimeKey(UUID worldId, long regionKey) {
+    private record RegionRuntimeKey(UUID worldId, long ownerId) {
     }
 }
