@@ -32,10 +32,10 @@ public class RandomUtils {
     @Contract("null -> fail")
     public static @NotNull RandomSource getRandom(PositionalRandomFactory deriver) {
         if (deriver instanceof XoroshiroRandomSource.XoroshiroPositionalRandomFactory) {
-            return new XoroshiroRandomSource(0L, 0L);
+            return xoroshiro.get();
         }
         if (deriver instanceof LegacyRandomSource.LegacyPositionalRandomFactory) {
-            return new SingleThreadedRandomSource(0L);
+            return simple.get();
         }
         throw new IllegalArgumentException();
     }
