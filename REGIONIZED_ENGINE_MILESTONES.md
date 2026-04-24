@@ -184,9 +184,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   ownership.
 - [x] Move player chunk send/keepalive/flush to region-owned player tick and
   skip the global send-chunks phase in independent mode.
-- [x] Gate `ServerChunkCache.MainThreadExecutor` region-task rescue so
-  independent mode only lets shutdown drain region internal queues from the
-  main thread.
+- [x] Re-enable `ServerChunkCache.MainThreadExecutor` region-task rescue in
+  independent mode after runtime `forceload add 0 0` proved non-ticking chunk
+  generation tasks can otherwise have no executor; rescue now requires write
+  ownership instead of the old read-only lock.
 - [x] Gate `ChunkTaskScheduler.executeMainThreadTask` bordering-region task
   stealing so independent mode only executes tasks for regions currently marked
   owned by that worker.
@@ -272,19 +273,35 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Record plugin directory contains Geyser/Floodgate, EssentialsX,
   ProtocolLib, ViaVersion/ViaBackwards, LuckPerms, Chunky, spark, TabTPS, and
   many server-management plugins.
-- [ ] Build a new ShreddedPaper paperclip/bundler jar.
-- [ ] Back up the existing `D:\worldgen\shreddedpaper-paperclip-...jar` before
+- [x] Build a new ShreddedPaper paperclip/bundler jar.
+- [x] Back up the existing `D:\worldgen\shreddedpaper-paperclip-...jar` before
   replacing it.
-- [ ] Copy the new jar into `D:\worldgen`.
-- [ ] Add `--enable-preview` to the runtime start command if Java 25 preview code
+- [x] Copy the new jar into `D:\worldgen`.
+- [x] Add `--enable-preview` to the runtime start command if Java 25 preview code
   is actually used at runtime.
-- [ ] Consider adding `-XX:+UseCompactObjectHeaders` to a test start script, but
+- [x] Consider adding `-XX:+UseCompactObjectHeaders` to a test start script, but
   keep a fallback script without it.
-- [ ] Launch the server once with existing plugins.
-- [ ] Capture startup log, plugin load failures, Java version, and command
+- [x] Launch the server once with existing plugins.
+- [x] Capture startup log, plugin load failures, Java version, and command
   registration status.
-- [ ] Run `/region top` and `/region dump` after startup.
-- [ ] Stop the server cleanly and verify scheduler shutdown.
+- [x] Run `/region top` and `/region dump` after startup.
+- [x] Stop the server cleanly and verify scheduler shutdown.
+- [x] Capture JFR while running the modified jar:
+  `D:\worldgen\logs\codex-region-foundation-rescuefix.jfr`.
+- [x] Temporarily enable RCON for command-driven runtime testing and restore
+  `server.properties` afterward.
+- [x] Record first runtime blocker: `forceload add 0 0` hung in
+  `ServerChunkCache.syncLoad` because independent ticking had disabled the main
+  thread's region internal-task rescue, leaving non-ticking chunk generation
+  tasks with no executor.
+- [x] Fix first runtime blocker by restoring `ServerChunkCache.MainThreadExecutor`
+  rescue for independent mode, while requiring write ownership of the exact
+  region before executing internal tasks.
+- [x] Re-test `forceload add 0 0`: command completed in about 0.62s, `/region top`
+  reported normal regions at sub-1ms EWMA MSPT, `/tps` stayed near 20 TPS, and
+  RCON `stop` shut down cleanly.
+- [ ] Remove the temporary forced chunk `[0, 0]` from the `D:\worldgen` test
+  world during the next controlled runtime run.
 
 ### I. Load-Test Plugin
 
@@ -370,7 +387,7 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   waits before claiming hostile-load isolation.
 - [ ] `Medium`: JFR emission must stay transition/severe-event based, not
   per-entity or per-packet.
-- [ ] `Runtime`: testing in `D:\worldgen` should launch the newly built jar
+- [x] `Runtime`: testing in `D:\worldgen` should launch the newly built jar
   explicitly; do not rely on similarly named jars in the directory.
 - [ ] `Runtime`: PlugManX hot-load should not be used for the load-test plugin;
   place a real `.jar` in `D:\worldgen\plugins` and restart.
