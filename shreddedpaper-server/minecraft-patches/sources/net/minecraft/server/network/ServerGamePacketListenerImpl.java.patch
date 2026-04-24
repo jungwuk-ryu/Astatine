@@ -7,7 +7,7 @@
  import com.google.common.collect.Lists;
  import com.google.common.primitives.Floats;
  import com.mojang.authlib.GameProfile;
-@@ -8,6 +_,7 @@ import com.mojang.brigadier.ParseResults;
+@@ -8,6 +_,7 @@
  import com.mojang.brigadier.StringReader;
  import com.mojang.brigadier.suggestion.Suggestions;
  import com.mojang.logging.LogUtils;
@@ -15,7 +15,7 @@
  import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
  import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-@@ -369,7 +_,7 @@ public class ServerGamePacketListenerImpl
+@@ -369,7 +_,7 @@
          }
  
          if (this.server.isPaused() || !this.tickPlayer()) {
@@ -24,7 +24,7 @@
              this.chatSpamThrottler.tick();
              this.dropSpamThrottler.tick();
              this.tabSpamThrottler.tick(); // Paper - configurable tab spam limits
-@@ -627,6 +_,12 @@ public class ServerGamePacketListenerImpl
+@@ -627,6 +_,12 @@
                      return;
                  }
                  // Paper end - Prevent moving into unloaded chunks
@@ -37,7 +37,7 @@
                  if (d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed)) && !this.isSingleplayerOwner()) {
                      // CraftBukkit end
                      LOGGER.warn("{} (vehicle of {}) moved too quickly! {},{},{}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), d3, d4, d5);
-@@ -847,8 +_,11 @@ public class ServerGamePacketListenerImpl
+<<@@ -847,8 +_,11 @@ public class ServerGamePacketListenerImpl
      }
  
      // Paper start - AsyncTabCompleteEvent
@@ -60,7 +60,7 @@
          }
      }
  
-@@ -1574,6 +_,12 @@ public class ServerGamePacketListenerImpl
+@@ -1574,6 +_,12 @@
                                          // Paper end - Add fail move event
                                      }
                                      // Paper end - Prevent moving into unloaded chunks
@@ -73,15 +73,7 @@
  
                                      if (this.shouldCheckPlayerMovement(isFallFlying)) {
                                          float f2 = isFallFlying ? 300.0F : 100.0F;
-@@ -1950,7 +_,6 @@ public class ServerGamePacketListenerImpl
-     }
- 
-     public void internalTeleport(PositionMoveRotation posMoveRotation, Set<Relative> relatives) {
--        org.spigotmc.AsyncCatcher.catchOp("teleport"); // Paper
-         // Paper start - Prevent teleporting dead entities
-         if (this.player.isRemoved()) {
-             LOGGER.info("Attempt to teleport removed player {} restricted", player.getScoreboardName());
-@@ -2294,7 +_,9 @@ public class ServerGamePacketListenerImpl
+@@ -2294,7 +_,9 @@
              for (ServerLevel serverLevel : this.server.getAllLevels()) {
                  Entity entity = packet.getEntity(serverLevel);
                  if (entity != null) {
@@ -91,7 +83,7 @@
                      return;
                  }
              }
-@@ -2318,12 +_,15 @@ public class ServerGamePacketListenerImpl
+@@ -2318,12 +_,15 @@
              this.processedDisconnect = true;
          }
          // CraftBukkit end
@@ -107,7 +99,7 @@
      }
  
      private void removePlayerFromWorld() {
-@@ -2585,7 +_,7 @@ public class ServerGamePacketListenerImpl
+@@ -2585,7 +_,7 @@
              this.player.resetLastActionTime();
              // CraftBukkit start
              if (sync) {
@@ -116,7 +108,7 @@
              } else {
                  handler.run();
              }
-@@ -3042,23 +_,27 @@ public class ServerGamePacketListenerImpl
+@@ -3042,23 +_,27 @@
          switch (action) {
              case PERFORM_RESPAWN:
                  if (this.player.wonGame) {
@@ -146,7 +138,7 @@
                  }
                  break;
              case REQUEST_STATS:
-@@ -3587,7 +_,7 @@ public class ServerGamePacketListenerImpl
+@@ -3587,7 +_,7 @@
          }
          List<String> list = Stream.of(lines).map(ChatFormatting::stripFormatting).collect(Collectors.toList());
          // Paper end - Limit client sign length
@@ -155,7 +147,7 @@
      }
  
      private void updateSignText(ServerboundSignUpdatePacket packet, List<FilteredText> filteredText) {
-@@ -3850,7 +_,7 @@ public class ServerGamePacketListenerImpl
+@@ -3850,7 +_,7 @@
  
      @Override
      public void disconnectAsync(final net.minecraft.network.DisconnectionDetails disconnectionInfo) {

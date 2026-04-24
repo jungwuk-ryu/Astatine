@@ -285,27 +285,6 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     public class AsyncOperations extends ConfigurationPart {
 
-        @Setting("multithreaded-tracker")
-        public MultithreadedTracker multithreadedTracker = new MultithreadedTracker();
-
-        public class MultithreadedTracker extends ConfigurationPart {
-
-            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.enable.")
-            public boolean enable = true;
-
-            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.compat-mode.")
-            public boolean compatMode = false;
-
-            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.max-threads. Use 0 for availableProcessors / 4, or a negative value to reserve that many processors.")
-            public int maxThreads = 1;
-
-            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.keepalive, in seconds.")
-            public int keepalive = 60;
-
-            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.queue-size. Values <= 0 use max-threads * 384.")
-            public int queueSize = 0;
-        }
-
         public Pathfinding pathfinding = new Pathfinding();
 
         public class Pathfinding extends ConfigurationPart {

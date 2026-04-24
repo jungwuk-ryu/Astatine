@@ -50,6 +50,7 @@
                              return;
                          }
                          // Purpur end - Add option to teleport to spawn if outside world border
+<<<<<<< HEAD
 @@ -1359,13 +_,13 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
      }
  

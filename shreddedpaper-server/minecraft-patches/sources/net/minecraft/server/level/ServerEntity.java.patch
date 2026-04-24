@@ -1,16 +1,14 @@
 --- a/net/minecraft/server/level/ServerEntity.java
 +++ b/net/minecraft/server/level/ServerEntity.java
-@@ -122,7 +_,8 @@ public class ServerEntity {
+@@ -122,6 +_,7 @@
                  MapId mapId = itemFrame.cachedMapId; // Paper - Perf: Cache map ids on item frames
                  MapItemSavedData savedData = MapItem.getSavedData(mapId, this.level);
                  if (savedData != null) {
--                    for (final net.minecraft.server.network.ServerPlayerConnection connection : this.trackedPlayers) { // Paper
 +                    synchronized (savedData) { // ShreddedPaper - thread-safe
-+                    for (final net.minecraft.server.network.ServerPlayerConnection connection : this.trackedPlayers.toArray(ChunkMap.TrackedEntity.EMPTY_OBJECT_ARRAY)) { // Paper // DivineMC - Multithreaded tracker
+                     for (final net.minecraft.server.network.ServerPlayerConnection connection : this.trackedPlayers) { // Paper
                          final ServerPlayer serverPlayer = connection.getPlayer(); // Paper
                          savedData.tickCarriedBy(serverPlayer, item);
-                         Packet<?> updatePacket = savedData.getUpdatePacket(mapId, serverPlayer);
-@@ -130,6 +_,7 @@ public class ServerEntity {
+@@ -130,6 +_,7 @@
                              serverPlayer.connection.send(updatePacket);
                          }
                      }
@@ -18,7 +16,7 @@
                  }
              }
  
-@@ -352,7 +_,7 @@ public class ServerEntity {
+@@ -352,7 +_,7 @@
              if (!list.isEmpty()) {
                  consumer.accept(new ClientboundSetEquipmentPacket(this.entity.getId(), list, true)); // Paper - data sanitization
              }
@@ -27,12 +25,3 @@
          }
  
          if (!this.entity.getPassengers().isEmpty()) {
-@@ -406,8 +_,6 @@ public class ServerEntity {
-                 // CraftBukkit end
-                 this.synchronizer.sendToTrackingPlayersAndSelf(new ClientboundUpdateAttributesPacket(this.entity.getId(), attributesToSync));
-             }
--
--            attributesToSync.clear();
-         }
-     }
- 

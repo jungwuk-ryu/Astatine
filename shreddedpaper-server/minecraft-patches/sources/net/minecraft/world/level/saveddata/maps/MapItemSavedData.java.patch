@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java
 +++ b/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java
-@@ -14,6 +_,7 @@ import java.util.List;
+@@ -14,6 +_,7 @@
  import java.util.Map;
  import java.util.Objects;
  import java.util.Optional;
@@ -8,7 +8,7 @@
  import java.util.function.Predicate;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.Holder;
-@@ -74,6 +_,7 @@ public class MapItemSavedData extends SavedData {
+@@ -74,6 +_,7 @@
      public byte scale;
      public byte[] colors = new byte[16384];
      public boolean locked;
@@ -16,7 +16,7 @@
      private final org.bukkit.craftbukkit.map.RenderData vanillaRender = new org.bukkit.craftbukkit.map.RenderData(); // Paper - Use Vanilla map renderer when possible
      public final List<MapItemSavedData.HoldingPlayer> carriedBy = Lists.newArrayList();
      public final Map<Player, MapItemSavedData.HoldingPlayer> carriedByPlayers = Maps.newHashMap();
-@@ -179,7 +_,7 @@ public class MapItemSavedData extends SavedData {
+@@ -179,7 +_,7 @@
          return new MapItemSavedData(0, 0, scale, false, false, locked, dimension);
      }
  
@@ -25,7 +25,7 @@
          MapItemSavedData mapItemSavedData = new MapItemSavedData(
              this.centerX, this.centerZ, this.scale, this.trackingPosition, this.unlimitedTracking, true, this.dimension
          );
-@@ -199,7 +_,7 @@ public class MapItemSavedData extends SavedData {
+@@ -199,7 +_,7 @@
          return itemStack -> itemStack == stack || itemStack.is(stack.getItem()) && Objects.equals(mapId, itemStack.get(DataComponents.MAP_ID));
      }
  
@@ -34,15 +34,7 @@
          if (!this.carriedByPlayers.containsKey(player)) {
              MapItemSavedData.HoldingPlayer holdingPlayer = new MapItemSavedData.HoldingPlayer(player);
              this.carriedByPlayers.put(player, holdingPlayer);
-@@ -213,6 +_,7 @@ public class MapItemSavedData extends SavedData {
- 
-         for (int i = 0; i < this.carriedBy.size(); i++) {
-             MapItemSavedData.HoldingPlayer holdingPlayer1 = this.carriedBy.get(i);
-+            if (holdingPlayer1 == null) continue; // DivineMC - Multithreaded tracker
-             Player player1 = holdingPlayer1.player;
-             String plainTextName = player1.getPlainTextName();
-             if (!player1.isRemoved() && (player1.getInventory().contains(predicate) || mapStack.isFramed())) {
-@@ -381,7 +_,7 @@ public class MapItemSavedData extends SavedData {
+@@ -381,7 +_,7 @@
          }
      }
  
@@ -51,7 +43,7 @@
          MapItemSavedData.HoldingPlayer holdingPlayer = this.carriedByPlayers.get(player);
          return holdingPlayer == null ? null : holdingPlayer.nextUpdatePacket(mapId);
      }
-@@ -495,7 +_,7 @@ public class MapItemSavedData extends SavedData {
+@@ -495,7 +_,7 @@
          return false;
      }
  

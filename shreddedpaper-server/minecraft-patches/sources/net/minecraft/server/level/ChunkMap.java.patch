@@ -1,0 +1,538 @@
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -8,6 +_,8 @@
+ import com.mojang.datafixers.DataFixer;
+ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.MapCodec;
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import io.multipaper.shreddedpaper.util.Int2ObjectMapWrapper;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.Long2ByteMap;
+@@ -20,6 +_,7 @@
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
++import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+ import java.io.IOException;
+ import java.io.Writer;
+ import java.nio.file.Path;
+@@ -32,11 +_,14 @@
+ import java.util.Optional;
+ import java.util.Queue;
+ import java.util.Set;
++import java.util.TreeSet;
+ import java.util.concurrent.CancellationException;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+ import java.util.concurrent.CompletionStage;
++import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.Executor;
++import java.util.concurrent.locks.ReentrantLock;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.function.BooleanSupplier;
+ import java.util.function.Consumer;
+@@ -105,6 +_,7 @@
+ import net.minecraft.world.level.storage.LevelStorageSource;
+ import net.minecraft.world.phys.Vec3;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
++import org.jetbrains.annotations.NotNull;
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+ 
+@@ -139,7 +_,8 @@
+     public final ChunkMap.DistanceManager distanceManager;
+     private final String storageName;
+     private final PlayerMap playerMap = new PlayerMap();
+-    public final Int2ObjectMap<ChunkMap.TrackedEntity> entityMap = new Int2ObjectOpenHashMap<>();
++    public final ConcurrentHashMap<Integer, ChunkMap.TrackedEntity> entityConcurrentMap = new ConcurrentHashMap<>(); // ShreddedPaper - Wrapper of ConcurrentHashMap to maintain plugin support
++    public final Int2ObjectMap<ChunkMap.TrackedEntity> entityMap = new Int2ObjectMapWrapper(this.entityConcurrentMap); // ShreddedPaper - Wrapper of ConcurrentHashMap to maintain plugin support
+     private final Long2ByteMap chunkTypeCache = new Long2ByteOpenHashMap();
+     // Paper - rewrite chunk system
+     public int serverViewDistance;
+@@ -262,7 +_,9 @@
+ 
+         final ServerPlayer[] backingSet = inRange.getRawDataUnchecked();
+         for (int i = 0, len = inRange.size(); i < len; i++) {
++            try { // ShreddedPaper - concurrent modification
+             ++(backingSet[i].mobCounts[index]);
++            } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
+         }
+     }
+ 
+@@ -279,7 +_,9 @@
+         }
+         final ServerPlayer[] backingSet = inRange.getRawDataUnchecked();
+         for (int i = 0, len = inRange.size(); i < len; i++) {
++            try { // ShreddedPaper - concurrent modification
+             ++(backingSet[i].mobBackoffCounts[idx]);
++            } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
+         }
+     }
+     // Paper end - per player mob count backoff
+@@ -431,7 +_,7 @@
+     }
+ 
+     private void processUnloads(BooleanSupplier hasMoreTime) {
+-        ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler().chunkHolderManager.processUnloads(); // Paper - rewrite chunk system
++        // ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler().chunkHolderManager.processUnloads(); // Paper - rewrite chunk system // ShreddedPaper - we unload chunks on the chunk thread
+         ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler().chunkHolderManager.autoSave(); // Paper - rewrite chunk system
+     }
+ 
+@@ -708,7 +_,7 @@
+     }
+ 
+     // Paper start - optimise chunk tick iteration
+-    private boolean isChunkNearPlayer(final ChunkMap chunkMap, final ChunkPos chunkPos, final LevelChunk levelChunk) {
++    public boolean isChunkNearPlayer(final ChunkMap chunkMap, final ChunkPos chunkPos, final LevelChunk levelChunk) { // ShreddedPaper - make public
+         final ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkData chunkData = ((ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkSystemLevelChunk)levelChunk).moonrise$getChunkHolder().holderData;
+         final ca.spottedleaf.moonrise.common.misc.NearbyPlayers.TrackedChunk nearbyPlayers = chunkData.nearbyPlayers;
+         if (nearbyPlayers == null) {
+@@ -728,6 +_,7 @@
+ 
+         Objects.checkFromIndexSize(0, len, raw.length);
+         for (int i = 0; i < len; ++i) {
++            try { // ShreddedPaper - concurrent modification
+             // Paper start - PlayerNaturallySpawnCreaturesEvent
+             com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent event = raw[i].playerNaturallySpawnedEvent;
+             if (event == null || event.isCancelled()) {
+@@ -738,31 +_,34 @@
+                 // Paper end - PlayerNaturallySpawnCreaturesEvent
+                 return true;
+             }
++            } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
+         }
+ 
+         return false;
+     }
+     // Paper end - optimise chunk tick iteration
+ 
+-    void collectSpawningChunks(List<LevelChunk> output) {
+-        // Paper start - optimise chunk tick iteration
+-        final ca.spottedleaf.moonrise.common.list.ReferenceList<net.minecraft.world.level.chunk.LevelChunk> tickingChunks = ((ca.spottedleaf.moonrise.patches.chunk_tick_iteration.ChunkTickServerLevel)this.level).moonrise$getPlayerTickingChunks();
+-
+-        final LevelChunk[] raw = tickingChunks.getRawDataUnchecked();
+-        final int size = tickingChunks.size();
+-
+-        Objects.checkFromToIndex(0, size, raw.length);
+-        for (int i = 0; i < size; ++i) {
+-            final LevelChunk levelChunk = raw[i];
+-
+-            if (!this.isChunkNearPlayer((ChunkMap)(Object)this, levelChunk.getPos(), levelChunk)) {
+-                continue;
+-            }
+-
+-            output.add(levelChunk);
+-        }
+-        // Paper end - optimise chunk tick iteration
+-    }
++    // ShreddedPaper start - unused
++//    void collectSpawningChunks(List<LevelChunk> output) {
++//        // Paper start - optimise chunk tick iteration
++//        final ca.spottedleaf.moonrise.common.list.ReferenceList<net.minecraft.world.level.chunk.LevelChunk> tickingChunks = ((ca.spottedleaf.moonrise.patches.chunk_tick_iteration.ChunkTickServerLevel)this.level).moonrise$getPlayerTickingChunks();
++//
++//        final LevelChunk[] raw = tickingChunks.getRawDataUnchecked();
++//        final int size = tickingChunks.size();
++//
++//        Objects.checkFromToIndex(0, size, raw.length);
++//        for (int i = 0; i < size; ++i) {
++//            final LevelChunk levelChunk = raw[i];
++//
++//            if (!this.isChunkNearPlayer((ChunkMap)(Object)this, levelChunk.getPos(), levelChunk)) {
++//                continue;
++//            }
++//
++//            output.add(levelChunk);
++//        }
++//        // Paper end - optimise chunk tick iteration
++//    }
++    // ShreddedPaper end - unused
+ 
+     void forEachBlockTickingChunk(Consumer<LevelChunk> action) {
+         this.distanceManager.forEachEntityTickingChunk(chunkPos -> {
+@@ -820,7 +_,9 @@
+ 
+         Objects.checkFromIndexSize(0, len, raw.length);
+         for (int i = 0; i < len; ++i) {
++            try { // ShreddedPaper - concurrent modification
+             final ServerPlayer serverPlayer = raw[i];
++            if (serverPlayer == null) continue; // ShreddedPaper - concurrent modification
+             // Paper start - PlayerNaturallySpawnCreaturesEvent
+             com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent event;
+             blockRange = 16384.0D;
+@@ -833,6 +_,7 @@
+                 // Paper end - PlayerNaturallySpawnCreaturesEvent
+                 return true;
+             }
++            } catch (IndexOutOfBoundsException ignored) {} // ShreddedPaper - concurrent modification
+         }
+ 
+         return false;
+@@ -855,7 +_,9 @@
+ 
+         Objects.checkFromIndexSize(0, len, raw.length);
+         for (int i = 0; i < len; ++i) {
++            try { // ShreddedPaper - concurrent modification
+             final ServerPlayer player = raw[i];
++            if (player == null) continue; // ShreddedPaper - concurrent modification
+             if (this.playerIsCloseEnoughForSpawning(player, chunkPos, 16384.0D)) { // Spigot
+                 if (ret == null) {
+                     ret = new ArrayList<>(len - i);
+@@ -864,6 +_,7 @@
+                     ret.add(player);
+                 }
+             }
++            } catch (IndexOutOfBoundsException ignored) {} // ShreddedPaper - concurrent modification
+         }
+ 
+         return ret == null ? new ArrayList<>() : ret;
+@@ -985,9 +_,9 @@
+     public void addEntity(Entity entity) {
+         org.spigotmc.AsyncCatcher.catchOp("entity track"); // Spigot
+         // Paper start - ignore and warn about illegal addEntity calls instead of crashing server
+-        if (!entity.valid || entity.level() != this.level || this.entityMap.containsKey(entity.getId())) {
++        if (!entity.valid || entity.level() != this.level || this.entityConcurrentMap.containsKey(entity.getId())) { // ShreddedPaper - use entityConcurrentMap
+             LOGGER.error("Illegal ChunkMap::addEntity for world " + this.level.getWorld().getName()
+-                + ": " + entity  + (this.entityMap.containsKey(entity.getId()) ? " ALREADY CONTAINED (This would have crashed your server)" : ""), new Throwable());
++                + ": " + entity  + (this.entityConcurrentMap.containsKey(entity.getId()) ? " ALREADY CONTAINED (This would have crashed your server)" : ""), new Throwable()); // ShreddedPaper - use entityConcurrentMap
+             return;
+         }
+         // Paper end - ignore and warn about illegal addEntity calls instead of crashing server
+@@ -998,11 +_,12 @@
+             i = org.spigotmc.TrackingRange.getEntityTrackingRange(entity, i); // Spigot
+             if (i != 0) {
+                 int updateInterval = type.updateInterval();
+-                if (this.entityMap.containsKey(entity.getId())) {
++                if (this.entityConcurrentMap.containsKey(entity.getId())) { // ShreddedPaper - use entityConcurrentMap
+                     throw (IllegalStateException)Util.pauseInIde(new IllegalStateException("Entity is already tracked!"));
+                 } else {
+                     ChunkMap.TrackedEntity trackedEntity = new ChunkMap.TrackedEntity(entity, i, updateInterval, type.trackDeltas());
+-                    this.entityMap.put(entity.getId(), trackedEntity);
++                    this.entityConcurrentMap.put(entity.getId(), trackedEntity); // ShreddedPaper - use entityConcurrentMap
++                    this.level.getChunkSource().tickingRegions.addTrackedEntity(entity); // ShreddedPaper
+                     // Paper start - optimise entity tracker
+                     if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$getTrackedEntity() != null) {
+                         throw new IllegalStateException("Entity is already tracked");
+@@ -1012,8 +_,9 @@
+                     trackedEntity.updatePlayers(this.level.players());
+                     if (entity instanceof ServerPlayer serverPlayer) {
+                         this.updatePlayerStatus(serverPlayer, true);
++                        if (true) return; // ShreddedPaper - handled elsewhere
+ 
+-                        for (ChunkMap.TrackedEntity trackedEntity1 : this.entityMap.values()) {
++                        for (ChunkMap.TrackedEntity trackedEntity1 : this.entityConcurrentMap.values()) { // ShreddedPaper - use entityConcurrentMap
+                             if (trackedEntity1.entity != serverPlayer) {
+                                 trackedEntity1.updatePlayer(serverPlayer);
+                             }
+@@ -1029,13 +_,14 @@
+         if (entity instanceof ServerPlayer serverPlayer) {
+             this.updatePlayerStatus(serverPlayer, false);
+ 
+-            for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
++            for (ChunkMap.TrackedEntity trackedEntity : this.entityConcurrentMap.values()) { // ShreddedPaper - use entityConcurrentMap
+                 trackedEntity.removePlayer(serverPlayer);
+             }
+         }
+ 
+-        ChunkMap.TrackedEntity trackedEntity1 = this.entityMap.remove(entity.getId());
++        ChunkMap.TrackedEntity trackedEntity1 = this.entityConcurrentMap.remove(entity.getId()); // ShreddedPaper - use entityConcurrentMap
+         if (trackedEntity1 != null) {
++            this.level.getChunkSource().tickingRegions.removeTrackedEntity(entity); // ShreddedPaper - only remove if it actually existed
+             trackedEntity1.broadcastRemoved();
+         }
+         ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$setTrackedEntity(null); // Paper - optimise entity tracker
+@@ -1043,22 +_,25 @@
+ 
+     // Paper start - optimise entity tracker
+     private void newTrackerTick() {
++        if (true) return; // ShreddedPaper - handle ourselves
+         final ca.spottedleaf.moonrise.patches.chunk_system.level.entity.server.ServerEntityLookup entityLookup = (ca.spottedleaf.moonrise.patches.chunk_system.level.entity.server.ServerEntityLookup)((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getEntityLookup();;
+ 
+-        final ca.spottedleaf.moonrise.common.list.ReferenceList<net.minecraft.world.entity.Entity> trackerEntities = entityLookup.trackerEntities;
+-        final Entity[] trackerEntitiesRaw = trackerEntities.getRawDataUnchecked();
+-        for (int i = 0, len = trackerEntities.size(); i < len; ++i) {
+-            final Entity entity = trackerEntitiesRaw[i];
+-            final ChunkMap.TrackedEntity tracker = ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$getTrackedEntity();
+-            if (tracker == null) {
+-                continue;
+-            }
+-            ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$tick(((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkData().nearbyPlayers);
+-            if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$hasPlayers()
+-                || ((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkStatus().isOrAfter(FullChunkStatus.ENTITY_TICKING)) {
+-                tracker.serverEntity.sendChanges();
+-            }
+-        }
++        // ShreddedPaper start - remove trackerEntities, handled ourselves
++//        final ca.spottedleaf.moonrise.common.list.ReferenceList<net.minecraft.world.entity.Entity> trackerEntities = entityLookup.trackerEntities;
++//        final Entity[] trackerEntitiesRaw = trackerEntities.getRawDataUnchecked();
++//        for (int i = 0, len = trackerEntities.size(); i < len; ++i) {
++//            final Entity entity = trackerEntitiesRaw[i];
++//            final ChunkMap.TrackedEntity tracker = ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity)entity).moonrise$getTrackedEntity();
++//            if (tracker == null) {
++//                continue;
++//            }
++//            ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$tick(((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkData().nearbyPlayers);
++//            if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$hasPlayers()
++//                || ((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkStatus().isOrAfter(FullChunkStatus.ENTITY_TICKING)) {
++//                tracker.serverEntity.sendChanges();
++//            }
++//        }
++        // ShreddedPaper end - remove trackerEntities, handled ourselves
+     }
+     // Paper end - optimise entity tracker
+ 
+@@ -1074,7 +_,7 @@
+         List<ServerPlayer> list = Lists.newArrayList();
+         List<ServerPlayer> list1 = this.level.players();
+ 
+-        for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
++        for (ChunkMap.TrackedEntity trackedEntity : this.entityConcurrentMap.values()) { // ShreddedPaper - use entityConcurrentMap
+             SectionPos sectionPos = trackedEntity.lastSectionPos;
+             SectionPos sectionPos1 = SectionPos.of(trackedEntity.entity);
+             boolean flag = !Objects.equals(sectionPos, sectionPos1);
+@@ -1094,40 +_,40 @@
+         }
+ 
+         if (!list.isEmpty()) {
+-            for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
++            for (ChunkMap.TrackedEntity trackedEntity : this.entityConcurrentMap.values()) { // ShreddedPaper - use entityConcurrentMap
+                 trackedEntity.updatePlayers(list);
+             }
+         }
+     }
+ 
+     public void sendToTrackingPlayers(Entity entity, Packet<? super ClientGamePacketListener> packet) {
+-        ChunkMap.TrackedEntity trackedEntity = this.entityMap.get(entity.getId());
++        ChunkMap.TrackedEntity trackedEntity = entity.moonrise$getTrackedEntity(); // this.entityMap.get(entity.getId()); // ShreddedPaper - don't use map
+         if (trackedEntity != null) {
+             trackedEntity.sendToTrackingPlayers(packet);
+         }
+     }
+ 
+     public void sendToTrackingPlayersFiltered(Entity entity, Packet<? super ClientGamePacketListener> packet, Predicate<ServerPlayer> filter) {
+-        ChunkMap.TrackedEntity trackedEntity = this.entityMap.get(entity.getId());
++        ChunkMap.TrackedEntity trackedEntity = entity.moonrise$getTrackedEntity(); // this.entityMap.get(entity.getId()); // ShreddedPaper - don't use map
+         if (trackedEntity != null) {
+             trackedEntity.sendToTrackingPlayersFiltered(packet, filter);
+         }
+     }
+ 
+     protected void sendToTrackingPlayersAndSelf(Entity entity, Packet<? super ClientGamePacketListener> packet) {
+-        ChunkMap.TrackedEntity trackedEntity = this.entityMap.get(entity.getId());
++        ChunkMap.TrackedEntity trackedEntity = entity.moonrise$getTrackedEntity(); // this.entityMap.get(entity.getId()); // ShreddedPaper - don't use map
+         if (trackedEntity != null) {
+             trackedEntity.sendToTrackingPlayersAndSelf(packet);
+         }
+     }
+ 
+     public boolean isTrackedByAnyPlayer(Entity entity) {
+-        ChunkMap.TrackedEntity trackedEntity = this.entityMap.get(entity.getId());
++        ChunkMap.TrackedEntity trackedEntity = entity.moonrise$getTrackedEntity(); // this.entityMap.get(entity.getId()); // ShreddedPaper - don't use map
+         return trackedEntity != null && !trackedEntity.seenBy.isEmpty();
+     }
+ 
+     public void forEachEntityTrackedBy(ServerPlayer player, Consumer<Entity> action) {
+-        for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
++        for (ChunkMap.TrackedEntity trackedEntity : this.entityConcurrentMap.values()) { // ShreddedPaper - use entityConcurrentMap
+             if (trackedEntity.seenBy.contains(player.connection)) {
+                 action.accept(trackedEntity.entity);
+             }
+@@ -1213,6 +_,7 @@
+         private final int range;
+         SectionPos lastSectionPos;
+         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
++        public final ReentrantLock seenByLock = new ReentrantLock(); // ShreddedPaper - seenBy thread safety
+ 
+         // Paper start - optimise entity tracker
+         private long lastChunkUpdate = -1L;
+@@ -1238,21 +_,33 @@
+             this.lastChunkUpdate = currChunkUpdate;
+             this.lastTrackedChunk = chunk;
+ 
++            // ShreddedPaper start - trackerFullUpdateFrequency
++            boolean fullTrackerUpdate = (level.getGameTime() ^ (long) this.entity.getId()) % ShreddedPaperConfiguration.get().optimizations.trackerFullUpdateFrequency == 0L;
++            if (fullTrackerUpdate && this.entity instanceof ServerPlayer player) player.hasMaximumTrackerBypassPermission = player.getBukkitEntity().hasPermission("shreddedpaper.maximumtrackerbypass");
++            if (players.size() > ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity) { updatePlayersLimitedAndOrdered(players, lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk, fullTrackerUpdate); return; }
++            // ShreddedPaper end - trackerFullUpdateFrequency
++
+             final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
+ 
+             for (int i = 0, len = players.size(); i < len; ++i) {
++                try { // ShreddedPaper - concurrent modification
+                 final ServerPlayer player = playersRaw[i];
+-                this.updatePlayer(player);
++                if (fullTrackerUpdate || !this.seenBy.contains(player.connection)) this.updatePlayer(player); // ShreddedPaper - trackerFullUpdateFrequency
++                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
+             }
++
++            if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
+ 
+             if (lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk) {
+                 // need to purge any players possible not in the chunk list
++                this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+                 for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
+                     final ServerPlayer player = conn.getPlayer();
+                     if (!players.contains(player)) {
+                         this.removePlayer(player);
+                     }
+                 }
++                } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+             }
+         }
+ 
+@@ -1304,6 +_,91 @@
+             this.lastSectionPos = SectionPos.of(entity);
+         }
+ 
++        // ShreddedPaper start - maximum trackers per entity
++        private record DistancedServerPlayer(ServerPlayer serverPlayer, double distanceSqr, boolean hasBypassPerm) implements Comparable<DistancedServerPlayer> {
++            DistancedServerPlayer(ServerPlayer serverPlayer, Entity entity) {
++                this(serverPlayer, distanceBetween(serverPlayer, entity), serverPlayer.hasMaximumTrackerBypassPermission);
++            }
++
++            private static double distanceBetween(ServerPlayer serverPlayer, Entity entity) {
++                double vec3d_dx = serverPlayer.getX() - entity.getX();
++                double vec3d_dz = serverPlayer.getZ() - entity.getZ();
++                return vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz;
++            }
++
++            @Override
++            public int compareTo(@NotNull ChunkMap.TrackedEntity.DistancedServerPlayer o) {
++                int compareResult = Double.compare(hasBypassPerm ? 0 : this.distanceSqr, o.hasBypassPerm ? 0 : o.distanceSqr);
++                return compareResult == 0 ? Integer.compare(this.serverPlayer.getId(), o.serverPlayer.getId()) : compareResult;
++            }
++        }
++
++        public void updatePlayersLimitedAndOrdered(ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players, boolean hasTrackerCandidatesChanged, boolean fullTrackerUpdate) {
++            if (!hasTrackerCandidatesChanged && !fullTrackerUpdate) return;
++
++            TreeSet<DistancedServerPlayer> playerSet = new TreeSet<>();
++            final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
++
++            for (int index = 0, len = players.size(); index < len; ++index) {
++                ServerPlayer player = playersRaw[index];
++                if (player == null || player == this.entity) continue;
++                DistancedServerPlayer distancedPlayer = new DistancedServerPlayer(player, this.entity);
++                int i = ChunkMap.this.getPlayerViewDistance(player);
++                double d0 = (double) Math.min(this.getEffectiveRange(), i * 16);
++                double d2 = d0 * d0;
++                boolean flag = distancedPlayer.distanceSqr <= d2 && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
++                // Paper start - Configurable entity tracking range by Y
++                if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
++                    double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
++                    if (rangeY != -1) {
++                        double vec3d_dy = player.getY() - this.entity.getY();
++                        flag = vec3d_dy * vec3d_dy <= rangeY * rangeY;
++                    }
++                }
++                // Paper end - Configurable entity tracking range by Y
++
++                // CraftBukkit start - respect vanish API
++                if (flag && !player.getBukkitEntity().canSee(this.entity.getBukkitEntity())) { // Paper - only consider hits
++                    flag = false;
++                }
++
++                if (flag) {
++                    playerSet.add(distancedPlayer);
++                }
++            }
++
++            seenByLock.lock();
++            try {
++                Set<ServerPlayer> canBeSeenBy = new ReferenceOpenHashSet<>(Math.min(ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity, playerSet.size()));
++                java.util.Iterator<DistancedServerPlayer> playerSetIterator = playerSet.iterator();
++                int count = 0;
++                while (playerSetIterator.hasNext() && count++ < ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity) { // ShreddedPaper - maximum trackers per entity
++                    DistancedServerPlayer distancedPlayer = playerSetIterator.next();
++                    ServerPlayer player = distancedPlayer.serverPlayer();
++                    canBeSeenBy.add(player);
++                    if (this.seenBy.add(player.connection)) {
++                        // Paper start - entity tracking events
++                        if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
++                            this.serverEntity.addPairing(player);
++                        }
++                        // Paper end - entity tracking events
++                        this.serverEntity.onPlayerAdd(); // Paper - fix desync when a player is added to the tracker
++                    }
++                }
++
++                if (this.seenBy.size() != canBeSeenBy.size()) {
++                    for (ServerPlayerConnection conn : this.seenBy.toArray(new ServerPlayerConnection[0])) { // avoid CME
++                        if (!canBeSeenBy.contains(conn.getPlayer()) && this.seenBy.remove(conn)) {
++                            this.serverEntity.removePairing(conn.getPlayer());
++                        }
++                    }
++                }
++            } finally {
++                seenByLock.unlock();
++            }
++        }
++        // ShreddedPaper end - maximum trackers per entity
++
+         @Override
+         public boolean equals(Object other) {
+             return other instanceof ChunkMap.TrackedEntity && ((ChunkMap.TrackedEntity)other).entity.getId() == this.entity.getId();
+@@ -1316,9 +_,13 @@
+ 
+         @Override
+         public void sendToTrackingPlayers(Packet<? super ClientGamePacketListener> packet) {
++            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+                 serverPlayerConnection.send(packet);
+             }
++            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
++
++            new io.multipaper.shreddedpaper.event.BroadcastPacketEvent(ChunkMap.this.level.getWorld(), packet, this.entity.getBukkitEntity()).callEvent(); // ShreddedPaper - BroadcastPacketEvent
+         }
+ 
+         @Override
+@@ -1331,27 +_,33 @@
+ 
+         @Override
+         public void sendToTrackingPlayersFiltered(Packet<? super ClientGamePacketListener> packet, Predicate<ServerPlayer> filter) {
++            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+                 if (filter.test(serverPlayerConnection.getPlayer())) {
+                     serverPlayerConnection.send(packet);
+                 }
+             }
++            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+         }
+ 
+         public void broadcastRemoved() {
++            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+             for (ServerPlayerConnection serverPlayerConnection : this.seenBy) {
+                 this.serverEntity.removePairing(serverPlayerConnection.getPlayer());
+             }
++            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+         }
+ 
+         public void removePlayer(ServerPlayer player) {
+             org.spigotmc.AsyncCatcher.catchOp("player tracker clear"); // Spigot
++            this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+             if (this.seenBy.remove(player.connection)) {
+                 this.serverEntity.removePairing(player);
+                 if (this.seenBy.isEmpty()) {
+                     ChunkMap.this.level.debugSynchronizers().dropEntity(this.entity);
+                 }
+             }
++            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+         }
+ 
+         public void updatePlayer(ServerPlayer player) {
+@@ -1383,6 +_,7 @@
+                 }
+                 // CraftBukkit end
+                 if (flag) {
++                    this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
+                     if (this.seenBy.add(player.connection)) {
+                         // Paper start - entity tracking events
+                         if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
+@@ -1396,6 +_,7 @@
+                         // Paper end - entity tracking events
+                         this.serverEntity.onPlayerAdd(); // Paper - fix desync when a player is added to the tracker
+                     }
++                    } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
+                 } else {
+                     this.removePlayer(player);
+                 }
