@@ -1,47 +1,6 @@
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -429,6 +_,12 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-         return this.getDeltaMovement().y() < 1.0E-5F && this.isInLiquid();
-     }
- 
-+    // DivineMC start - Optimize suffocation
-+    public boolean couldPossiblyBeHurt(float amount) {
-+        return !((float) this.invulnerableTime > (float) this.invulnerableDuration / 2.0F) || !(amount <= this.lastHurt);
-+    }
-+    // DivineMC end - Optimize suffocation
-+
-     @Override
-     public void baseTick() {
-         this.oAttackAnim = this.attackAnim;
-@@ -436,16 +_,24 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-             this.getSleepingPos().ifPresent(this::setPosToBed);
-         }
- 
--        if (this.level() instanceof ServerLevel serverLevel) {
--            EnchantmentHelper.tickEffects(serverLevel, this);
-+        // DivineMC start - lithium: equipment_tracking
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.equipmentTracking) {
-+            if ((this instanceof Player || this.equipment.lithium$shouldTickEnchantments()) && this.level() instanceof ServerLevel serverLevel) {
-+                EnchantmentHelper.tickEffects(serverLevel, this);
-+            }
-+        } else {
-+            if (this.level() instanceof ServerLevel serverLevel) {
-+                EnchantmentHelper.tickEffects(serverLevel, this);
-+            }
-         }
-+        // DivineMC end - lithium: equipment_tracking
- 
-         super.baseTick();
-         ProfilerFiller profilerFiller = Profiler.get();
-         profilerFiller.push("livingEntityBaseTick");
-         if (this.isAlive() && this.level() instanceof ServerLevel serverLevel1) {
-             boolean flag = this instanceof Player;
--            if (this.isInWall()) {
-+            if ((!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.enableSuffocationOptimization || this instanceof WitherBoss || (tickCount % 10 == 0 && couldPossiblyBeHurt(1.0F))) && this.isInWall()) { // DivineMC - Optimize suffocation
-                 this.hurtServer(serverLevel1, this.damageSources().inWall(), 1.0F);
-             } else if (flag && !serverLevel1.getWorldBorder().isWithinBounds(this.getBoundingBox())) {
-                 double d = serverLevel1.getWorldBorder().getDistanceToBorder(this) + serverLevel1.getWorldBorder().getSafeZone();
-@@ -454,7 +_,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+@@ -454,7 +_,7 @@
                      if (damagePerBlock > 0.0) {
                          // Purpur start - Add option to teleport to spawn if outside world border
                          if (this.level().purpurConfig.teleportIfOutsideBorder && this instanceof ServerPlayer serverPlayer) {
@@ -50,46 +9,3 @@
                              return;
                          }
                          // Purpur end - Add option to teleport to spawn if outside world border
-<<<<<<< HEAD
-@@ -1359,13 +_,13 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-     }
- 
-     private void refreshDirtyAttributes() {
--        Set<AttributeInstance> attributesToUpdate = this.getAttributes().getAttributesToUpdate();
-+        // DivineMC start - Multithreaded tracker
-+        int[] attributesToUpdate = this.getAttributes().getAttributesToUpdateIds();
- 
--        for (AttributeInstance attributeInstance : attributesToUpdate) {
--            this.onAttributeUpdated(attributeInstance.getAttribute());
-+        for (int attribute : attributesToUpdate) {
-+            this.onAttributeUpdated(net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE.get(attribute).orElseThrow());
-         }
--
--        attributesToUpdate.clear();
-+        // DivineMC end - Multithreaded tracker
-     }
- 
-     protected void onAttributeUpdated(Holder<Attribute> attribute) {
-@@ -3581,6 +_,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-     public void detectEquipmentUpdates() {
-         Map<EquipmentSlot, ItemStack> map = this.collectEquipmentChanges();
-         if (map != null) {
-+            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.equipmentTracking && !(this instanceof net.minecraft.world.entity.player.Player)) this.equipment.lithium$onEquipmentChangesSent(); // DivineMC - lithium: equipment_tracking
-             this.handleHandSwap(map);
-             if (!map.isEmpty()) {
-                 this.handleEquipmentChanges(map);
-@@ -3589,6 +_,14 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-     }
- 
-     private @Nullable Map<EquipmentSlot, ItemStack> collectEquipmentChanges() {
-+        // DivineMC start - lithium: equipment_tracking
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.equipmentTracking) {
-+            final boolean isArmorStandUpdateNoTick = this instanceof net.minecraft.world.entity.decoration.ArmorStand stand && !stand.canTick && stand.noTickEquipmentDirty;
-+            if (!isArmorStandUpdateNoTick && !this.equipment.lithium$hasUnsentEquipmentChanges()) {
-+                return null;
-+            }
-+        }
-+        // DivineMC end - lithium: equipment_tracking
-         Map<EquipmentSlot, ItemStack> map = null;
-         // Paper start - EntityEquipmentChangedEvent
-         record EquipmentChangeImpl(org.bukkit.inventory.ItemStack oldItem, org.bukkit.inventory.ItemStack newItem) implements io.papermc.paper.event.entity.EntityEquipmentChangedEvent.EquipmentChange {

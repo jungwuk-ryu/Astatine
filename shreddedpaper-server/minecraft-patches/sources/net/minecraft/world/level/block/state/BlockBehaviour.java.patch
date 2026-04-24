@@ -7,24 +7,7 @@
  import com.mojang.serialization.Codec;
  import com.mojang.serialization.MapCodec;
  import com.mojang.serialization.codecs.RecordCodecBuilder;
-@@ -84,7 +_,7 @@ import net.minecraft.world.phys.shapes.Shapes;
- import net.minecraft.world.phys.shapes.VoxelShape;
- import org.jspecify.annotations.Nullable;
- 
--public abstract class BlockBehaviour implements FeatureElement {
-+public abstract class BlockBehaviour implements FeatureElement, net.caffeinemc.mods.lithium.common.block.entity.ShapeUpdateHandlingBlockBehaviour { // DivineMC - lithium: sleeping_block_entity
-     protected static final Direction[] UPDATE_SHAPE_ORDER = new Direction[]{
-         Direction.WEST, Direction.EAST, Direction.NORTH, Direction.SOUTH, Direction.DOWN, Direction.UP
-     };
-@@ -156,6 +_,7 @@ public abstract class BlockBehaviour implements FeatureElement {
-         BlockState neighborState,
-         RandomSource random
-     ) {
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) this.lithium$handleShapeUpdate(level, state, pos, neighborPos, neighborState); // DivineMC - lithium: sleeping_block_entity
-         return state;
-     }
- 
-@@ -167,7 +_,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+@@ -167,7 +_,7 @@
      }
  
      protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {

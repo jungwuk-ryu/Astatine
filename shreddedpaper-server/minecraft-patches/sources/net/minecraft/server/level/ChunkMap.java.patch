@@ -91,8 +91,6 @@
 @@ -728,6 +_,7 @@
  
          Objects.checkFromIndexSize(0, len, raw.length);
-+        final double configuredSpawnRangeSquared = (double)org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.playerNearChunkDetectionRange
-+            * (double)org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.playerNearChunkDetectionRange; // DivineMC - configurable player-near-chunk range
          for (int i = 0; i < len; ++i) {
 +            try { // ShreddedPaper - concurrent modification
              // Paper start - PlayerNaturallySpawnCreaturesEvent
@@ -161,7 +159,7 @@
 +            if (serverPlayer == null) continue; // ShreddedPaper - concurrent modification
              // Paper start - PlayerNaturallySpawnCreaturesEvent
              com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent event;
-+            blockRange = configuredSpawnRangeSquared; // DivineMC - configurable player-near-chunk range
+             blockRange = 16384.0D;
 @@ -833,6 +_,7 @@
                  // Paper end - PlayerNaturallySpawnCreaturesEvent
                  return true;
@@ -173,13 +171,11 @@
 @@ -855,7 +_,9 @@
  
          Objects.checkFromIndexSize(0, len, raw.length);
-+        final double configuredSpawnRangeSquared = (double)org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.playerNearChunkDetectionRange
-+            * (double)org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.playerNearChunkDetectionRange; // DivineMC - configurable player-near-chunk range
          for (int i = 0; i < len; ++i) {
 +            try { // ShreddedPaper - concurrent modification
              final ServerPlayer player = raw[i];
 +            if (player == null) continue; // ShreddedPaper - concurrent modification
-+            if (this.playerIsCloseEnoughForSpawning(player, chunkPos, configuredSpawnRangeSquared)) { // Spigot // DivineMC - configurable player-near-chunk range
+             if (this.playerIsCloseEnoughForSpawning(player, chunkPos, 16384.0D)) { // Spigot
                  if (ret == null) {
                      ret = new ArrayList<>(len - i);
 @@ -864,6 +_,7 @@

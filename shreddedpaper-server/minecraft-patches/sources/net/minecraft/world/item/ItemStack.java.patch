@@ -1,15 +1,6 @@
 --- a/net/minecraft/world/item/ItemStack.java
 +++ b/net/minecraft/world/item/ItemStack.java
-@@ -102,7 +_,7 @@ import org.apache.commons.lang3.mutable.MutableBoolean;
- import org.jspecify.annotations.Nullable;
- import org.slf4j.Logger;
- 
--public final class ItemStack implements DataComponentHolder {
-+public final class ItemStack implements DataComponentHolder, net.caffeinemc.mods.lithium.common.util.change_tracking.ChangePublisher<net.minecraft.world.item.ItemStack>, net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.core.component.PatchedDataComponentMap> { // DivineMC - lithium: sleeping_block_entity
-     private static final List<Component> OP_NBT_WARNING = List.of(
-         Component.translatable("item.op_warning.line1").withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
-         Component.translatable("item.op_warning.line2").withStyle(ChatFormatting.RED),
-@@ -385,29 +_,31 @@ public final class ItemStack implements DataComponentHolder {
+@@ -385,29 +_,31 @@
              ServerLevel serverLevel = (ServerLevel) context.getLevel();
  
              if (!(item instanceof BucketItem/* || item instanceof SolidBucketItem*/)) { // if not bucket // Paper - Fix cancelled powdered snow bucket placement
@@ -50,7 +41,7 @@
                  org.bukkit.event.world.StructureGrowEvent structureEvent = null;
                  if (treeType != null) {
                      boolean isBonemeal = this.getItem() == Items.BONE_MEAL;
-@@ -433,15 +_,15 @@ public final class ItemStack implements DataComponentHolder {
+@@ -433,15 +_,15 @@
                      player.awardStat(Stats.ITEM_USED.get(item)); // SPIGOT-7236 - award stat
                  }
  
@@ -70,7 +61,7 @@
                  if (blocks.size() > 1) {
                      placeEvent = org.bukkit.craftbukkit.event.CraftEventFactory.callBlockMultiPlaceEvent(serverLevel, player, hand, blocks, clickedPos);
                  } else if (blocks.size() == 1 && item != Items.POWDER_SNOW_BUCKET) { // Paper - Fix cancelled powdered snow bucket placement
-@@ -452,14 +_,14 @@ public final class ItemStack implements DataComponentHolder {
+@@ -452,14 +_,14 @@
                      interactionResult = InteractionResult.FAIL; // cancel placement
                      // PAIL: Remove this when MC-99075 fixed
                      player.containerMenu.forceHeldSlot(hand);
@@ -87,7 +78,7 @@
                  } else {
                      // Change the stack to its new contents if it hasn't been tampered with.
                      if (this.getCount() == oldCount && Objects.equals(this.components.asPatch(), previousPatch)) {
-@@ -467,7 +_,7 @@ public final class ItemStack implements DataComponentHolder {
+@@ -467,7 +_,7 @@
                          this.setCount(newCount);
                      }
  
@@ -96,7 +87,7 @@
                          serverLevel.setBlockEntity(e.getValue());
                      }
  
-@@ -503,15 +_,15 @@ public final class ItemStack implements DataComponentHolder {
+@@ -503,15 +_,15 @@
                      }
  
                      // SPIGOT-4678
@@ -116,7 +107,7 @@
                          }
                      }
  
-@@ -538,8 +_,8 @@ public final class ItemStack implements DataComponentHolder {
+@@ -538,8 +_,8 @@
                      player.awardStat(Stats.ITEM_USED.get(item));
                  }
              }
@@ -127,126 +118,3 @@
              // CraftBukkit end
  
              return interactionResult;
-@@ -1020,6 +_,7 @@ public final class ItemStack implements DataComponentHolder {
-     // CraftBukkit end
- 
-     public <T> @Nullable T set(DataComponentType<T> component, @Nullable T value) {
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && component == DataComponents.ENCHANTMENTS && this.subscriber instanceof net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.EnchantmentSubscriber<ItemStack> enchantmentSubscriber) enchantmentSubscriber.lithium$notifyAfterEnchantmentChange(this, this.subscriberData); // DivineMC - lithium: sleeping_block_entity
-         return this.components.set(component, value);
-     }
- 
-@@ -1374,6 +_,23 @@ public final class ItemStack implements DataComponentHolder {
-     }
- 
-     public void setCount(int count) {
-+        // DivineMC start - lithium: sleeping_block_entity
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && count != this.count) {
-+            if (this.subscriber instanceof net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.CountChangeSubscriber<ItemStack> countChangeSubscriber) {
-+                countChangeSubscriber.lithium$notifyCount(this, this.subscriberData, count);
-+            }
-+
-+            if (count == 0) {
-+                this.components.lithium$unsubscribe(this);
-+
-+                if (this.subscriber != null) {
-+                    this.subscriber.lithium$forceUnsubscribe(this, this.subscriberData);
-+                    this.subscriber = null;
-+                    this.subscriberData = 0;
-+                }
-+            }
-+        }
-+        // DivineMC end - lithium: sleeping_block_entity
-         this.count = count;
-     }
- 
-@@ -1442,4 +_,90 @@ public final class ItemStack implements DataComponentHolder {
-             .or(() -> Optional.ofNullable(this.getItem().getItemDamageSource(attacker)))
-             .orElseGet(fallback);
-     }
-+
-+    // DivineMC start - lithium: sleeping_block_entity
-+    private net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.item.ItemStack> subscriber;
-+    private int subscriberData;
-+
-+    @Override
-+    public void lithium$subscribe(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.item.ItemStack> subscriber, int subscriberData) {
-+        if (this.isEmpty()) {
-+            throw new IllegalStateException("Cannot subscribe to an empty ItemStack!");
-+        }
-+
-+        if (this.subscriber == null) {
-+            this.startTrackingChanges();
-+        }
-+        this.subscriber = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.combine(this.subscriber, this.subscriberData, subscriber, subscriberData);
-+        if (this.subscriber instanceof net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.Multi<?>) {
-+            this.subscriberData = 0;
-+        } else {
-+            this.subscriberData = subscriberData;
-+        }
-+    }
-+
-+    @Override
-+    public int lithium$unsubscribe(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.item.ItemStack> subscriber) {
-+        if (this.isEmpty()) {
-+            throw new IllegalStateException("Cannot unsubscribe from an empty ItemStack!");
-+        }
-+
-+        int retval = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.dataOf(this.subscriber, subscriber, this.subscriberData);
-+        this.subscriberData = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.dataWithout(this.subscriber, subscriber, this.subscriberData);
-+        this.subscriber = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.without(this.subscriber, subscriber);
-+
-+        if (this.subscriber == null) {
-+            this.components.lithium$unsubscribe(this);
-+        }
-+        return retval;
-+    }
-+
-+    @Override
-+    public void lithium$unsubscribeWithData(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.item.ItemStack> subscriber, int subscriberData) {
-+        if (this.isEmpty()) {
-+            throw new IllegalStateException("Cannot unsubscribe from an empty ItemStack!");
-+        }
-+
-+        this.subscriberData = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.dataWithout(this.subscriber, subscriber, this.subscriberData, subscriberData, true);
-+        this.subscriber = net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.without(this.subscriber, subscriber, subscriberData, true);
-+
-+        if (this.subscriber == null) {
-+            this.components.lithium$unsubscribe(this);
-+        }
-+    }
-+
-+    @Override
-+    public boolean lithium$isSubscribedWithData(net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber<net.minecraft.world.item.ItemStack> subscriber, int subscriberData) {
-+        if (this.isEmpty()) {
-+            throw new IllegalStateException("Cannot be subscribed to an empty ItemStack!");
-+        }
-+
-+        return net.caffeinemc.mods.lithium.common.util.change_tracking.ChangeSubscriber.containsSubscriber(this.subscriber, this.subscriberData, subscriber, subscriberData);
-+    }
-+
-+    @Override
-+    public void lithium$forceUnsubscribe(PatchedDataComponentMap publisher, int subscriberData) {
-+        if (publisher != this.components) {
-+            throw new IllegalStateException("Invalid publisher, expected " + this.components + " but got " + publisher);
-+        }
-+        this.subscriber.lithium$forceUnsubscribe(this, this.subscriberData);
-+        this.subscriber = null;
-+        this.subscriberData = 0;
-+    }
-+
-+    private void startTrackingChanges() {
-+        this.components.lithium$subscribe(this, 0);
-+    }
-+
-+    @Override
-+    public void lithium$notify(PatchedDataComponentMap publisher, int subscriberData) {
-+        if (publisher != this.components) {
-+            throw new IllegalStateException("Invalid publisher, expected " + this.components + " but got " + publisher);
-+        }
-+
-+        if (this.subscriber != null) {
-+            this.subscriber.lithium$notify(this, this.subscriberData);
-+        }
-+    }
-+    // DivineMC end - lithium: sleeping_block_entity
- }

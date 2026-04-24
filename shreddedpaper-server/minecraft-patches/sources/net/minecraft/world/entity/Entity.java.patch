@@ -15,7 +15,7 @@
  import it.unimi.dsi.fastutil.floats.FloatArraySet;
  import it.unimi.dsi.fastutil.floats.FloatArrays;
  import it.unimi.dsi.fastutil.floats.FloatSet;
-@@ -24,6 +_,7 @@ import java.util.Objects;
+@@ -24,6 +_,7 @@
  import java.util.Optional;
  import java.util.Set;
  import java.util.UUID;
@@ -23,7 +23,7 @@
  import java.util.concurrent.atomic.AtomicInteger;
  import java.util.function.BiConsumer;
  import java.util.function.Predicate;
-@@ -148,6 +_,7 @@ import net.minecraft.world.scores.PlayerTeam;
+@@ -148,6 +_,7 @@
  import net.minecraft.world.scores.ScoreHolder;
  import net.minecraft.world.scores.Team;
  import net.minecraft.world.waypoints.WaypointTransmitter;
@@ -31,7 +31,7 @@
  import org.jetbrains.annotations.Contract;
  import org.jspecify.annotations.Nullable;
  import org.slf4j.Logger;
-@@ -283,6 +_,8 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -283,6 +_,8 @@
      public double xOld;
      public double yOld;
      public double zOld;
@@ -40,16 +40,7 @@
      public float maxUpStep; // Purpur - Add option to set armorstand step height
      public boolean noPhysics;
      public final RandomSource random; // Paper - Share random for entities to make them more random // Add toggle for RNG manipulation
-@@ -369,6 +_,8 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
-     public boolean fixedPose = false; // Paper - Expand Pose API
-     private final int despawnTime; // Paper - entity despawn time limit
-     public int totalEntityAge; // Paper - age-like counter for all entities
-+    public boolean activatedPriorityReset = false; // DivineMC - Dynamic Activation of Brain
-+    public int activatedPriority = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabMaximumActivationFrequency; // DivineMC - Dynamic Activation of Brain
-     public final io.papermc.paper.entity.activation.ActivationType activationType = io.papermc.paper.entity.activation.ActivationType.activationTypeFor(this); // Paper - EAR 2/tracking ranges
-     // Paper start - EAR 2
-     public final boolean defaultActivationState;
-@@ -709,7 +_,7 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -709,7 +_,7 @@
      public void resendPossiblyDesyncedEntityData(net.minecraft.server.level.ServerPlayer player) {
          if (player.getBukkitEntity().canSee(this.getBukkitEntity())) {
              ServerLevel world = (net.minecraft.server.level.ServerLevel)this.level();
@@ -58,7 +49,7 @@
              if (tracker == null) {
                  return;
              }
-@@ -830,6 +_,14 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -830,6 +_,14 @@
      }
  
      public void setPos(double x, double y, double z) {
@@ -73,7 +64,7 @@
          this.setPosRaw(x, y, z, true); // Paper - Block invalid positions and bounding box; force update
          // this.setBoundingBox(this.makeBoundingBox()); // Paper - Block invalid positions and bounding box; move into setPosRaw
      }
-@@ -1148,7 +_,9 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -1148,7 +_,9 @@
      public void move(MoverType type, Vec3 movement) {
          final Vec3 originalMovement = movement; // Paper - Expose pre-collision velocity
          // Paper start - detailed watchdog information
@@ -84,7 +75,7 @@
          synchronized (this.posLock) {
              this.moveStartX = this.getX();
              this.moveStartY = this.getY();
-@@ -1476,7 +_,7 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -1476,7 +_,7 @@
      }
  
      protected BlockPos getOnPos(float yOffset) {
@@ -93,7 +84,7 @@
              BlockPos blockPos = this.mainSupportingBlockPos.get();
              if (!(yOffset > 1.0E-5F)) {
                  return blockPos;
-@@ -2377,7 +_,7 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -2377,7 +_,7 @@
                  }
                  delta = event.getKnockback();
              }
@@ -102,7 +93,7 @@
              // Paper end - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
              this.needsSync = true;
          }
-@@ -3546,7 +_,9 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -3546,7 +_,9 @@
          }
      }
  
@@ -112,7 +103,7 @@
          if (this.level() instanceof ServerLevel serverLevel) {
              this.processPortalCooldown();
              if (this.portalProcess != null) {
-@@ -3554,15 +_,19 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -3554,15 +_,19 @@
                      ProfilerFiller profilerFiller = Profiler.get();
                      profilerFiller.push("portal");
                      this.setPortalCooldown();
@@ -133,7 +124,7 @@
  
                      profilerFiller.pop();
                  } else if (this.portalProcess.hasExpired()) {
-@@ -4064,6 +_,11 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -4064,6 +_,11 @@
              PositionMoveRotation absolutePosition = PositionMoveRotation.calculateAbsolute(PositionMoveRotation.of(this), PositionMoveRotation.of(teleportTransition), teleportTransition.relatives());
              Vec3 velocity = absolutePosition.deltaMovement(); // Paper
              org.bukkit.Location to = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(absolutePosition.position(), teleportTransition.newLevel(), absolutePosition.yRot(), absolutePosition.xRot());
@@ -145,7 +136,7 @@
              // Paper start - gateway-specific teleport event
              final org.bukkit.event.entity.EntityTeleportEvent teleEvent;
              if (this.portalProcess != null && this.portalProcess.isSamePortal(((net.minecraft.world.level.block.EndGatewayBlock) Blocks.END_GATEWAY)) && this.level.getBlockEntity(this.portalProcess.getEntryPosition()) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity theEndGatewayBlockEntity) {
-@@ -4920,7 +_,7 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -4920,7 +_,7 @@
              pushVector = pushVector.normalize().scale(0.0045000000000000005);
          }
  
@@ -154,7 +145,7 @@
  
          // note: inFluid = true here as pushVector != 0
          return true;
-@@ -4996,6 +_,12 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
+@@ -4996,6 +_,12 @@
  
      public void setDeltaMovement(Vec3 deltaMovement) {
          if (deltaMovement.isFinite()) {
@@ -167,33 +158,3 @@
              synchronized (this.posLock) { // Paper - detailed watchdog information
              this.deltaMovement = deltaMovement;
              } // Paper - detailed watchdog information
-@@ -5135,6 +_,18 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
-             this.setBoundingBox(this.makeBoundingBox());
-         }
-         // Paper end - Block invalid positions and bounding box
-+        // DivineMC start - lithium: sleeping_block_entity
-+        if (!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity) return;
-+        if (this instanceof ItemEntity) {
-+            long sectionKey = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionKey(this);
-+            net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionItemEntityMovementTracker tracker = net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionItemEntityMovementTracker.itemEntityMovementTrackerMap.get(new net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionEntityMovementTracker.ChunkSectionIdentifier(sectionKey, level.getMinecraftWorld().uuid));
-+            if (tracker != null) tracker.notifyAllListeners(level.getGameTime());
-+        } else if (this instanceof net.minecraft.world.entity.vehicle.ContainerEntity) {
-+            long sectionKey = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionKey(this);
-+            net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionInventoryEntityTracker tracker = net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionInventoryEntityTracker.containerEntityMovementTrackerMap.get(new net.caffeinemc.mods.lithium.common.tracking.entity.ChunkSectionEntityMovementTracker.ChunkSectionIdentifier(sectionKey, level.getMinecraftWorld().uuid));
-+            if (tracker != null) tracker.notifyAllListeners(level.getGameTime());
-+        }
-+        // DivineMC end - lithium: sleeping_block_entity
-     }
- 
-     public void checkDespawn() {
-@@ -5294,6 +_,10 @@ public abstract class Entity implements SyncedDataHolder, DebugValueSource, Name
-         this.levelCallback = levelCallback;
-     }
- 
-+    public void lithium$notifyMovementListeners() { // DivineMC - lithium: sleeping_block_entity
-+        this.levelCallback.onMove();
-+    }
-+
-     @Override
-     public boolean shouldBeSaved() {
-         return (this.removalReason == null || this.removalReason.shouldSave())

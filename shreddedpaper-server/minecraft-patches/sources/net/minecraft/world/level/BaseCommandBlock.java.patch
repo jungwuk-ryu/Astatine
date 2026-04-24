@@ -7,7 +7,7 @@
  import java.time.ZonedDateTime;
  import java.time.format.DateTimeFormatter;
  import java.util.Locale;
-@@ -9,6 +_,7 @@ import net.minecraft.CrashReportCategory;
+@@ -9,6 +_,7 @@
  import net.minecraft.ReportedException;
  import net.minecraft.commands.CommandSource;
  import net.minecraft.commands.CommandSourceStack;
@@ -15,15 +15,7 @@
  import net.minecraft.network.chat.CommonComponents;
  import net.minecraft.network.chat.Component;
  import net.minecraft.network.chat.ComponentSerialization;
-@@ -30,10 +_,15 @@ public abstract class BaseCommandBlock {
-     @Nullable Component lastOutput;
-     private String command = "";
-     private @Nullable Component customName;
-+    // DivineMC start - Caching command block parse results
-+    private String lastExecutedCommand;
-+    private com.mojang.brigadier.ParseResults<CommandSourceStack> parseResultsCache;
-+    // DivineMC end - Caching command block parse results
-     // CraftBukkit start
+@@ -34,6 +_,7 @@
      protected abstract org.bukkit.command.CommandSender getBukkitSender(CommandSourceStack wrapper);
      public abstract ServerLevel getLevel();
      // CraftBukkit end
@@ -31,69 +23,7 @@
  
      public int getSuccessCount() {
          return this.successCount;
-@@ -110,13 +_,41 @@ public abstract class BaseCommandBlock {
-                                 this.successCount++;
-                             }
-                         });
--                        // Paper start - ServerCommandEvent
--                        org.bukkit.event.server.ServerCommandEvent event = new org.bukkit.event.server.ServerCommandEvent(commandSourceStack.getBukkitSender(), net.minecraft.commands.Commands.trimOptionalPrefix(this.command));
--                        if (!event.callEvent()) {
--                            return true;
-+                        // DivineMC start - Command block parse results caching
-+                        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.commandBlockParseResultsCaching) {
-+                            String commandCache = this.command;
-+                            // noinspection DuplicatedCode
-+                            com.google.common.base.Joiner joiner = com.google.common.base.Joiner.on(" ");
-+
-+                            if (commandCache.startsWith("/")) {
-+                                commandCache = commandCache.substring(1);
-+                            }
-+
-+                            org.bukkit.event.server.ServerCommandEvent event = new org.bukkit.event.server.ServerCommandEvent(commandSourceStack.getBukkitSender(), commandCache);
-+                            org.bukkit.Bukkit.getPluginManager().callEvent(event);
-+                            if (!event.isCancelled()) {
-+                                commandCache = event.getCommand();
-+                                String[] args = commandCache.split(" ");
-+
-+                                if (args.length != 0) {
-+                                    String newCommand = joiner.join(args);
-+                                    if (!newCommand.equals(lastExecutedCommand) || parseResultsCache == null) {
-+                                        //net.minecraft.server.MinecraftServer.LOGGER.info("Recompiling parse results cache for command block at ({}, {}, {})", this.getPosition().x, this.getPosition().y, this.getPosition().z); // TODO: check this
-+                                        this.cache(level.getServer().getCommands().getDispatcher(), commandSourceStack, newCommand);
-+                                    }
-+                                    level.getServer().getCommands().performCommand(parseResultsCache, newCommand);
-+                                }
-+                            }
-+                        } else {
-+                            // Paper start - ServerCommandEvent
-+                            org.bukkit.event.server.ServerCommandEvent event = new org.bukkit.event.server.ServerCommandEvent(commandSourceStack.getBukkitSender(), net.minecraft.commands.Commands.trimOptionalPrefix(this.command));
-+                            if (!event.callEvent()) {
-+                                return true;
-+                            }
-+                            level.getServer().getCommands().performPrefixedCommand(commandSourceStack, event.getCommand());
-+                            // Paper end - ServerCommandEvent
-                         }
--                        level.getServer().getCommands().performPrefixedCommand(commandSourceStack, event.getCommand());
--                        // Paper end - ServerCommandEvent
-+                        // DivineMC end - Command block parse results caching
-                     }
-                 } catch (Throwable var7) {
-                     CrashReport crashReport = CrashReport.forThrowable(var7, "Executing command block");
-@@ -137,6 +_,13 @@ public abstract class BaseCommandBlock {
-         }
-     }
- 
-+    // DivineMC start - Command block parse results caching
-+    private void cache(com.mojang.brigadier.CommandDispatcher<CommandSourceStack> dispatcher, CommandSourceStack commandSourceStack, String commandCache) {
-+        this.parseResultsCache = dispatcher.parse(commandCache, commandSourceStack);
-+        this.lastExecutedCommand = commandCache;
-+    }
-+    // DivineMC end - Command block parse results caching
-+
-     public BaseCommandBlock.CloseableCommandBlockSource createSource(ServerLevel level) { // Paper - public, remove nullable
-         return new BaseCommandBlock.CloseableCommandBlockSource(level, this.trackOutput); // Paper - add back source when output disabled
-     }
-@@ -206,9 +_,11 @@ public abstract class BaseCommandBlock {
+@@ -206,9 +_,11 @@
          @Override
          public void sendSystemMessage(Component message) {
              if (this.trackOutput && !this.closed) { // Paper - add back source when output disabled

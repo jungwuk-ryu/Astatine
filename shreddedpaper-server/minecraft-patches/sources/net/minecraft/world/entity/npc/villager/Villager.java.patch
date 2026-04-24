@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/entity/npc/villager/Villager.java
 +++ b/net/minecraft/world/entity/npc/villager/Villager.java
-@@ -7,6 +_,7 @@ import com.google.common.collect.ImmutableSet;
+@@ -7,6 +_,7 @@
  import com.mojang.datafixers.util.Pair;
  import com.mojang.logging.LogUtils;
  import com.mojang.serialization.Dynamic;
@@ -8,25 +8,7 @@
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import java.util.List;
  import java.util.Map;
-@@ -181,6 +_,8 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
-     );
-     private boolean isLobotomized = false; public boolean isLobotomized() { return this.isLobotomized; } // Purpur - Lobotomize stuck villagers
-     private int notLobotomizedCount = 0; // Purpur - Lobotomize stuck villagers
-+    public long nextGolemPanic = -1; // DivineMC - Dynamic Activation of Brain
-+    private int behaviorTick = 0; // DivineMC - Dynamic Activation of Brain
- 
-     public Villager(EntityType<? extends Villager> type, Level level) {
-         this(type, level, VillagerType.PLAINS);
-@@ -410,7 +_,7 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
-         } else {
-             this.isLobotomized = false;
-         }
--        if (!inactive && (getRider() == null || !this.isControllable())) { // Purpur - Ridables
-+        if (!inactive && this.behaviorTick++ % this.activatedPriority == 0 && (getRider() == null || !this.isControllable())) { // Purpur - Ridables // DivineMC - Dynamic Activation of Brain
-             this.getBrain().tick(level, this); // Paper - EAR 2
-         }
-         else if (this.isLobotomized && shouldRestock(level)) restock();
-@@ -798,13 +_,15 @@ public class Villager extends AbstractVillager implements ReputationEventHandler
+@@ -798,13 +_,15 @@
              this.brain.getMemory(moduleType).ifPresent(pos -> {
                  ServerLevel level = server.getLevel(pos.dimension());
                  if (level != null) {

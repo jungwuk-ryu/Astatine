@@ -321,11 +321,10 @@
          profilerFiller.pop();
          boolean hasActiveTickets = !paperConfig().unsupportedSettings.disableWorldTickingWhenEmpty || this.chunkSource.hasActiveTickets(); // CraftBukkit - this prevents entity cleanup, other issues on servers with no players // Paper - restore this
          if (hasActiveTickets) {
-<<@@ -852,35 +_,37 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
-                 profilerFiller.pop();
+@@ -853,34 +_,36 @@
              }
  
--            io.papermc.paper.entity.activation.ActivationRange.activateEntities(this); // Paper - EAR
+             io.papermc.paper.entity.activation.ActivationRange.activateEntities(this); // Paper - EAR
 -            this.entityTickList
 -                .forEach(
 -                    entity -> {
@@ -352,7 +351,6 @@
 -                        }
 -                    }
 -                );
-+            // io.papermc.paper.entity.activation.ActivationRange.activateEntities(this); // Paper - EAR // ShreddedPaper - moved before region entity ticking
 +            // ShreddedPaper start - moved to ShreddedPaperEntityTicker
 +//            this.entityTickList
 +//                .forEach(

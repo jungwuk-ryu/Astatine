@@ -1,50 +1,6 @@
 --- a/net/minecraft/world/entity/monster/warden/Warden.java
 +++ b/net/minecraft/world/entity/monster/warden/Warden.java
-@@ -110,6 +_,7 @@ public class Warden extends Monster implements VibrationSystem {
-     private final VibrationSystem.User vibrationUser;
-     private VibrationSystem.Data vibrationData;
-     AngerManagement angerManagement = new AngerManagement(this::canTargetEntity, Collections.emptyList());
-+    private int behaviorTick = 0; // DivineMC - Dynamic Activation of Brain
- 
-     public Warden(EntityType<? extends Monster> type, Level level) {
-         super(type, level);
-@@ -304,20 +_,23 @@ public class Warden extends Monster implements VibrationSystem {
-     protected void customServerAiStep(ServerLevel level) {
-         ProfilerFiller profilerFiller = Profiler.get();
-         profilerFiller.push("wardenBrain");
--        if (getRider() == null || !this.isControllable()) // Purpur - only use brain if no rider
--        this.getBrain().tick(level, this);
--        profilerFiller.pop();
--        super.customServerAiStep(level);
--        if ((this.tickCount + this.getId()) % 120 == 0) {
--            applyDarknessAround(level, this.position(), this, 20);
--        }
-+        // DivineMC start - Dynamic Activation of Brain
-+        if ((getRider() == null || !this.isControllable()) && this.behaviorTick++ % this.activatedPriority == 0) { // Purpur - only use brain if no rider
-+            this.getBrain().tick(level, this);
-+            profilerFiller.pop();
-+            super.customServerAiStep(level);
-+            if ((this.tickCount + this.getId()) % 120 == 0) {
-+                applyDarknessAround(level, this.position(), this, 20);
-+            }
- 
--        if (this.tickCount % 20 == 0) {
--            this.angerManagement.tick(level, this::canTargetEntity);
--            this.syncClientAngerLevel();
--        }
-+            if (this.tickCount % 20 == 0) {
-+                this.angerManagement.tick(level, this::canTargetEntity);
-+                this.syncClientAngerLevel();
-+            }
- 
--        WardenAi.updateActivity(this);
-+            WardenAi.updateActivity(this);
-+        }
-+        // DivineMC end - Dynamic Activation of Brain
-     }
- 
-     @Override
-@@ -571,6 +_,16 @@ public class Warden extends Monster implements VibrationSystem {
+@@ -571,6 +_,16 @@
              @Override
              protected PathFinder createPathFinder(int maxVisitedNodes) {
                  this.nodeEvaluator = new WalkNodeEvaluator();

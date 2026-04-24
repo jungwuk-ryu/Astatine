@@ -283,6 +283,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
     public class AsyncOperations extends ConfigurationPart {
 
         public Pathfinding pathfinding = new Pathfinding();
+        public MultithreadedTracker multithreadedTracker = new MultithreadedTracker();
 
         public class Pathfinding extends ConfigurationPart {
 
@@ -300,6 +301,24 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
             @Comment("Equivalent to DivineMC's async.pathfinding.reject-policy. Valid values: CALLER_RUNS, FLUSH_ALL.")
             public String rejectPolicy = "CALLER_RUNS";
+        }
+
+        public class MultithreadedTracker extends ConfigurationPart {
+
+            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.enable.")
+            public boolean enable = true;
+
+            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.compat-mode. Enable for better compatibility with NPC plugins that use real player entities.")
+            public boolean compatMode = false;
+
+            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.max-threads. Use 0 for availableProcessors / 4, or a negative value to reserve that many processors.")
+            public int maxThreads = 1;
+
+            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.keepalive, in seconds.")
+            public int keepalive = 60;
+
+            @Comment("Equivalent to DivineMC's async.multithreaded-tracker.queue-size. Values <= 0 use max-threads * 256.")
+            public int queueSize = 0;
         }
     }
 

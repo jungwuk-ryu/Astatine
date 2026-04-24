@@ -7,7 +7,7 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.server.MinecraftServer;
  import net.minecraft.world.entity.Entity;
-@@ -142,7 +_,8 @@ public final class ActivationRange {
+@@ -142,7 +_,8 @@
          maxRange = Math.min((world.spigotConfig.simulationDistance << 4) - 8, maxRange);
  
          for (final Player player : world.players()) {
@@ -17,29 +17,7 @@
              if (world.spigotConfig.ignoreSpectatorActivation && player.isSpectator()) {
                  continue;
              }
-@@ -167,6 +_,21 @@ public final class ActivationRange {
-                 }
- 
-                 ActivationRange.activateEntity(entity);
-+
-+                // DivineMC start - Dynamic Activation of Brain
-+                if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabEnabled && entity.getType().dabEnabled && (!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabDontEnableIfInWater || entity.getType().is(net.minecraft.tags.EntityTypeTags.CAN_BREATHE_UNDER_WATER) || !entity.isInWaterOrRain())) {
-+                    if (!entity.activatedPriorityReset) {
-+                        entity.activatedPriorityReset = true;
-+                        entity.activatedPriority = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabMaximumActivationFrequency;
-+                    }
-+                    int squaredDistance = (int) player.distanceToSqr(entity);
-+                    entity.activatedPriority = squaredDistance > org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabStartDistanceSquared ?
-+                            Math.max(1, Math.min(squaredDistance >> org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.dabActivationDistanceMod, entity.activatedPriority)) :
-+                            1;
-+                } else {
-+                    entity.activatedPriority = 1;
-+                }
-+                // DivineMC end - Dynamic Activation of Brain
-             }
-         }
-     }
-@@ -177,13 +_,13 @@ public final class ActivationRange {
+@@ -177,13 +_,13 @@
       * @param entity
       */
      private static void activateEntity(final Entity entity) {

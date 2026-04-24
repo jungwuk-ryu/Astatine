@@ -320,6 +320,11 @@ public final class DivineConfig {
         public static int asyncPathfindingKeepalive = 60;
         public static int asyncPathfindingQueueSize = 0;
         public static PathfindTaskRejectPolicy asyncPathfindingRejectPolicy = PathfindTaskRejectPolicy.CALLER_RUNS;
+        public static boolean multithreadedEnabled = true;
+        public static boolean multithreadedCompatModeEnabled = false;
+        public static int asyncEntityTrackerMaxThreads = 1;
+        public static int asyncEntityTrackerKeepalive = 60;
+        public static int asyncEntityTrackerQueueSize = 256;
 
         private AsyncCategory() {
         }
@@ -342,11 +347,43 @@ public final class DivineConfig {
                 async.pathfinding = pathfinding;
             }
 
+            ShreddedPaperConfiguration.AsyncOperations.MultithreadedTracker multithreadedTracker = async.multithreadedTracker;
+            if (multithreadedTracker == null) {
+                multithreadedTracker = async.new MultithreadedTracker();
+                async.multithreadedTracker = multithreadedTracker;
+            }
+
+            final int availableProcessors = Runtime.getRuntime().availableProcessors();
+
+            multithreadedEnabled = multithreadedTracker.enable;
+            multithreadedCompatModeEnabled = multithreadedTracker.compatMode;
+            asyncEntityTrackerMaxThreads = multithreadedTracker.maxThreads;
+            asyncEntityTrackerKeepalive = Math.max(1, multithreadedTracker.keepalive);
+
+            if (asyncEntityTrackerMaxThreads < 0) {
+                asyncEntityTrackerMaxThreads = Math.max(availableProcessors + asyncEntityTrackerMaxThreads, 1);
+            } else if (asyncEntityTrackerMaxThreads == 0) {
+                asyncEntityTrackerMaxThreads = Math.max(availableProcessors / 4, 1);
+            }
+
+            if (!multithreadedEnabled) {
+                asyncEntityTrackerMaxThreads = 0;
+            }
+
+            asyncEntityTrackerQueueSize = multithreadedTracker.queueSize <= 0
+                ? Math.max(asyncEntityTrackerMaxThreads, 1) * 256
+                : multithreadedTracker.queueSize;
+
+            multithreadedTracker.enable = multithreadedEnabled;
+            multithreadedTracker.compatMode = multithreadedCompatModeEnabled;
+            multithreadedTracker.maxThreads = asyncEntityTrackerMaxThreads;
+            multithreadedTracker.keepalive = asyncEntityTrackerKeepalive;
+            multithreadedTracker.queueSize = asyncEntityTrackerQueueSize;
+
             asyncPathfinding = pathfinding.enable;
             asyncPathfindingMaxThreads = pathfinding.maxThreads;
             asyncPathfindingKeepalive = Math.max(1, pathfinding.keepalive);
 
-            final int availableProcessors = Runtime.getRuntime().availableProcessors();
             if (asyncPathfindingMaxThreads < 0) {
                 asyncPathfindingMaxThreads = Math.max(availableProcessors + asyncPathfindingMaxThreads, 1);
             } else if (asyncPathfindingMaxThreads == 0) {
@@ -385,6 +422,11 @@ public final class DivineConfig {
             asyncPathfindingKeepalive = 60;
             asyncPathfindingQueueSize = 256;
             asyncPathfindingRejectPolicy = PathfindTaskRejectPolicy.CALLER_RUNS;
+            multithreadedEnabled = true;
+            multithreadedCompatModeEnabled = false;
+            asyncEntityTrackerMaxThreads = 1;
+            asyncEntityTrackerKeepalive = 60;
+            asyncEntityTrackerQueueSize = 256;
         }
     }
 

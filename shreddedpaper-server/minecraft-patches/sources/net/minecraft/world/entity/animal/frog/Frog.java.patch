@@ -1,38 +1,6 @@
 --- a/net/minecraft/world/entity/animal/frog/Frog.java
 +++ b/net/minecraft/world/entity/animal/frog/Frog.java
-@@ -107,6 +_,7 @@ public class Frog extends Animal {
-     public final AnimationState swimIdleAnimationState = new AnimationState();
-     private org.purpurmc.purpur.controller.MoveControllerWASD purpurLandController; // Purpur - Ridables
-     private org.purpurmc.purpur.controller.WaterMoveControllerWASD purpurWaterController; // Purpur - Ridables
-+    private int behaviorTick = 0; // DivineMC - Dynamic Activation of Brain
- 
-     public Frog(EntityType<? extends Animal> type, Level level) {
-         super(type, level);
-@@ -261,13 +_,16 @@ public class Frog extends Animal {
-     protected void customServerAiStep(ServerLevel level) {
-         ProfilerFiller profilerFiller = Profiler.get();
-         profilerFiller.push("frogBrain");
--        if (getRider() == null || !this.isControllable()) // Purpur - only use brain if no rider
--        this.getBrain().tick(level, this);
--        profilerFiller.pop();
--        profilerFiller.push("frogActivityUpdate");
--        FrogAi.updateActivity(this);
--        profilerFiller.pop();
--        super.customServerAiStep(level);
-+        // DivineMC start - Dynamic Activation of Brain
-+        if ((getRider() == null || !this.isControllable()) && this.behaviorTick++ % this.activatedPriority == 0) { // Purpur - only use brain if no rider
-+            this.getBrain().tick(level, this);
-+            profilerFiller.pop();
-+            profilerFiller.push("frogActivityUpdate");
-+            FrogAi.updateActivity(this);
-+            profilerFiller.pop();
-+            super.customServerAiStep(level);
-+        }
-+        // DivineMC end - Dynamic Activation of Brain
-     }
- 
-     @Override
-@@ -473,6 +_,17 @@ public class Frog extends Animal {
+@@ -473,6 +_,17 @@
              super(mob, level);
          }
  
@@ -50,7 +18,7 @@
          @Override
          public boolean canCutCorner(PathType pathType) {
              return pathType != PathType.WATER_BORDER && super.canCutCorner(pathType);
-@@ -481,6 +_,11 @@ public class Frog extends Animal {
+@@ -481,6 +_,11 @@
          @Override
          protected PathFinder createPathFinder(int maxVisitedNodes) {
              this.nodeEvaluator = new Frog.FrogNodeEvaluator(true);

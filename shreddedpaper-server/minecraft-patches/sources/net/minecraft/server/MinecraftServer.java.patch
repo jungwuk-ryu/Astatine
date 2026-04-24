@@ -200,25 +200,3 @@
              serverPlayer.connection.resumeFlushing();
          }
  
-@@ -2742,6 +_,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
-     // CraftBukkit end
- 
-     private ProfilerFiller createProfiler() {
-+        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.disableMethodProfiler) return net.minecraft.util.profiling.InactiveProfiler.INSTANCE; // DivineMC - Option to disable method profiler
-         if (this.willStartRecordingMetrics) {
-             this.metricsRecorder = ActiveMetricsRecorder.createStarted(
-                 new ServerMetricsSamplersProvider(Util.timeSource, this.isDedicatedServer()),
-@@ -2871,8 +_,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
-         }
-     }
- 
--    public final java.util.concurrent.ExecutorService chatExecutor = java.util.concurrent.Executors.newCachedThreadPool(
--        new com.google.common.util.concurrent.ThreadFactoryBuilder().setDaemon(true).setNameFormat("Async Chat Thread - #%d").setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(net.minecraft.server.MinecraftServer.LOGGER)).build()); // Paper
-+    // DivineMC start - Virtual Threads
-+    public final java.util.concurrent.ExecutorService chatExecutor = org.bxteam.divinemc.config.DivineConfig.VirtualThreadsCategory.useChatScheduler()
-+        ? java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()
-+        : java.util.concurrent.Executors.newCachedThreadPool(new com.google.common.util.concurrent.ThreadFactoryBuilder().setDaemon(true).setNameFormat("Async Chat Thread - #%d").setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(net.minecraft.server.MinecraftServer.LOGGER)).build()); // Paper
-+    // DivineMC end - Virtual Threads
-     public final ChatDecorator improvedChatDecorator = new io.papermc.paper.adventure.ImprovedChatDecorator(this); // Paper - adventure
- 
-     public ChatDecorator getChatDecorator() {

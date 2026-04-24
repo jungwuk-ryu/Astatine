@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/level/chunk/LevelChunk.java
 +++ b/net/minecraft/world/level/chunk/LevelChunk.java
-@@ -6,6 +_,8 @@ import com.mojang.logging.LogUtils;
+@@ -6,6 +_,8 @@
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  import it.unimi.dsi.fastutil.shorts.ShortList;
@@ -9,7 +9,7 @@
  import java.util.ArrayList;
  import java.util.Collections;
  import java.util.List;
-@@ -22,6 +_,7 @@ import net.minecraft.core.SectionPos;
+@@ -22,6 +_,7 @@
  import net.minecraft.nbt.CompoundTag;
  import net.minecraft.network.FriendlyByteBuf;
  import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
@@ -17,7 +17,7 @@
  import net.minecraft.server.level.FullChunkStatus;
  import net.minecraft.server.level.ServerLevel;
  import net.minecraft.util.ProblemReporter;
-@@ -85,7 +_,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+@@ -85,7 +_,7 @@
              return "<null>";
          }
      };
@@ -26,7 +26,7 @@
      public boolean loaded;
      public final ServerLevel level; // CraftBukkit - type
      private @Nullable Supplier<FullChunkStatus> fullStatus;
-@@ -93,6 +_,8 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+@@ -93,6 +_,8 @@
      private final Int2ObjectMap<GameEventListenerRegistry> gameEventListenerRegistrySections;
      private final LevelChunkTicks<Block> blockTicks;
      private final LevelChunkTicks<Fluid> fluidTicks;
@@ -35,7 +35,7 @@
      private LevelChunk.UnsavedListener unsavedListener = chunkPos -> {};
      // CraftBukkit start
      public boolean mustNotSave;
-@@ -421,7 +_,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+@@ -421,7 +_,7 @@
                  if (!section.getBlockState(i, i1, i2).is(block)) {
                      return null;
                  } else {
@@ -44,7 +44,7 @@
                          state.onPlace(this.level, pos, blockState, flag1);
                      }
  
-@@ -473,7 +_,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+@@ -473,7 +_,7 @@
  
      public @Nullable BlockEntity getBlockEntity(BlockPos pos, LevelChunk.EntityCreationType creationType) {
          // CraftBukkit start
@@ -53,7 +53,7 @@
          if (blockEntity == null) {
              blockEntity = this.blockEntities.get(pos);
          }
-@@ -661,13 +_,13 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+@@ -661,13 +_,13 @@
  
                  org.bukkit.World world = this.level.getWorld();
                  if (world != null) {
@@ -69,37 +69,3 @@
                      }
                  }
                  server.getPluginManager().callEvent(new org.bukkit.event.world.ChunkPopulateEvent(bukkitChunk));
-@@ -916,12 +_,14 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
-                     (pos, ticker1) -> {
-                         TickingBlockEntity tickingBlockEntity = this.createTicker(blockEntity, ticker);
-                         if (ticker1 != null) {
-+                            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && blockEntity instanceof net.caffeinemc.mods.lithium.common.block.entity.SleepingBlockEntity sleepingBlockEntity) sleepingBlockEntity.lithium$setTickWrapper(ticker1); // DivineMC - lithium: sleeping_block_entity
-                             ticker1.rebind(tickingBlockEntity);
-                             return (LevelChunk.RebindableTickingBlockEntityWrapper)ticker1;
-                         } else if (this.isInLevel()) {
-                             LevelChunk.RebindableTickingBlockEntityWrapper rebindableTickingBlockEntityWrapper = new LevelChunk.RebindableTickingBlockEntityWrapper(
-                                 tickingBlockEntity
-                             );
-+                            if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.sleepingBlockEntity && blockEntity instanceof net.caffeinemc.mods.lithium.common.block.entity.SleepingBlockEntity sleepingBlockEntity) sleepingBlockEntity.lithium$setTickWrapper(rebindableTickingBlockEntityWrapper); // DivineMC - lithium: sleeping_block_entity
-                             this.level.addBlockEntityTicker(rebindableTickingBlockEntityWrapper);
-                             return rebindableTickingBlockEntityWrapper;
-                         } else {
-@@ -1013,14 +_,14 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
-         void run(LevelChunk chunk);
-     }
- 
--    static class RebindableTickingBlockEntityWrapper implements TickingBlockEntity {
--        private TickingBlockEntity ticker;
-+    public static class RebindableTickingBlockEntityWrapper implements TickingBlockEntity { // DivineMC - lithium: sleeping_block_entity - accessed by sleeping block entity helpers
-+        public TickingBlockEntity ticker; // DivineMC - lithium: sleeping_block_entity
- 
--        RebindableTickingBlockEntityWrapper(TickingBlockEntity ticker) {
-+        public RebindableTickingBlockEntityWrapper(TickingBlockEntity ticker) { // DivineMC - lithium: sleeping_block_entity
-             this.ticker = ticker;
-         }
- 
--        void rebind(TickingBlockEntity ticker) {
-+        public void rebind(TickingBlockEntity ticker) { // DivineMC - lithium: sleeping_block_entity
-             this.ticker = ticker;
-         }
- 
