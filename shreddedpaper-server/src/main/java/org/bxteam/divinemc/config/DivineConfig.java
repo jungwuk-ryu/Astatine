@@ -39,7 +39,6 @@ public final class DivineConfig {
         public static boolean useEuclideanDistanceSquared = true;
         public static boolean endBiomeCacheEnabled = true;
         public static int endBiomeCacheCapacity = 2048;
-        public static boolean smoothBedrockLayer = false;
         public static boolean enableDensityFunctionCompiler = true;
         public static boolean enableStructureLayoutOptimizer = true;
         public static boolean deduplicateShuffledTemplatePoolElementList = true;
@@ -162,7 +161,6 @@ public final class DivineConfig {
             useEuclideanDistanceSquared = chunks.useEuclideanDistanceSquared;
             endBiomeCacheEnabled = chunks.endBiomeCacheEnabled;
             endBiomeCacheCapacity = Math.max(1, chunks.endBiomeCacheCapacity);
-            smoothBedrockLayer = chunks.smoothBedrockLayer;
             enableDensityFunctionCompiler = experimental.enableDensityFunctionCompiler;
             enableStructureLayoutOptimizer = experimental.enableStructureLayoutOptimizer;
             deduplicateShuffledTemplatePoolElementList = experimental.deduplicateShuffledTemplatePoolElementList;
@@ -185,6 +183,7 @@ public final class DivineConfig {
             }
             return ChunkSystemAlgorithm.C2ME_NEW;
         }
+
         private static void applyDefaults() {
             chunkDataCacheSoftLimit = 8192L;
             chunkDataCacheLimit = 32678L;
@@ -194,7 +193,6 @@ public final class DivineConfig {
             useEuclideanDistanceSquared = true;
             endBiomeCacheEnabled = true;
             endBiomeCacheCapacity = 2048;
-            smoothBedrockLayer = false;
             enableDensityFunctionCompiler = true;
             enableStructureLayoutOptimizer = true;
             deduplicateShuffledTemplatePoolElementList = true;

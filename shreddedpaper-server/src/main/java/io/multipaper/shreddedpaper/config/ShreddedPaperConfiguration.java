@@ -176,10 +176,6 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
             @Setting("end-biome-cache-capacity")
             public int endBiomeCacheCapacity = 2048;
 
-            @Comment("Smooth bedrock layers during world generation.")
-            @Setting("smooth-bedrock-layer")
-            public boolean smoothBedrockLayer = false;
-
             @Setting("experimental")
             public Experimental experimental = new Experimental();
 
@@ -197,6 +193,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
                 public boolean deduplicateShuffledTemplatePoolElementList = true;
             }
         }
+
         @Setting("dab")
         public Dab dab = new Dab();
 
