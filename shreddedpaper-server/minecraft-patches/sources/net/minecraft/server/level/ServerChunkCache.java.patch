@@ -279,14 +279,14 @@
          @Override
          public boolean pollTask() {
 +            // ShreddedPaper start - run all region tasks cause the worker threads might be deadlocked and not get to them
-+            if ((!MinecraftServer.getServer().executingMidTickTasks.get() && TickThread.isTickThread()) || TickThread.isShutdownThread()) {
++            if (TickThread.isShutdownThread() || (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && !MinecraftServer.getServer().executingMidTickTasks.get() && TickThread.isTickThread())) {
 +                level.getChunkSource().tickingRegions.forEach(region -> {
 +                    if (TickThread.isShutdownThread()) {
 +                        // We're trying to shut down the server, just execute all the tasks
 +                        region.getInternalTaskQueue().executeTask();
 +                    } else if (!region.getInternalTaskQueue().hasNoScheduledTasks()) {
 +                        // We're the main thread, try executing chunk tasks for regions not being ticked
-+                        level.chunkScheduler.getRegionLocker().tryReadOnlyLockNow(region.getRegionPos(), () -> {
++                        level.chunkScheduler.getRegionLocker().tryLockNow(region.getRegionPos(), () -> {
 +                            region.getInternalTaskQueue().executeTask();
 +                        });
 +                    }

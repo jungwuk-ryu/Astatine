@@ -4,6 +4,7 @@
  import com.google.gson.JsonArray;
  import com.google.gson.JsonObject;
  import com.mojang.logging.LogUtils;
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.LevelChunkRegion;
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
@@ -23,7 +24,7 @@
 +                ret |= region.getInternalTaskQueue().executeTask();
 +            }
 +        }
-+        if (!ret) {
++        if (!ret && !ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
 +            // Try bordering regions to our locked regions
 +            for (RegionPos regionPos : world.chunkScheduler.getRegionLocker().getLockedRegions()) {
 +                for (int x = -1; x <= 1; x++) {
@@ -32,7 +33,7 @@
 +                        if (world.chunkScheduler.getRegionLocker().hasLock(borderRegionPos)) continue; // Don't bother trying regions we already have locked
 +                        LevelChunkRegion region = world.chunkSource.tickingRegions.get(borderRegionPos);
 +                        if (region != null && !region.getInternalTaskQueue().hasNoScheduledTasks()) {
-+                            ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().internalTryTakeReadOnlyLockNow(borderRegionPos, 0);
++                            ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().internalTryTakeLockNow(borderRegionPos, 0);
 +                            if (lock != null) {
 +                                try {
 +                                    ret |= region.getInternalTaskQueue().executeTask();

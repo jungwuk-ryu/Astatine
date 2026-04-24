@@ -5,6 +5,7 @@
  
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 +import io.multipaper.shreddedpaper.threading.SynchronousPluginExecution;
  import net.minecraft.core.BlockPos;
@@ -95,7 +96,13 @@
  
      public static boolean isTickThreadFor(final Level world, final ChunkPos pos) {
 -        return isTickThread();
-+        return world.getServer().forceTicks || isShutdownThread() || ((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(RegionPos.forChunk(pos)); // ShreddedPaper
++        // ShreddedPaper start
++        final RegionPos regionPos = RegionPos.forChunk(pos);
++        return world.getServer().forceTicks
++                || isShutdownThread()
++                || ((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos)
++                || ShreddedPaperChunkTicker.isCurrentlyTickingRegion(world, regionPos);
++        // ShreddedPaper end
      }
  
      public static boolean isTickThreadFor(final Level world, final Vec3 pos) {
@@ -152,7 +159,9 @@
 +
 +        for (int x = minRegionX; x <= maxRegionX; x++) {
 +            for (int z = minRegionZ; z <= maxRegionZ; z++) {
-+                if (!((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(new RegionPos(x, z))) {
++                final RegionPos regionPos = new RegionPos(x, z);
++                if (!((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos)
++                        && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(world, regionPos)) {
 +                    return false;
 +                }
 +            }

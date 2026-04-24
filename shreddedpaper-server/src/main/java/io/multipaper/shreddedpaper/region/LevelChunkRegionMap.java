@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.region;
 
 import com.mojang.logging.LogUtils;
+import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.server.level.ServerLevel;
@@ -10,7 +11,9 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.slf4j.Logger;
@@ -55,9 +58,14 @@ public class LevelChunkRegionMap {
     public void remove(RegionPos regionPos) {
         regionsLock.write(() -> {
             LevelChunkRegion region = regions.remove(regionPos.longKey);
+            if (region == null) {
+                return;
+            }
             if (!region.isEmpty()) {
                 // Guess this region has been modified by another thread, re-add it
                 regions.put(regionPos.longKey, region);
+            } else {
+                region.getRuntimeState().detach(region);
             }
         });
     }
@@ -162,15 +170,19 @@ public class LevelChunkRegionMap {
     /**
      * Schedule a task to run on the given region's thread at the beginning of the next tick
      */
-    public void scheduleTask(RegionPos regionPos, Runnable task) {
-        scheduleTask(regionPos, task, 0);
+    public boolean scheduleTask(RegionPos regionPos, Runnable task) {
+        return scheduleTask(regionPos, task, 0);
     }
 
     /**
      * Schedule a task to run on the given region's thread after a certain number of ticks
      */
-    public void scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks) {
-        getOrCreate(regionPos).scheduleTask(task, delayInTicks);
+    public boolean scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks) {
+        return scheduleTask(regionPos, task, delayInTicks, RegionTaskClass.CRITICAL_SYSTEM);
+    }
+
+    public boolean scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
+        return getOrCreate(regionPos).scheduleTask(taskClass, task, delayInTicks);
     }
 
     /**
@@ -235,19 +247,38 @@ public class LevelChunkRegionMap {
     }
 
     public List<Mob> collectRelevantNavigatingMobs(RegionPos regionPos) {
-        if (!level.chunkScheduler.getRegionLocker().hasLock(regionPos)) {
+        if (!level.chunkScheduler.getRegionLocker().hasLock(regionPos) && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.level, regionPos)) {
             // We care about the navigating mobs in at least this region, ensure it's locked
             throw new IllegalStateException("Collecting navigating mobs outside of region's thread");
         }
 
         ObjectArrayList<Mob> navigatingMobs = new ObjectArrayList<>();
+        final boolean independentOwner = ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
+                && ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.level, regionPos);
 
         for (int x = -ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; x <= ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; x++) {
             for (int z = -ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; z <= ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; z++) {
                 RegionPos i = new RegionPos(regionPos.x + x, regionPos.z + z);
 
                 // Only collect mobs from regions that are locked - if it's not locked, it should be too far away to matter
-                if (!level.chunkScheduler.getRegionLocker().hasLock(i)) continue;
+                if (!level.chunkScheduler.getRegionLocker().hasLock(i) && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.level, i)) {
+                    if (!independentOwner) {
+                        continue;
+                    }
+                    final ShreddedPaperRegionLocker.RegionLock readLock = level.chunkScheduler.getRegionLocker().internalTryTakeReadOnlyLockNow(i, 0);
+                    if (readLock == null) {
+                        continue;
+                    }
+                    try {
+                        LevelChunkRegion region = get(i);
+                        if (region != null) {
+                            region.collectNavigatingMobs(navigatingMobs);
+                        }
+                    } finally {
+                        readLock.unlock();
+                    }
+                    continue;
+                }
 
                 LevelChunkRegion region = get(i);
                 if (region == null) continue;

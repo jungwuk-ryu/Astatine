@@ -8,6 +8,7 @@
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.LevelChunkRegion;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 +import io.multipaper.shreddedpaper.util.SimpleStampedLock;
  import it.unimi.dsi.fastutil.longs.Long2ByteLinkedOpenHashMap;
  import it.unimi.dsi.fastutil.longs.Long2ByteMap;
@@ -110,18 +111,26 @@
 +                // ShreddedPaper start - save on chunk's thread
 +                CompletableFuture<NewChunkHolder.SaveStat> future;
 +                Supplier<NewChunkHolder.SaveStat> supplier = () -> holder.save(shutdown);
-+                do {
-+                    if (TickThread.isShutdownThread()) {
-+                        // We're shutting down, no need to worry about chunk threads
-+                        future = CompletableFuture.completedFuture(supplier.get());
-+                    } else {
-+                        future = CompletableFuture.supplyAsync(supplier, r -> world.chunkScheduler.getRegionLocker().tryReadOnlyLockNow(RegionPos.forChunk(holder.vanillaChunkHolder.getPos()), r));
-+                        if (!future.isDone()) {
++                final ChunkPos saveChunkPos = new ChunkPos(holder.chunkX, holder.chunkZ);
++                if (TickThread.isShutdownThread() || ShreddedPaper.isSync(holder.world, saveChunkPos)) {
++                    // We're shutting down or already on the owner, no need to hand off.
++                    future = CompletableFuture.completedFuture(supplier.get());
++                } else {
++                    ShreddedPaperRegionLocker.RegionLock saveLock;
++                    do {
++                        saveLock = world.chunkScheduler.getRegionLocker().tryTakeReadOnlyLockNow(RegionPos.forChunk(holder.vanillaChunkHolder.getPos()));
++                        if (saveLock == null) {
 +                            // Poll task while we wait for region to become unlocked
 +                            world.chunkSource.mainThreadProcessor.pollTask();
++                            LockSupport.parkNanos(100_000L);
 +                        }
++                    } while (saveLock == null);
++                    try {
++                        future = CompletableFuture.completedFuture(supplier.get());
++                    } finally {
++                        saveLock.unlock();
 +                    }
-+                } while (!future.isDone());
++                }
 +                final NewChunkHolder.SaveStat saveStat = future.join();
 +                // ShreddedPaper end - save on chunk's thread
                  if (saveStat != null) {

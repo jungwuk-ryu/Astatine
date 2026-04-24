@@ -192,11 +192,17 @@
          profilerFiller.popPush("players");
          this.playerList.tick();
          profilerFiller.popPush("debugSubscribers");
-@@ -1887,6 +_,7 @@
+@@ -1887,6 +_,9 @@
  
-         for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
-             serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
-+            serverPlayer.connection.keepConnectionAlive(); // ShreddedPaper - send the ping packet right before flushing
-             serverPlayer.connection.resumeFlushing();
-         }
+-        for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
+-            serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
+-            serverPlayer.connection.resumeFlushing();
+-        }
++        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) { // ShreddedPaper - independent regions flush owner players inside region tick
++            for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
++                serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
++                serverPlayer.connection.keepConnectionAlive(); // ShreddedPaper - send the ping packet right before flushing
++                serverPlayer.connection.resumeFlushing();
++            }
++        }
  

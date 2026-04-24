@@ -2,6 +2,11 @@ package io.multipaper.shreddedpaper.region;
 
 import ca.spottedleaf.concurrentutil.executor.queue.PrioritisedTaskQueue;
 import ca.spottedleaf.moonrise.common.list.IteratorSafeOrderedReferenceSet;
+import io.multipaper.shreddedpaper.threading.region.RegionMailbox;
+import io.multipaper.shreddedpaper.threading.region.RegionOverloadController;
+import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
+import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
 import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -23,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -39,7 +43,7 @@ public class LevelChunkRegion {
     private final LongOpenHashSet playerTickingChunkRequests = new LongOpenHashSet(); // ChunkPos.longKey
     private final IteratorSafeOrderedReferenceSet<Entity> tickingEntities = new IteratorSafeOrderedReferenceSet<>(); // Use IteratorSafeOrderedReferenceSet to maintain entity tick order
     private final Set<Entity> trackedEntities = new ObjectOpenHashSet<>();
-    private final ConcurrentLinkedQueue<DelayedTask> scheduledTasks = new ConcurrentLinkedQueue<>(); // Writable tasks
+    private final RegionRuntimeState runtimeState;
     private final PrioritisedTaskQueue internalTasks = new PrioritisedTaskQueue(); // Read-only tasks
     private final ObjectOpenHashSet<ServerPlayer> players = new ObjectOpenHashSet<>();
     public final LongLinkedOpenHashSet unloadQueue = new LongLinkedOpenHashSet();
@@ -55,6 +59,8 @@ public class LevelChunkRegion {
     public LevelChunkRegion(ServerLevel level, RegionPos regionPos) {
         this.level = level;
         this.regionPos = regionPos;
+        this.runtimeState = RegionRuntimeState.getOrCreate(level, regionPos);
+        this.runtimeState.attach(this);
 
         this.bumpLastAccess();
     }
@@ -112,6 +118,20 @@ public class LevelChunkRegion {
         }
     }
 
+    public boolean forEachTickingEntityUntil(Predicate<Entity> action) {
+        IteratorSafeOrderedReferenceSet.Iterator<Entity> iterator = this.tickingEntities.iterator();
+        try {
+            while (iterator.hasNext()) {
+                if (!action.test(iterator.next())) {
+                    return false;
+                }
+            }
+            return true;
+        } finally {
+            iterator.finishedIterating();
+        }
+    }
+
     public synchronized void addTrackedEntity(Entity entity) {
         if (!this.trackedEntities.add(entity)) {
             throw new IllegalStateException("Tried to add an entity that was already tracked: " + entity);
@@ -128,16 +148,41 @@ public class LevelChunkRegion {
         this.trackedEntities.forEach(action);
     }
 
+    public synchronized boolean forEachTrackedEntityUntil(Predicate<Entity> action) {
+        for (final Entity entity : this.trackedEntities) {
+            if (!action.test(entity)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public ServerLevel getLevel() {
         return this.level;
     }
 
-    public void scheduleTask(Runnable task, long delay) {
-        this.scheduledTasks.add(new DelayedTask(task, delay));
+    public boolean scheduleTask(Runnable task, long delay) {
+        return this.scheduleTask(RegionTaskClass.CRITICAL_SYSTEM, task, delay);
+    }
+
+    public boolean scheduleTask(RegionTaskClass taskClass, Runnable task, long delay) {
+        return this.runtimeState.mailbox().offer(taskClass, task, delay);
     }
 
     public PrioritisedTaskQueue getInternalTaskQueue() {
         return this.internalTasks;
+    }
+
+    public RegionMailbox getMailbox() {
+        return this.runtimeState.mailbox();
+    }
+
+    public RegionOverloadController getOverloadController() {
+        return this.runtimeState.overloadController();
+    }
+
+    public RegionRuntimeState getRuntimeState() {
+        return this.runtimeState;
     }
 
     public synchronized void addPlayer(ServerPlayer player) {
@@ -224,19 +269,23 @@ public class LevelChunkRegion {
         }
     }
 
-    public void tickTasks() {
-        if (this.scheduledTasks.isEmpty()) return;
-
-        List<DelayedTask> toRun = new ArrayList<>();
-        for (DelayedTask task : this.scheduledTasks) {
-            // Check if a task should run before executing the tasks, as tasks may add more tasks while they are running
-            if (task.shouldRun()) {
-                toRun.add(task);
+    public boolean forEachUntil(Predicate<LevelChunk> consumer) {
+        // This method has the chance of skipping a chunk if a chunk is removed via another thread during this iteration
+        for (int i = 0; i < this.levelChunks.size(); i++) {
+            try {
+                LevelChunk levelChunk = this.levelChunks.get(i);
+                if (levelChunk != null && !consumer.test(levelChunk)) {
+                    return false;
+                }
+            } catch (IndexOutOfBoundsException e) {
+                // Ignore - multithreaded modification
             }
         }
+        return true;
+    }
 
-        this.scheduledTasks.removeAll(toRun);
-        toRun.forEach(DelayedTask::run);
+    public void tickTasks() {
+        this.runtimeState.mailbox().runDue(RegionTickBudget.current());
     }
 
     public synchronized void addBlockEvent(BlockEventData blockEvent) {
@@ -264,7 +313,7 @@ public class LevelChunkRegion {
                 && levelChunks.isEmpty()
                 && playerTickingChunkRequests.isEmpty()
                 && tickingEntities.size() == 0
-                && scheduledTasks.isEmpty()
+                && !this.runtimeState.mailbox().hasPendingTasks()
                 && internalTasks.getTotalTasksExecuted() >= internalTasks.getTotalTasksScheduled()
                 && players.isEmpty()
                 && unloadQueue.isEmpty()

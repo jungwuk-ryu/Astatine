@@ -5,6 +5,9 @@ import com.google.common.collect.Lists;
 import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.RegionPos;
+import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
+import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
+import io.multipaper.shreddedpaper.threading.region.RegionWorkType;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
@@ -33,15 +36,22 @@ public class ShreddedPaperChunkTicker {
     private final ServerChunkCache serverChunkCache;
 
     private final List<Entity> trackedEntitiesWorkerList = new ArrayList<>(); // Re-usable list for processing tracked entities in parallel
-
     public ShreddedPaperChunkTicker(ServerChunkCache serverChunkCache) {
         this.serverChunkCache = serverChunkCache;
     }
 
     public CompletableFuture<Void> tickChunks(final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
         ServerLevel level = this.serverChunkCache.chunkMap.level;
+        final ScheduledTickContext tickContext = new ScheduledTickContext(timeInhabited, filteredSpawningCategories == null ? List.of() : filteredSpawningCategories, spawnState);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         io.papermc.paper.entity.activation.ActivationRange.activateEntities(level); // Paper - EAR // DivineMC - DAB must update priorities before ShreddedPaper region entity ticking
+
+        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
+            level.chunkSource.tickingRegions.forEach(
+                    region -> RegionTickScheduler.get().registerRegion(level, region, this, tickContext)
+            );
+            return CompletableFuture.completedFuture(null);
+        }
 
         level.chunkSource.tickingRegions.forEach(
                 region -> futures.add(this.tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState))
@@ -94,11 +104,21 @@ public class ShreddedPaperChunkTicker {
     }
 
     private CompletableFuture<Void> tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
-        return level.chunkScheduler.schedule(region.getRegionPos(), () -> this._tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState)).exceptionally(e -> {
+        return level.chunkScheduler.schedule(region.getRegionPos(), () -> this._tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState, null)).exceptionally(e -> {
             LogUtils.getClassLogger().error("Exception ticking region {}", region.getRegionPos(), e);
             MinecraftServer.getServer().moonrise$setChunkSystemCrash(new RuntimeException("Ticking thread crash while ticking region " + region.getRegionPos(), e));
             return null;
         });
+    }
+
+    public void tickRegionFromIndependentScheduler(
+            final ServerLevel level,
+            final LevelChunkRegion region,
+            final RegionTickBudget budget,
+            final ScheduledTickContext tickContext,
+            final long scheduledStartNanos
+    ) {
+        this._tickRegion(level, region, tickContext.timeInhabited(), tickContext.filteredSpawningCategories(), tickContext.spawnState(), budget);
     }
 
     public static boolean isCurrentlyTickingRegion(Level level, RegionPos regionPos) {
@@ -106,7 +126,7 @@ public class ShreddedPaperChunkTicker {
         return region != null && level.equals(region.getLevel()) && regionPos.equals(region.getRegionPos());
     }
 
-    private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
+    private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState, final RegionTickBudget budget) {
         final long tickStartNanos = System.nanoTime();
         try {
             currentlyTickingRegion.set(region);
@@ -117,16 +137,22 @@ public class ShreddedPaperChunkTicker {
 
             ShreddedPaperChangesBroadcaster.setAsWorkerThread();
 
-            while (region.getInternalTaskQueue().executeTask()) ;
+            while (budget == null || budget.canContinue(RegionWorkType.INTERNAL_TASK)) {
+                if (!region.getInternalTaskQueue().executeTask()) {
+                    break;
+                }
+            }
 
             level.moonrise$getChunkTaskScheduler().chunkHolderManager.processUnloads(region);
 
-            region.forEachTickingEntity(entity -> {
-                CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
-                if (bukkitEntity != null && !entity.isRemoved()) { // Entity could have been removed by another entity's task
-                    bukkitEntity.taskScheduler.executeTick();
-                }
-            });
+            if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
+                region.forEachTickingEntity(entity -> {
+                    CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
+                    if (bukkitEntity != null && !entity.isRemoved()) { // Entity could have been removed by another entity's task
+                        bukkitEntity.taskScheduler.executeTick();
+                    }
+                });
+            }
 
             region.tickTasks();
 
@@ -136,22 +162,38 @@ public class ShreddedPaperChunkTicker {
                 level.blockTicks.tick(region.getRegionPos(), level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
                 level.fluidTicks.tick(region.getRegionPos(), level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
 
-                region.forEach(chunk -> this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState));
+                if (budget == null || budget.canContinue(RegionWorkType.CHUNK_TICK)) {
+                    region.forEach(chunk -> this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState));
+                }
 
                 level.runBlockEvents(region);
 
                 level.handlingTickThreadLocal.set(false);
             }
 
-            region.forEachTickingEntity(ShreddedPaperEntityTicker::tickEntity);
+            if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
+                region.forEachTickingEntity(ShreddedPaperEntityTicker::tickEntity);
+            }
 
-            if (!ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) region.forEachTrackedEntity(ShreddedPaperEntityTicker::processTrackQueue);
+            if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) {
+                if (budget == null || budget.canContinue(RegionWorkType.TRACKER)) {
+                    region.forEachTrackedEntity(ShreddedPaperEntityTicker::processTrackQueue);
+                }
+            }
 
-            level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
+            if (budget == null || budget.canContinue(RegionWorkType.BLOCK_ENTITY)) {
+                level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
+            }
 
-            region.getPlayers().forEach(ShreddedPaperPlayerTicker::tickPlayer);
+            if (budget == null || budget.canContinue(RegionWorkType.PLAYER)) {
+                region.getPlayers().forEach(ShreddedPaperPlayerTicker::tickPlayer);
+            }
 
-            while (region.getInternalTaskQueue().executeTask()) ;
+            while (budget == null || budget.canContinue(RegionWorkType.INTERNAL_TASK)) {
+                if (!region.getInternalTaskQueue().executeTask()) {
+                    break;
+                }
+            }
 
             ShreddedPaperChangesBroadcaster.broadcastChanges();
 
@@ -207,6 +249,13 @@ public class ShreddedPaperChunkTicker {
             }
         }
         return false;
+    }
+
+    public record ScheduledTickContext(
+            long timeInhabited,
+            List<MobCategory> filteredSpawningCategories,
+            NaturalSpawner.SpawnState spawnState
+    ) {
     }
 
 }

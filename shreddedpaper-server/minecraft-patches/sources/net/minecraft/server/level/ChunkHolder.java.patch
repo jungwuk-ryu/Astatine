@@ -8,6 +8,7 @@
 +import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperChangesBroadcaster;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.util.SimpleStampedLock;
  import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
  import it.unimi.dsi.fastutil.shorts.ShortSet;
@@ -83,7 +84,8 @@
      }
  
      public boolean blockChanged(BlockPos pos) {
-+        if (!this.getChunkMap().level.getServer().forceTicks && !TickThread.isShutdownThread() && !this.getChunkMap().level.chunkScheduler.getRegionLocker().hasWriteLock(RegionPos.forBlockPos(pos))) { // ShreddedPaper
++        final RegionPos regionPos = RegionPos.forBlockPos(pos);
++        if (!this.getChunkMap().level.getServer().forceTicks && !TickThread.isShutdownThread() && !this.getChunkMap().level.chunkScheduler.getRegionLocker().hasWriteLock(regionPos) && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.getChunkMap().level, regionPos)) { // ShreddedPaper
 +            LOGGER.error("Block change is not write locked: world={} pos={} newstate={}", WorldUtil.getWorldName(this.getChunkMap().level), pos, this.getFullChunkNow().getBlockState(pos)); // ShreddedPaper
 +            TickThread.ensureTickThread(this.getChunkMap().level, pos, "Block change is not write locked"); // ShreddedPaper
 +        } // ShreddedPaper

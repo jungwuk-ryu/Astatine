@@ -40,13 +40,14 @@
      }
  }
  val log4jPlugins = sourceSets.create("log4jPlugins") {
-@@ -154,7 +_,7 @@
+@@ -154,7 +_,8 @@
  }
  
  dependencies {
 -    implementation(project(":purpur-api")) // Purpur
 +    implementation(project(":shreddedpaper-api")) // Purpur // ShreddedPaper
      implementation("ca.spottedleaf:concurrentutil:0.0.8")
++    implementation("org.jctools:jctools-core:4.0.5") // ShreddedPaper - bounded region mailboxes
      implementation("org.jline:jline-terminal-ffm:3.27.1") // use ffm on java 22+
      implementation("org.jline:jline-terminal-jni:3.27.1") // fall back to jni on java 21
 @@ -179,6 +_,8 @@

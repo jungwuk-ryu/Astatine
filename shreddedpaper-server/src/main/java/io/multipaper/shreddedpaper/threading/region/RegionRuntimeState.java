@@ -1,0 +1,72 @@
+package io.multipaper.shreddedpaper.threading.region;
+
+import io.multipaper.shreddedpaper.region.LevelChunkRegion;
+import io.multipaper.shreddedpaper.region.RegionPos;
+import net.minecraft.server.level.ServerLevel;
+
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+
+public final class RegionRuntimeState {
+
+    private static final ConcurrentHashMap<RegionRuntimeKey, RegionRuntimeState> STATES = new ConcurrentHashMap<>();
+
+    private final RegionRuntimeKey key;
+    private final ServerLevel level;
+    private final RegionPos regionPos;
+    private final RegionMailbox mailbox;
+    private final RegionOverloadController overloadController;
+    private final AtomicReference<LevelChunkRegion> currentRegion = new AtomicReference<>();
+
+    private RegionRuntimeState(final ServerLevel level, final RegionPos regionPos) {
+        this.key = new RegionRuntimeKey(level.uuid, regionPos.longKey);
+        this.level = level;
+        this.regionPos = regionPos;
+        this.mailbox = new RegionMailbox(level, regionPos);
+        this.overloadController = new RegionOverloadController(level, regionPos);
+    }
+
+    public static RegionRuntimeState getOrCreate(final ServerLevel level, final RegionPos regionPos) {
+        final RegionRuntimeKey key = new RegionRuntimeKey(level.uuid, regionPos.longKey);
+        return STATES.computeIfAbsent(key, ignored -> new RegionRuntimeState(level, regionPos));
+    }
+
+    public static void removeIfIdle(final RegionRuntimeState state) {
+        if (state.currentRegion.get() == null && !state.mailbox.hasPendingTasks()) {
+            STATES.remove(state.key, state);
+        }
+    }
+
+    public void attach(final LevelChunkRegion region) {
+        this.currentRegion.set(region);
+    }
+
+    public void detach(final LevelChunkRegion region) {
+        this.currentRegion.compareAndSet(region, null);
+        removeIfIdle(this);
+    }
+
+    public LevelChunkRegion currentRegion() {
+        return this.currentRegion.get();
+    }
+
+    public ServerLevel level() {
+        return this.level;
+    }
+
+    public RegionPos regionPos() {
+        return this.regionPos;
+    }
+
+    public RegionMailbox mailbox() {
+        return this.mailbox;
+    }
+
+    public RegionOverloadController overloadController() {
+        return this.overloadController;
+    }
+
+    private record RegionRuntimeKey(UUID worldId, long regionKey) {
+    }
+}

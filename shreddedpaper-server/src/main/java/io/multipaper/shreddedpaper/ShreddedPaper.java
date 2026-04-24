@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
+import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -95,7 +96,10 @@ public class ShreddedPaper {
     }
 
     public static boolean isSync(ServerLevel serverLevel, ChunkPos chunkPos) {
-        return serverLevel.chunkScheduler.getRegionLocker().hasWriteLock(RegionPos.forChunk(chunkPos)) || TickThread.isShutdownThread();
+        final RegionPos regionPos = RegionPos.forChunk(chunkPos);
+        return serverLevel.chunkScheduler.getRegionLocker().hasWriteLock(regionPos)
+                || ShreddedPaperChunkTicker.isCurrentlyTickingRegion(serverLevel, regionPos)
+                || TickThread.isShutdownThread();
     }
 
 }

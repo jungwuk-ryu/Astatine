@@ -40,6 +40,20 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int regionSize = 8;
         public boolean runUnsupportedPluginsInSync = true;
         public boolean allowUnsupportedPluginsToModifyChunksViaGlobalScheduler = true;
+        @Comment("Runs chunk regions on independent deadline-based tick loops instead of waiting for every region in the world tick.")
+        public boolean independentRegionTicking = true;
+        @Comment("Maximum workers reserved for degraded regions. Values below 0 use max(1, tick threads / 8).")
+        public int degradedRegionThreads = -1;
+        @Comment("Maximum queued tasks per region task class before backpressure/rejection begins.")
+        public int regionMailboxCapacity = 4096;
+        @Comment("Reserved queued tasks for critical system work per region.")
+        public int criticalRegionMailboxCapacity = 1024;
+        @Comment("Target per-region cooperative work budget in milliseconds.")
+        public long regionTickBudgetMs = 45;
+        @Comment("EWMA MSPT threshold that moves a region into the degraded scheduler lane.")
+        public long degradedRegionMsptThreshold = 75;
+        @Comment("EWMA MSPT threshold that marks a region as quarantined.")
+        public long quarantinedRegionMsptThreshold = 5000;
 
     }
 

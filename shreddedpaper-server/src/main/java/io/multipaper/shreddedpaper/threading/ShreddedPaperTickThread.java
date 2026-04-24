@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
 import com.mojang.logging.LogUtils;
+import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
 import org.slf4j.Logger;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 
@@ -48,6 +49,7 @@ public class ShreddedPaperTickThread extends TickThread {
     }
 
     public static void stopServer() {
+        RegionTickScheduler.shutdownGlobal();
         executor.shutdown();
         try {
             executor.awaitTermination(5, TimeUnit.SECONDS);

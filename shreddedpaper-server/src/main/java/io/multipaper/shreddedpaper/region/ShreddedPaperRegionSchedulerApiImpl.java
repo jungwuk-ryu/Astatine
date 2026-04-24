@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.region;
 
 import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import org.apache.commons.lang3.Validate;
@@ -12,6 +13,7 @@ import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
@@ -72,7 +74,10 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
         }
 
         private void schedule(long delayTicks) {
-            serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks);
+            if (!serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks, RegionTaskClass.PLUGIN)) {
+                executionState.set(ExecutionState.CANCELLED);
+                throw new RejectedExecutionException("Region plugin mailbox is full for " + regionPos);
+            }
         }
 
         @Override

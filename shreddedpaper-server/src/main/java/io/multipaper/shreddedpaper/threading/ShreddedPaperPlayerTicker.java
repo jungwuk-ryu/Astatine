@@ -12,6 +12,9 @@ public class ShreddedPaperPlayerTicker {
             loader.update(); // can't invoke plugin logic
             loader.updateQueues(System.nanoTime());
         }
+        serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
+        serverPlayer.connection.keepConnectionAlive();
+        serverPlayer.connection.resumeFlushing();
     }
 
 }
