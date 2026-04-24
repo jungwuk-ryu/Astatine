@@ -18,3 +18,11 @@
  
              // Purpur start - Add toggle for enchant level clamping - load config files early
              org.bukkit.configuration.file.YamlConfiguration purpurConfiguration = io.papermc.paper.configuration.PaperConfigurations.loadLegacyConfigFile((File) optionSet.valueOf("purpur-settings"));
+@@ -118,6 +_,7 @@
+ 
+             io.papermc.paper.plugin.PluginInitializerManager.load(optionSet); // Paper
+             Bootstrap.bootStrap();
++            org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.configureDabEntityTypes(); // DivineMC - DAB - apply entity blacklist after registry bootstrap
+             Bootstrap.validate();
+             Util.startTimerHackThread();
+             Path path1 = Paths.get("server.properties");

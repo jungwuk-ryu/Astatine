@@ -138,7 +138,6 @@ public final class DivineConfig {
             dab.activationDistanceMod = dabActivationDistanceMod;
             dab.blackedEntities = dabBlackedEntities;
 
-            configureDabEntityTypes();
         }
 
         private static void syncChunkSettings(ShreddedPaperConfiguration.Performance performance) {
@@ -223,10 +222,9 @@ public final class DivineConfig {
                 "zombified_piglin",
                 "goat"
             ));
-            configureDabEntityTypes();
         }
 
-        private static void configureDabEntityTypes() {
+        public static void configureDabEntityTypes() {
             for (EntityType<?> entityType : BuiltInRegistries.ENTITY_TYPE) {
                 entityType.dabEnabled = true;
             }
