@@ -149,6 +149,20 @@ public class ShreddedPaperRegionLocker {
         }
     }
 
+    public boolean tryLockNow(Collection<RegionPos> writeRegionPositions, Collection<RegionPos> isolationRegionPositions, Runnable ifSuccess) {
+        RegionLock lock = this.internalTryTakeExactLockNow(writeRegionPositions, isolationRegionPositions);
+        if (lock == null) {
+            return false;
+        }
+
+        try {
+            ifSuccess.run();
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /**
      * Try to acquire the region lock immediately, if successful run the runnable.
      * If unsuccessful, return false and the runnable will not be run.
@@ -200,6 +214,12 @@ public class ShreddedPaperRegionLocker {
     public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> regionPositions) {
         final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(regionPositions);
         return lock == null ? null : new WriteRegionLock(lock);
+    }
+
+    @Nullable
+    public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> writeRegionPositions, Collection<RegionPos> isolationRegionPositions) {
+        final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(isolationRegionPositions);
+        return lock == null ? null : new WriteRegionLock(lock, sortedUniqueRegions(writeRegionPositions));
     }
 
     @Nullable
@@ -366,12 +386,21 @@ public class ShreddedPaperRegionLocker {
         private final ReadOnlyRegionLock superLock;
 
         private WriteRegionLock(ReadOnlyRegionLock superLock) {
+            this(superLock, superLock.lockedRegions());
+        }
+
+        private WriteRegionLock(ReadOnlyRegionLock superLock, Collection<RegionPos> writeRegions) {
             this.superLock = superLock;
 
-            Collection<RegionPos> lockedRegions = superLock.lockedRegions();
-            this.writeLocks = new ArrayList<>(lockedRegions);
-            ShreddedPaperRegionLocker.this.writeLocks.get().addAll(lockedRegions);
-            ShreddedPaperRegionLocker.this.readOnlyLocks.get().removeAll(lockedRegions);
+            final Collection<RegionPos> newlyLockedRegions = superLock.lockedRegions();
+            this.writeLocks = new ArrayList<>(writeRegions.size());
+            for (final RegionPos writeRegion : writeRegions) {
+                if (newlyLockedRegions.contains(writeRegion)) {
+                    this.writeLocks.add(writeRegion);
+                }
+            }
+            ShreddedPaperRegionLocker.this.writeLocks.get().addAll(this.writeLocks);
+            ShreddedPaperRegionLocker.this.readOnlyLocks.get().removeAll(this.writeLocks);
         }
 
         @Override

@@ -211,7 +211,40 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   blocker.
 - [x] Run `git diff --check` for merge-only owner aggregation.
 - [x] Commit merge-only owner aggregation.
-- [ ] Add automatic merge trigger when adjacency/buffer invariants require one.
+- [x] Add owner isolation-cell snapshots: owned cells plus radius-1 buffer.
+- [x] Cache owner cell and radius-1 isolation snapshots and invalidate them on
+  merge/transfer.
+- [x] Add split owner/isolation lock acquisition so owner cells become write
+  locks while buffer cells remain isolation/read markers.
+- [x] Use owner isolation-cell lock for independent scheduler ticks so
+  adjacent owners cannot mutate concurrently.
+- [x] Add rate-limited opportunistic quiescent neighbor merge before owner
+  ticks instead of probing every tick.
+- [x] Stagger first merge probes across handles to avoid a startup merge-probe
+  burst.
+- [x] Add a conservative merged-owner cell cap; capped neighboring owners remain
+  separate but serialized by isolation locks.
+- [x] Add failed-candidate tracking so a locked/non-quiescent neighbor does not
+  spin the merge loop.
+- [x] Keep non-quiescent adjacent owners separate but serialized by the
+  isolation-cell lock.
+- [x] Add `RegionMerge` JFR event for successful dynamic owner merges.
+- [x] Guard `ChunkTaskScheduler.executeMainThreadTask` so independent-mode
+  isolation buffer locks do not execute neighboring owner internal tasks.
+- [x] Patch tick-thread ownership checks so independent-mode buffer locks do not
+  count as ownership.
+- [x] Use owner isolation-cell lock for main-thread internal task rescue.
+- [x] Compile automatic merge/isolation changes with
+  `./gradlew shreddedpaper-server:compileJava --stacktrace`.
+- [x] Re-run `applyAllPatches` after automatic merge/isolation patch changes.
+- [x] Re-run `compileJava` after automatic merge/isolation patch regeneration.
+- [x] Receive sub-agent correctness review for automatic merge/isolation:
+  Faraday reported no blockers after the split owner/isolation lock fixes.
+- [x] Receive sub-agent performance review for automatic merge/isolation:
+  Aquinas reported no blockers after rate limiting, caching, and owner caps.
+- [x] Patch or explicitly defer every automatic merge/isolation review blocker.
+- [x] Run `git diff --check` for automatic merge/isolation.
+- [x] Commit automatic merge/isolation.
 - [ ] Add split-by-cell owner deaggregation with hysteresis.
 
 ### E. Tick Integration

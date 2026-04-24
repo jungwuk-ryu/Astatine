@@ -7,6 +7,7 @@
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.LevelChunkRegion;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
  import net.minecraft.CrashReport;
@@ -21,6 +22,9 @@
 +        for (RegionPos regionPos : world.chunkScheduler.getRegionLocker().getLockedRegions()) {
 +            LevelChunkRegion region = world.chunkSource.tickingRegions.get(regionPos);
 +            if (region != null) {
++                if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, regionPos)) {
++                    continue;
++                }
 +                ret |= region.getInternalTaskQueue().executeTask();
 +            }
 +        }

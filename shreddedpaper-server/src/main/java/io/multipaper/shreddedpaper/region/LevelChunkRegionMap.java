@@ -3,6 +3,7 @@ package io.multipaper.shreddedpaper.region;
 import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -14,6 +15,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
+import io.multipaper.shreddedpaper.threading.region.events.RegionMergeEvent;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.slf4j.Logger;
@@ -26,6 +28,7 @@ import java.util.function.Consumer;
 public class LevelChunkRegionMap {
 
     private static final Logger LOGGER = LogUtils.getClassLogger();
+    private static final int MAX_MERGED_OWNER_CELLS = 64;
 
     private final ServerLevel level;
     private final SimpleStampedLock regionsLock = new SimpleStampedLock();
@@ -119,7 +122,13 @@ public class LevelChunkRegionMap {
             if (targetRegion == null || sourceRegion == null || !sourceRegion.isMergeQuiescent()) {
                 return false;
             }
+            if (targetOwner.cellCount() + sourceOwner.cellCount() > MAX_MERGED_OWNER_CELLS) {
+                return false;
+            }
 
+            final long startNanos = System.nanoTime();
+            final int targetCellsBefore = targetOwner.cellCount();
+            final int sourceCells = sourceOwner.cellCount();
             final List<RegionPos> lockedCells = new ArrayList<>(targetOwner.cellCount() + sourceOwner.cellCount());
             lockedCells.addAll(targetOwner.cellPositionsSnapshot());
             lockedCells.addAll(sourceOwner.cellPositionsSnapshot());
@@ -138,11 +147,80 @@ public class LevelChunkRegionMap {
                 sourceOwner.detachRegion(sourceRegion);
                 sourceRegion.getRuntimeState().detach(sourceRegion);
                 sourceOwner.clearTransferredCells();
+                this.commitMergeEvent(targetOwner, sourceCell, targetCellsBefore, sourceCells, System.nanoTime() - startNanos);
             } finally {
                 ownerLock.unlock();
             }
             return true;
         });
+    }
+
+    public int mergeNearbyOwnersQuiescent(final RegionOwner targetOwner, final int radius) {
+        if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
+            return 0;
+        }
+
+        int merged = 0;
+        final LongOpenHashSet failedCandidates = new LongOpenHashSet();
+        while (true) {
+            final RegionPos sourceCell = this.findNearbyMergeCandidate(targetOwner, radius, failedCandidates);
+            if (sourceCell == null) {
+                return merged;
+            }
+            if (this.mergeOwnersQuiescent(targetOwner.primaryCell(), sourceCell)) {
+                merged++;
+                continue;
+            }
+            failedCandidates.add(sourceCell.longKey);
+        }
+    }
+
+    private RegionPos findNearbyMergeCandidate(final RegionOwner targetOwner, final int radius, final LongOpenHashSet failedCandidates) {
+        return regionsLock.read(() -> {
+            if (this.ownersById.get(targetOwner.id()) != targetOwner || targetOwner.region() == null) {
+                return null;
+            }
+
+            for (final RegionPos ownedCell : targetOwner.cellPositionsSnapshot()) {
+                for (int x = -radius; x <= radius; x++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        if (x == 0 && z == 0) {
+                            continue;
+                        }
+                        final long candidateKey = RegionPos.asLong(ownedCell.x + x, ownedCell.z + z);
+                        if (failedCandidates.contains(candidateKey)) {
+                            continue;
+                        }
+                        final RegionOwner candidate = this.ownersByCell.get(candidateKey);
+                        if (candidate != null && candidate != targetOwner) {
+                            return new RegionPos(candidateKey);
+                        }
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    private void commitMergeEvent(
+            final RegionOwner targetOwner,
+            final RegionPos sourceCell,
+            final int targetCellsBefore,
+            final int sourceCells,
+            final long durationNanos
+    ) {
+        final RegionMergeEvent event = new RegionMergeEvent();
+        final RegionPos targetCell = targetOwner.primaryCell();
+        event.world = this.level.getWorld().getName();
+        event.targetRegionX = targetCell.x;
+        event.targetRegionZ = targetCell.z;
+        event.sourceRegionX = sourceCell.x;
+        event.sourceRegionZ = sourceCell.z;
+        event.targetCellsBefore = targetCellsBefore;
+        event.sourceCells = sourceCells;
+        event.targetCellsAfter = targetOwner.cellCount();
+        event.durationNanos = durationNanos;
+        event.commit();
     }
 
     private void removeOwnerLocked(RegionOwner owner, LevelChunkRegion region) {

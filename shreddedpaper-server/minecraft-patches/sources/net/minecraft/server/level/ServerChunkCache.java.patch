@@ -286,7 +286,7 @@
 +                        region.getInternalTaskQueue().executeTask();
 +                    } else if (!region.getInternalTaskQueue().hasNoScheduledTasks()) {
 +                        // We're the main thread, try executing chunk tasks for regions not being ticked
-+                        level.chunkScheduler.getRegionLocker().tryLockNow(region.getOwner().cellPositionsSnapshot(), () -> {
++                        level.chunkScheduler.getRegionLocker().tryLockNow(region.getOwner().cellPositionsSnapshot(), region.getOwner().isolationCellPositionsSnapshot(io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.REGION_LOCK_RADIUS), () -> {
 +                            region.getInternalTaskQueue().executeTask();
 +                        });
 +                    }

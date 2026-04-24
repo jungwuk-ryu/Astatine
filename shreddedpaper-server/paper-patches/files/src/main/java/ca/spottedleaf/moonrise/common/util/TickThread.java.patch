@@ -100,7 +100,9 @@
 +        final RegionPos regionPos = RegionPos.forChunk(pos);
 +        return world.getServer().forceTicks
 +                || isShutdownThread()
-+                || ((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos)
++                || (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                        ? ((ServerLevel) world).chunkScheduler.getRegionLocker().hasWriteLock(regionPos)
++                        : ((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos))
 +                || ShreddedPaperChunkTicker.isCurrentlyTickingRegion(world, regionPos);
 +        // ShreddedPaper end
      }
@@ -160,8 +162,11 @@
 +        for (int x = minRegionX; x <= maxRegionX; x++) {
 +            for (int z = minRegionZ; z <= maxRegionZ; z++) {
 +                final RegionPos regionPos = new RegionPos(x, z);
-+                if (!((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos)
-+                        && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(world, regionPos)) {
++                final boolean ownsRegion = ShreddedPaperChunkTicker.isCurrentlyTickingRegion(world, regionPos)
++                        || (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                                ? ((ServerLevel) world).chunkScheduler.getRegionLocker().hasWriteLock(regionPos)
++                                : ((ServerLevel) world).chunkScheduler.getRegionLocker().hasLock(regionPos));
++                if (!ownsRegion) {
 +                    return false;
 +                }
 +            }

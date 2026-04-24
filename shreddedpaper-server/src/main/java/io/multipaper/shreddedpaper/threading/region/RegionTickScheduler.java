@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class RegionTickScheduler {
 
     public static final long TIME_BETWEEN_TICKS_NANOS = 50_000_000L;
+    private static final long MERGE_PROBE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1L);
 
     private static final Logger LOGGER = LogUtils.getClassLogger();
     private static final AtomicLong HANDLE_IDS = new AtomicLong();
@@ -217,6 +218,7 @@ public final class RegionTickScheduler {
         private final AtomicReference<ShreddedPaperChunkTicker.ScheduledTickContext> nextContext = new AtomicReference<>();
         private volatile long scheduledStartNanos;
         private volatile long idealStartNanos;
+        private volatile long nextMergeProbeNanos;
         private long lockContentionBackoffNanos = TimeUnit.MILLISECONDS.toNanos(1L);
 
         private RegionHandle(
@@ -234,6 +236,7 @@ public final class RegionTickScheduler {
             this.scheduledContext = tickContext;
             this.scheduledStartNanos = firstStart;
             this.idealStartNanos = firstStart;
+            this.nextMergeProbeNanos = firstStart + (this.id % 20L) * TIME_BETWEEN_TICKS_NANOS;
         }
 
         private void runOneTick() {
@@ -247,6 +250,11 @@ public final class RegionTickScheduler {
                 this.retired.set(true);
                 return;
             }
+            final long now = System.nanoTime();
+            if (now >= this.nextMergeProbeNanos) {
+                this.level.chunkSource.tickingRegions.mergeNearbyOwnersQuiescent(region.getOwner(), ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                this.nextMergeProbeNanos = now + MERGE_PROBE_INTERVAL_NANOS;
+            }
             final long actualStart = System.nanoTime();
             final long scheduledStart = this.scheduledStartNanos;
             final long scheduleLag = Math.max(0L, actualStart - scheduledStart);
@@ -256,7 +264,9 @@ public final class RegionTickScheduler {
             ShreddedPaperRegionLocker.RegionLock ownerLock = null;
 
             try {
-                ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(region.getOwner().cellPositionsSnapshot());
+                final List<RegionPos> ownerCells = region.getOwner().cellPositionsSnapshot();
+                final List<RegionPos> isolationCells = region.getOwner().isolationCellPositionsSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(ownerCells, isolationCells);
                 if (ownerLock != null) {
                     RegionTickBudget.setCurrent(budget);
                     this.ticker.tickRegionFromIndependentScheduler(
