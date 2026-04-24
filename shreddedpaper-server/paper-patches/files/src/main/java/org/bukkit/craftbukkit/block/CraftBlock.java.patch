@@ -1,6 +1,6 @@
 --- a/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
 +++ b/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
-@@ -337,7 +_,7 @@ public class CraftBlock implements Block {
+@@ -332,7 +_,7 @@ public class CraftBlock implements Block {
  
      @Override
      public BlockState getState() {
@@ -9,3 +9,36 @@
      }
  
      // Paper start
+@@ -555,14 +_,22 @@
+ 
+         // SPIGOT-6895: Call StructureGrowEvent and BlockFertilizeEvent
+-        world.captureTreeGeneration = true;
+-        InteractionResult result = BoneMealItem.applyBonemeal(context);
+-        world.captureTreeGeneration = false;
++        boolean bonemealSucceeded = false; // ShreddedPaper - use thread local
++        InteractionResult result; // ShreddedPaper - use thread local
++        try { // ShreddedPaper - use thread local
++            world.captureTreeGenerationThreadLocal.set(true); // ShreddedPaper - use thread local
++            result = BoneMealItem.applyBonemeal(context);
++            bonemealSucceeded = true; // ShreddedPaper - use thread local
++        } finally { // ShreddedPaper - use thread local
++            world.captureTreeGenerationThreadLocal.set(false); // ShreddedPaper - use thread local
++            if (!bonemealSucceeded) { // ShreddedPaper - use thread local
++                SaplingBlock.treeTypeThreadLocal.remove(); // ShreddedPaper - use thread local
++                world.capturedBlockStatesThreadLocal.get().clear(); // ShreddedPaper - use thread local
++            }
++        }
+ 
+-        if (!world.capturedBlockStates.isEmpty()) {
+-            TreeType treeType = SaplingBlock.treeType;
+-            SaplingBlock.treeType = null;
+-            List<BlockState> states = new ArrayList<>(world.capturedBlockStates.values());
+-            world.capturedBlockStates.clear();
++        if (!world.capturedBlockStatesThreadLocal.get().isEmpty()) { // ShreddedPaper - use thread local
++            TreeType treeType = SaplingBlock.treeTypeThreadLocal.get(); // ShreddedPaper - use thread local
++            SaplingBlock.treeTypeThreadLocal.remove(); // ShreddedPaper - use thread local
++            List<BlockState> states = new ArrayList<>(world.capturedBlockStatesThreadLocal.get().values()); // ShreddedPaper - use thread local
++            world.capturedBlockStatesThreadLocal.get().clear(); // ShreddedPaper - use thread local
+             StructureGrowEvent structureEvent = null;
+ 
+             if (treeType != null) {

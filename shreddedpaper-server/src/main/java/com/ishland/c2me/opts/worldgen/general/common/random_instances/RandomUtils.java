@@ -15,15 +15,15 @@ public class RandomUtils {
     private static final ThreadLocal<SingleThreadedRandomSource> simple = ThreadLocal.withInitial(() -> new SingleThreadedRandomSource(0L));
 
     public static void derive(PositionalRandomFactory deriver, RandomSource random, int x, int y, int z) {
-        if (deriver instanceof XoroshiroRandomSource.XoroshiroPositionalRandomFactory(long seedLo, long seedHi)) {
+        if (deriver instanceof XoroshiroRandomSource.XoroshiroPositionalRandomFactory factory) {
             final Xoroshiro128PlusPlus implementation = ((XoroshiroRandomSource) random).randomNumberGenerator;
-            implementation.seedLo = (Mth.getSeed(x, y, z) ^ seedLo);
-            implementation.seedHi = (seedHi);
+            implementation.seedLo = (Mth.getSeed(x, y, z) ^ factory.seedLo);
+            implementation.seedHi = factory.seedHi;
             return;
         }
-        if (deriver instanceof LegacyRandomSource.LegacyPositionalRandomFactory(long seed)) {
+        if (deriver instanceof LegacyRandomSource.LegacyPositionalRandomFactory factory) {
             final SingleThreadedRandomSource random1 = (SingleThreadedRandomSource) random;
-            random1.setSeed(Mth.getSeed(x, y, z) ^ seed);
+            random1.setSeed(Mth.getSeed(x, y, z) ^ factory.seed);
             return;
         }
         throw new IllegalArgumentException();

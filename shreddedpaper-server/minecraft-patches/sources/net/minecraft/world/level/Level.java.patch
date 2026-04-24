@@ -248,3 +248,23 @@
                  return;
              }
              // CraftBukkit end
+@@ -2145,5 +_,19 @@
+     public boolean isTheEnd() {
+         return getWorld().getEnvironment() == org.bukkit.World.Environment.THE_END;
+     }
+     // Purpur end - Add allow water in end world option
++
++    // ShreddedPaper start - Lithium: loaded block entity lookup
++    public BlockEntity lithium$getLoadedExistingBlockEntity(BlockPos pos) {
++        if (!this.isOutsideBuildHeight(pos)) {
++            ChunkAccess chunk = this.getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
++            if (chunk != null) {
++                BlockEntity blockEntity = chunk.blockEntities.get(pos);
++                return blockEntity != null && !blockEntity.isRemoved() ? blockEntity : null;
++            }
++        }
++
++        return null;
++    }
++    // ShreddedPaper end - Lithium: loaded block entity lookup
+ }
