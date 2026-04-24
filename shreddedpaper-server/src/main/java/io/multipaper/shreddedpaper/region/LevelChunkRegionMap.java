@@ -193,11 +193,14 @@ public class LevelChunkRegionMap {
 
     public void addPlayer(ServerPlayer player) {
         player.previousChunkPosRegion = player.chunkPosition();
-        getOrCreate(RegionPos.forChunk(player.chunkPosition())).addPlayer(player);
+        LevelChunkRegion region = getOrCreate(RegionPos.forChunk(player.chunkPosition()));
+        region.addPlayer(player);
+        player.currentRegion = region;
     }
 
     public void removePlayer(ServerPlayer player) {
         getOrCreate(RegionPos.forChunk(player.chunkPosition())).removePlayer(player);
+        player.currentRegion = null;
     }
 
     public void movePlayer(ServerPlayer player) {
@@ -207,7 +210,9 @@ public class LevelChunkRegionMap {
         if (!fromRegion.equals(toRegion)) {
             player.previousChunkPosRegion = player.chunkPosition();
             getOrCreate(fromRegion).removePlayer(player);
-            getOrCreate(toRegion).addPlayer(player);
+            LevelChunkRegion region = getOrCreate(toRegion);
+            region.addPlayer(player);
+            player.currentRegion = region;
         }
     }
 

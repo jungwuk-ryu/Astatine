@@ -26,11 +26,12 @@
      private final ServerRecipeBook recipeBook;
      private @Nullable Vec3 levitationStartPos;
      private int levitationStartTime;
-@@ -259,6 +_,7 @@
+@@ -259,6 +_,8 @@
      private @Nullable Vec3 enteredLavaOnVehiclePosition;
      private SectionPos lastSectionPos = SectionPos.of(0, 0, 0);
      private ChunkTrackingView chunkTrackingView = ChunkTrackingView.EMPTY;
 +    public ChunkPos previousChunkPosRegion; // ShreddedPaper
++    public volatile io.multipaper.shreddedpaper.region.LevelChunkRegion currentRegion; // ShreddedPaper
      private ServerPlayer.@Nullable RespawnConfig respawnConfig;
      private final TextFilter textFilter;
      private boolean textFilteringEnabled;

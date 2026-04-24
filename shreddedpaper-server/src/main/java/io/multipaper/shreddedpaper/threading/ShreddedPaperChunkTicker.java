@@ -107,6 +107,7 @@ public class ShreddedPaperChunkTicker {
     }
 
     private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
+        final long tickStartNanos = System.nanoTime();
         try {
             currentlyTickingRegion.set(region);
 
@@ -158,7 +159,11 @@ public class ShreddedPaperChunkTicker {
                 level.chunkSource.tickingRegions.remove(region.getRegionPos());
             }
         } finally {
-            currentlyTickingRegion.remove();
+            try {
+                region.recordTickStats(tickStartNanos, System.nanoTime() - tickStartNanos);
+            } finally {
+                currentlyTickingRegion.remove();
+            }
         }
     }
 

@@ -1,0 +1,201 @@
+--- a/src/main/java/org/purpurmc/purpur/task/TPSBarTask.java
++++ b/src/main/java/org/purpurmc/purpur/task/TPSBarTask.java
+@@ -4,14 +4,14 @@
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.minimessage.MiniMessage;
+ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+-import org.purpurmc.purpur.PurpurConfig;
++import io.multipaper.shreddedpaper.region.LevelChunkRegion;
+ import org.bukkit.Bukkit;
++import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.entity.Player;
++import org.purpurmc.purpur.PurpurConfig;
+ 
+ public class TPSBarTask extends BossBarTask {
+     private static TPSBarTask instance;
+-    private double tps = 20.0D;
+-    private double mspt = 0.0D;
+     private int tick = 0;
+ 
+     public static TPSBarTask instance() {
+@@ -23,17 +23,19 @@
+ 
+     @Override
+     BossBar createBossBar() {
+-        return BossBar.bossBar(Component.text(""), 0.0F, instance().getBossBarColor(), PurpurConfig.commandTPSBarProgressOverlay);
++        return BossBar.bossBar(Component.text(""), 0.0F, PurpurConfig.commandTPSBarProgressColorGood, PurpurConfig.commandTPSBarProgressOverlay);
+     }
+ 
+     @Override
+     void updateBossBar(BossBar bossbar, Player player) {
+-        bossbar.progress(getBossBarProgress());
+-        bossbar.color(getBossBarColor());
++        Metrics metrics = getMetrics(player);
++        int ping = player.getPing();
++        bossbar.progress(getBossBarProgress(metrics, ping));
++        bossbar.color(getBossBarColor(metrics, ping));
+         bossbar.name(MiniMessage.miniMessage().deserialize(PurpurConfig.commandTPSBarTitle,
+-                Placeholder.component("tps", getTPSColor()),
+-                Placeholder.component("mspt", getMSPTColor()),
+-                Placeholder.component("ping", getPingColor(player.getPing()))
++                Placeholder.component("tps", getTPSColor(metrics)),
++                Placeholder.component("mspt", getMSPTColor(metrics)),
++                Placeholder.component("ping", getPingColor(ping))
+         ));
+     }
+ 
+@@ -44,39 +46,53 @@
+         }
+         tick = 0;
+ 
+-        this.tps = Math.max(Math.min(Bukkit.getTPS()[0], 20.0D), 0.0D);
+-        this.mspt = Bukkit.getAverageTickTime();
+-
+         super.run();
+     }
+ 
+-    private float getBossBarProgress() {
++    private Metrics getMetrics(Player player) {
++        if (PurpurConfig.commandTPSBarSource == Source.REGION && player instanceof CraftPlayer craftPlayer) {
++            LevelChunkRegion region = craftPlayer.getHandle().currentRegion;
++            if (region != null) {
++                LevelChunkRegion.TickStats stats = region.getTickStats();
++                if (stats == null) {
++                    return new Metrics(20.0D, 0.0D);
++                }
++                return new Metrics(clamp(stats.tps(), 0.0D, 20.0D), Math.max(stats.mspt(), 0.0D));
++            }
++        }
++
++        return getServerMetrics();
++    }
++
++    private Metrics getServerMetrics() {
++        return new Metrics(clamp(Bukkit.getTPS()[0], 0.0D, 20.0D), Bukkit.getAverageTickTime());
++    }
++
++    private float getBossBarProgress(Metrics metrics, int ping) {
+         if (PurpurConfig.commandTPSBarProgressFillMode == FillMode.MSPT) {
+-            return Math.max(Math.min((float) mspt / 50.0F, 1.0F), 0.0F);
++            return clamp((float) metrics.mspt() / 50.0F, 0.0F, 1.0F);
++        } else if (PurpurConfig.commandTPSBarProgressFillMode == FillMode.PING) {
++            return clamp((float) ping / 200.0F, 0.0F, 1.0F);
+         } else {
+-            return Math.max(Math.min((float) tps / 20.0F, 1.0F), 0.0F);
++            return clamp((float) metrics.tps() / 20.0F, 0.0F, 1.0F);
+         }
+     }
+ 
+-    private BossBar.Color getBossBarColor() {
+-        if (isGood(PurpurConfig.commandTPSBarProgressFillMode)) {
++    private BossBar.Color getBossBarColor(Metrics metrics, int ping) {
++        if (isGood(PurpurConfig.commandTPSBarProgressFillMode, metrics, ping)) {
+             return PurpurConfig.commandTPSBarProgressColorGood;
+-        } else if (isMedium(PurpurConfig.commandTPSBarProgressFillMode)) {
++        } else if (isMedium(PurpurConfig.commandTPSBarProgressFillMode, metrics, ping)) {
+             return PurpurConfig.commandTPSBarProgressColorMedium;
+         } else {
+             return PurpurConfig.commandTPSBarProgressColorLow;
+         }
+     }
+ 
+-    private boolean isGood(FillMode mode) {
+-        return isGood(mode, 0);
+-    }
+-
+-    private boolean isGood(FillMode mode, int ping) {
++    private boolean isGood(FillMode mode, Metrics metrics, int ping) {
+         if (mode == FillMode.MSPT) {
+-            return mspt < 40;
++            return metrics.mspt() < 40;
+         } else if (mode == FillMode.TPS) {
+-            return tps >= 19;
++            return metrics.tps() >= 19;
+         } else if (mode == FillMode.PING) {
+             return ping < 100;
+         } else {
+@@ -84,15 +100,11 @@
+         }
+     }
+ 
+-    private boolean isMedium(FillMode mode) {
+-        return isMedium(mode, 0);
+-    }
+-
+-    private boolean isMedium(FillMode mode, int ping) {
++    private boolean isMedium(FillMode mode, Metrics metrics, int ping) {
+         if (mode == FillMode.MSPT) {
+-            return mspt < 50;
++            return metrics.mspt() < 50;
+         } else if (mode == FillMode.TPS) {
+-            return tps >= 15;
++            return metrics.tps() >= 15;
+         } else if (mode == FillMode.PING) {
+             return ping < 200;
+         } else {
+@@ -100,35 +112,35 @@
+         }
+     }
+ 
+-    private Component getTPSColor() {
++    private Component getTPSColor(Metrics metrics) {
+         String color;
+-        if (isGood(FillMode.TPS)) {
++        if (isGood(FillMode.TPS, metrics, 0)) {
+             color = PurpurConfig.commandTPSBarTextColorGood;
+-        } else if (isMedium(FillMode.TPS)) {
++        } else if (isMedium(FillMode.TPS, metrics, 0)) {
+             color = PurpurConfig.commandTPSBarTextColorMedium;
+         } else {
+             color = PurpurConfig.commandTPSBarTextColorLow;
+         }
+-        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", tps)));
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", metrics.tps())));
+     }
+ 
+-    private Component getMSPTColor() {
++    private Component getMSPTColor(Metrics metrics) {
+         String color;
+-        if (isGood(FillMode.MSPT)) {
++        if (isGood(FillMode.MSPT, metrics, 0)) {
+             color = PurpurConfig.commandTPSBarTextColorGood;
+-        } else if (isMedium(FillMode.MSPT)) {
++        } else if (isMedium(FillMode.MSPT, metrics, 0)) {
+             color = PurpurConfig.commandTPSBarTextColorMedium;
+         } else {
+             color = PurpurConfig.commandTPSBarTextColorLow;
+         }
+-        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", mspt)));
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", metrics.mspt())));
+     }
+ 
+     private Component getPingColor(int ping) {
+         String color;
+-        if (isGood(FillMode.PING, ping)) {
++        if (ping < 100) {
+             color = PurpurConfig.commandTPSBarTextColorGood;
+-        } else if (isMedium(FillMode.PING, ping)) {
++        } else if (ping < 200) {
+             color = PurpurConfig.commandTPSBarTextColorMedium;
+         } else {
+             color = PurpurConfig.commandTPSBarTextColorLow;
+@@ -139,4 +151,19 @@
+     public enum FillMode {
+         TPS, MSPT, PING
+     }
++
++    public enum Source {
++        REGION, SERVER
++    }
++
++    private static double clamp(double value, double min, double max) {
++        return Math.max(Math.min(value, max), min);
++    }
++
++    private static float clamp(float value, float min, float max) {
++        return Math.max(Math.min(value, max), min);
++    }
++
++    private record Metrics(double tps, double mspt) {
++    }
+ }

@@ -24,10 +24,14 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 public class LevelChunkRegion {
+
+    private static final long NO_PREVIOUS_TICK = Long.MIN_VALUE;
+    private static final long TICK_STATS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
     private final ServerLevel level;
     private final RegionPos regionPos;
@@ -43,6 +47,8 @@ public class LevelChunkRegion {
     public final List<TickingBlockEntity> pendingBlockEntityTickers = new ReferenceArrayList<>();
     private final ObjectOpenHashSet<Mob> navigatingMobs = new ObjectOpenHashSet<>();
     private final ObjectLinkedOpenHashSet<BlockEventData> blockEvents = new ObjectLinkedOpenHashSet<>();
+    private final ArrayDeque<TickSample> tickSamples = new ArrayDeque<>();
+    private long lastTickStatsStartNanos = NO_PREVIOUS_TICK;
     private volatile long lastAccessTick;
     public ArrayDeque<RedstoneTorchBlock.Toggle> redstoneUpdateInfos;
 
@@ -166,6 +172,44 @@ public class LevelChunkRegion {
         return regionPos;
     }
 
+    public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos) {
+        tickDurationNanos = Math.max(0L, tickDurationNanos);
+        pruneTickStats(tickStartNanos);
+        this.tickSamples.addLast(new TickSample(tickStartNanos, tickStartNanos + tickDurationNanos, tickDurationNanos, this.lastTickStatsStartNanos));
+        this.lastTickStatsStartNanos = tickStartNanos;
+    }
+
+    public synchronized TickStats getTickStats() {
+        pruneTickStats(System.nanoTime());
+        if (this.tickSamples.isEmpty()) {
+            return null;
+        }
+
+        final long tickInterval = this.level.tickRateManager().nanosecondsPerTick();
+        long totalTimeBetweenTicks = 0L;
+        long totalTimeTicking = 0L;
+
+        for (TickSample sample : this.tickSamples) {
+            totalTimeTicking += sample.durationNanos();
+            if (sample.previousStartNanos() == NO_PREVIOUS_TICK) {
+                totalTimeBetweenTicks += Math.max(tickInterval, sample.durationNanos());
+            } else {
+                totalTimeBetweenTicks += Math.max(1L, sample.startNanos() - sample.previousStartNanos());
+            }
+        }
+
+        final double tps = totalTimeBetweenTicks <= 0L ? 1.0E9D / (double) tickInterval : (double) this.tickSamples.size() / ((double) totalTimeBetweenTicks / 1.0E9D);
+        final double mspt = (double) totalTimeTicking / (double) this.tickSamples.size() * 1.0E-6D;
+        return new TickStats(tps, mspt);
+    }
+
+    private void pruneTickStats(long nowNanos) {
+        TickSample first;
+        while ((first = this.tickSamples.peekFirst()) != null && nowNanos - first.endNanos() > TICK_STATS_INTERVAL_NANOS) {
+            this.tickSamples.removeFirst();
+        }
+    }
+
     public void forEach(Consumer<LevelChunk> consumer) {
         // This method has the chance of skipping a chunk if a chunk is removed via another thread during this iteration
         for (int i = 0; i < this.levelChunks.size(); i++) {
@@ -230,5 +274,11 @@ public class LevelChunkRegion {
                 && navigatingMobs.isEmpty()
                 && blockEvents.isEmpty()
                 ;
+    }
+
+    private record TickSample(long startNanos, long endNanos, long durationNanos, long previousStartNanos) {
+    }
+
+    public record TickStats(double tps, double mspt) {
     }
 }
