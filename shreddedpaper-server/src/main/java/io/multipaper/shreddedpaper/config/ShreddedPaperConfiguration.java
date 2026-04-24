@@ -141,6 +141,28 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
                 @Comment("The amount of ticks to skip when the hopper is throttled.")
                 public int skipTicks = 8;
             }
+
+            @Setting("reduce-projectile-chunk-loading")
+            public ReduceProjectileChunkLoading reduceProjectileChunkLoading = new ReduceProjectileChunkLoading();
+
+            public class ReduceProjectileChunkLoading extends ConfigurationPart {
+
+                @Setting("per-tick")
+                @Comment("Maximum unloaded chunks all projectiles may enter per world per tick. Values below 0 disable this limit.")
+                public int perTick = 10;
+
+                @Setting("per-projectile-max")
+                @Comment("Maximum unloaded chunks a projectile may enter during its lifetime. Values below 0 disable this limit.")
+                public int perProjectileMax = 10;
+
+                @Setting("reset-movement-after-reach-limit")
+                @Comment("Reset horizontal projectile movement when the per-projectile limit is reached.")
+                public boolean resetMovementAfterReachLimit = false;
+
+                @Setting("remove-from-world-after-reach-limit")
+                @Comment("Remove projectiles from the world when the per-projectile limit is reached.")
+                public boolean removeFromWorldAfterReachLimit = false;
+            }
         }
 
         public class Chunks extends ConfigurationPart {

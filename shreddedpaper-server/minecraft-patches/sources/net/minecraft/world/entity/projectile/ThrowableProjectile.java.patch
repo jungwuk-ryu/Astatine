@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/entity/projectile/ThrowableProjectile.java
++++ b/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+@@ -47,6 +_,9 @@
+         this.handleFirstTickBubbleColumn();
+         this.applyGravity();
+         this.applyInertia();
++        if (this.shreddedpaper$shouldDeferProjectileMove(this.getDeltaMovement())) {
++            return;
++        }
+         HitResult hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+         Vec3 location;
+         if (hitResultOnMoveVector.getType() != HitResult.Type.MISS) {

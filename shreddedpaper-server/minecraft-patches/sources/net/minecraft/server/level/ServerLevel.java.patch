@@ -69,12 +69,13 @@
      private final List<CustomSpawner> customSpawners;
      private @Nullable EndDragonFight dragonFight;
      final Int2ObjectMap<EnderDragonPart> dragonParts = new Int2ObjectOpenHashMap<>();
-@@ -221,6 +_,8 @@
+@@ -221,6 +_,9 @@
      private double preciseTime; // Purpur - Configurable daylight cycle
      private boolean forceTime; // Purpur - Configurable daylight cycle
      private final RandomSequences randomSequences;
 +    public final ShreddedPaperRegionScheduler chunkScheduler = new ShreddedPaperRegionScheduler(); // ShreddedPaper
 +    public final Executor levelThread; // ShreddedPaper
++    public final java.util.concurrent.atomic.AtomicLong shreddedpaper$projectileChunkLoadCounter = new java.util.concurrent.atomic.AtomicLong(); // ShreddedPaper - Pufferfish: reduce projectile chunk loading
      final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
  
      // CraftBukkit start

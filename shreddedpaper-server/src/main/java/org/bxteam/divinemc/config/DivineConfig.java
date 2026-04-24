@@ -56,6 +56,10 @@ public final class DivineConfig {
         public static boolean equipmentTracking = true;
         public static boolean hopperThrottleWhenFull = true;
         public static int hopperThrottleSkipTicks = 8;
+        public static int projectileChunkLoadsPerTick = 10;
+        public static int projectileChunkLoadsPerProjectile = 10;
+        public static boolean projectileChunkLoadResetMovement = false;
+        public static boolean projectileChunkLoadRemoveFromWorld = false;
 
         public static boolean dabEnabled = false;
         public static int dabStartDistance = 12;
@@ -99,6 +103,11 @@ public final class DivineConfig {
                 hopperThrottle = optimizations.new HopperThrottleWhenFull();
                 optimizations.hopperThrottleWhenFull = hopperThrottle;
             }
+            ShreddedPaperConfiguration.Performance.Optimizations.ReduceProjectileChunkLoading reduceProjectileChunkLoading = optimizations.reduceProjectileChunkLoading;
+            if (reduceProjectileChunkLoading == null) {
+                reduceProjectileChunkLoading = optimizations.new ReduceProjectileChunkLoading();
+                optimizations.reduceProjectileChunkLoading = reduceProjectileChunkLoading;
+            }
 
             disableMethodProfiler = optimizations.disableMethodProfiler;
             skipUselessSecondaryPoiSensor = optimizations.skipUselessSecondaryPoiSensor;
@@ -114,6 +123,10 @@ public final class DivineConfig {
             equipmentTracking = optimizations.equipmentTracking;
             hopperThrottleWhenFull = hopperThrottle.enabled;
             hopperThrottleSkipTicks = Math.max(0, hopperThrottle.skipTicks);
+            projectileChunkLoadsPerTick = reduceProjectileChunkLoading.perTick;
+            projectileChunkLoadsPerProjectile = reduceProjectileChunkLoading.perProjectileMax;
+            projectileChunkLoadResetMovement = reduceProjectileChunkLoading.resetMovementAfterReachLimit;
+            projectileChunkLoadRemoveFromWorld = reduceProjectileChunkLoading.removeFromWorldAfterReachLimit;
 
             hopperThrottle.skipTicks = hopperThrottleSkipTicks;
 
@@ -209,6 +222,10 @@ public final class DivineConfig {
             equipmentTracking = true;
             hopperThrottleWhenFull = true;
             hopperThrottleSkipTicks = 8;
+            projectileChunkLoadsPerTick = 10;
+            projectileChunkLoadsPerProjectile = 10;
+            projectileChunkLoadResetMovement = false;
+            projectileChunkLoadRemoveFromWorld = false;
             dabEnabled = false;
             dabStartDistance = 12;
             dabStartDistanceSquared = dabStartDistance * dabStartDistance;

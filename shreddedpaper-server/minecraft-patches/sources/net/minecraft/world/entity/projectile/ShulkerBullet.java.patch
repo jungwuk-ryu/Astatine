@@ -1,0 +1,8 @@
+--- a/net/minecraft/world/entity/projectile/ShulkerBullet.java
++++ b/net/minecraft/world/entity/projectile/ShulkerBullet.java
+@@ -226,2 +_,5 @@
++            if (this.shreddedpaper$shouldDeferProjectileMove(this.getDeltaMovement())) {
++                return;
++            }
+             hitResult = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+         }

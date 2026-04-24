@@ -1,0 +1,167 @@
+--- a/net/minecraft/world/entity/projectile/Projectile.java
++++ b/net/minecraft/world/entity/projectile/Projectile.java
+@@ -50,7 +_,163 @@
+     protected Projectile(EntityType<? extends Projectile> type, Level level) {
+         super(type, level);
+     }
+-
++    // ShreddedPaper start - Pufferfish: reduce projectile chunk loading
++    private int shreddedpaper$chunksLoadedByProjectile;
++    private boolean shreddedpaper$projectileChunkLoadLimitReached;
++    private volatile boolean shreddedpaper$projectileRegionMoveScheduled;
++    private int shreddedpaper$projectileChunkLoadDeniedTick = Integer.MIN_VALUE;
++    private long shreddedpaper$projectileChunkLoadDeniedChunk = Long.MIN_VALUE;
++
++    @Override
++    public void setPos(double x, double y, double z) {
++        if (!this.level().isClientSide() && this.shreddedpaper$shouldBlockProjectileMove(x, y, z)) {
++            return;
++        }
++        super.setPos(x, y, z);
++    }
++
++    protected final boolean shreddedpaper$shouldDeferProjectileMove(Vec3 movement) {
++        return !this.level().isClientSide() && this.shreddedpaper$shouldBlockProjectileMove(this.getX() + movement.x, this.getY() + movement.y, this.getZ() + movement.z);
++    }
++
++    private boolean shreddedpaper$shouldBlockProjectileMove(double x, double y, double z) {
++        final int maxPerTick = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.projectileChunkLoadsPerTick;
++        final int maxPerProjectile = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.projectileChunkLoadsPerProjectile;
++        if (maxPerTick < 0 && maxPerProjectile < 0) {
++            return false;
++        }
++
++        final int previousChunkX = Mth.floor(this.getX()) >> 4;
++        final int previousChunkZ = Mth.floor(this.getZ()) >> 4;
++        final int newChunkX = Mth.floor(x) >> 4;
++        final int newChunkZ = Mth.floor(z) >> 4;
++        if (previousChunkX == newChunkX && previousChunkZ == newChunkZ) {
++            return false;
++        }
++
++        if (!(this.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
++            return false;
++        }
++        final long targetChunkKey = net.minecraft.world.level.ChunkPos.asLong(newChunkX, newChunkZ);
++        if (this.shreddedpaper$shouldKeepProjectileMoveBlocked(maxPerProjectile, targetChunkKey)) {
++            return true;
++        }
++        if (maxPerTick >= 0 && shreddedpaper$isProjectileChunkLoadQuotaExhausted(serverLevel, maxPerTick)) {
++            this.shreddedpaper$countDeniedProjectileChunkLoad(maxPerProjectile, targetChunkKey);
++            return true;
++        }
++        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, newChunkX, newChunkZ)) {
++            this.shreddedpaper$scheduleProjectileRegionMove(serverLevel, newChunkX, newChunkZ, x, y, z);
++            return true;
++        }
++        this.shreddedpaper$projectileRegionMoveScheduled = false;
++        if (serverLevel.getChunkSource().getChunkAtIfLoadedImmediately(newChunkX, newChunkZ) != null) {
++            this.shreddedpaper$projectileChunkLoadLimitReached = false;
++            return false;
++        }
++        if (this.shreddedpaper$projectileChunkLoadLimitReached) {
++            return true;
++        }
++
++        if (maxPerProjectile >= 0 && this.shreddedpaper$chunksLoadedByProjectile >= maxPerProjectile) {
++            this.shreddedpaper$handleProjectileChunkLoadLimit();
++            return true;
++        }
++        if (maxPerTick >= 0 && !shreddedpaper$tryCountProjectileChunkLoad(serverLevel, maxPerTick)) {
++            this.shreddedpaper$countDeniedProjectileChunkLoad(maxPerProjectile, targetChunkKey);
++            return true;
++        }
++        if (maxPerProjectile >= 0) {
++            this.shreddedpaper$chunksLoadedByProjectile++;
++        }
++        return false;
++    }
++
++    private void shreddedpaper$scheduleProjectileRegionMove(net.minecraft.server.level.ServerLevel serverLevel, int chunkX, int chunkZ, double x, double y, double z) {
++        if (this.shreddedpaper$projectileRegionMoveScheduled) {
++            return;
++        }
++        this.shreddedpaper$projectileRegionMoveScheduled = true;
++        io.multipaper.shreddedpaper.ShreddedPaper.ensureSync(this, serverLevel, new net.minecraft.world.level.ChunkPos(chunkX, chunkZ), () -> {
++            this.shreddedpaper$projectileRegionMoveScheduled = false;
++            if (!this.isRemoved()) {
++                this.setPos(x, y, z);
++            }
++        });
++    }
++
++    private boolean shreddedpaper$shouldKeepProjectileMoveBlocked(int maxPerProjectile, long targetChunkKey) {
++        if (this.shreddedpaper$projectileChunkLoadLimitReached) {
++            return true;
++        }
++        if (maxPerProjectile >= 0 && this.shreddedpaper$chunksLoadedByProjectile >= maxPerProjectile) {
++            this.shreddedpaper$handleProjectileChunkLoadLimit();
++            return true;
++        }
++        return this.shreddedpaper$projectileChunkLoadDeniedChunk == targetChunkKey
++            && this.shreddedpaper$projectileChunkLoadDeniedTick == net.minecraft.server.MinecraftServer.currentTick;
++    }
++
++    private void shreddedpaper$countDeniedProjectileChunkLoad(int maxPerProjectile, long targetChunkKey) {
++        this.shreddedpaper$projectileChunkLoadDeniedTick = net.minecraft.server.MinecraftServer.currentTick;
++        this.shreddedpaper$projectileChunkLoadDeniedChunk = targetChunkKey;
++        if (maxPerProjectile < 0 || this.shreddedpaper$projectileChunkLoadLimitReached) {
++            return;
++        }
++        this.shreddedpaper$chunksLoadedByProjectile++;
++        if (this.shreddedpaper$chunksLoadedByProjectile >= maxPerProjectile) {
++            this.shreddedpaper$handleProjectileChunkLoadLimit();
++        }
++    }
++
++    private void shreddedpaper$handleProjectileChunkLoadLimit() {
++        if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.projectileChunkLoadRemoveFromWorld) {
++            this.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DESPAWN);
++        } else if (org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.projectileChunkLoadResetMovement) {
++            this.setDeltaMovement(0.0, this.getDeltaMovement().y, 0.0);
++        } else {
++            this.shreddedpaper$projectileChunkLoadLimitReached = true;
++        }
++    }
++
++    private static boolean shreddedpaper$isProjectileChunkLoadQuotaExhausted(net.minecraft.server.level.ServerLevel level, int maxLoadsPerTick) {
++        if (maxLoadsPerTick <= 0) {
++            return true;
++        }
++        final long state = level.shreddedpaper$projectileChunkLoadCounter.get();
++        return (int)(state >> 32) == net.minecraft.server.MinecraftServer.currentTick && (int)state >= maxLoadsPerTick;
++    }
++
++    private static boolean shreddedpaper$tryCountProjectileChunkLoad(net.minecraft.server.level.ServerLevel level, int maxLoadsPerTick) {
++        if (maxLoadsPerTick <= 0) {
++            return false;
++        }
++        final java.util.concurrent.atomic.AtomicLong counter = level.shreddedpaper$projectileChunkLoadCounter;
++        final int currentTick = net.minecraft.server.MinecraftServer.currentTick;
++        while (true) {
++            final long state = counter.get();
++            final int tick = (int)(state >> 32);
++            final int loads = (int)state;
++            final long nextState;
++            if (tick != currentTick) {
++                nextState = shreddedpaper$packProjectileChunkLoadCounter(currentTick, 1);
++            } else {
++                if (loads >= maxLoadsPerTick) {
++                    return false;
++                }
++                nextState = shreddedpaper$packProjectileChunkLoadCounter(currentTick, loads + 1);
++            }
++            if (counter.compareAndSet(state, nextState)) {
++                return true;
++            }
++        }
++    }
++
++    private static long shreddedpaper$packProjectileChunkLoadCounter(int tick, int loads) {
++        return ((long)tick << 32) | (loads & 0xFFFFFFFFL);
++    }
++    // ShreddedPaper end - Pufferfish: reduce projectile chunk loading
++
+     protected void setOwner(@Nullable EntityReference<Entity> owner) {
+         this.owner = owner;
+         this.refreshProjectileSource(false); // Paper
