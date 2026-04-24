@@ -8,6 +8,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -134,6 +135,20 @@ public class ShreddedPaperRegionLocker {
         }
     }
 
+    public boolean tryLockNow(Collection<RegionPos> regionPositions, Runnable ifSuccess) {
+        RegionLock lock = this.internalTryTakeExactLockNow(regionPositions);
+        if (lock == null) {
+            return false;
+        }
+
+        try {
+            ifSuccess.run();
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /**
      * Try to acquire the region lock immediately, if successful run the runnable.
      * If unsuccessful, return false and the runnable will not be run.
@@ -144,6 +159,20 @@ public class ShreddedPaperRegionLocker {
      */
     public boolean tryReadOnlyLockNow(RegionPos centerPos, Runnable ifSuccess) {
         final RegionLock lock = this.tryTakeReadOnlyLockNow(centerPos);
+        if (lock == null) {
+            return false;
+        }
+
+        try {
+            ifSuccess.run();
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean tryReadOnlyLockNow(Collection<RegionPos> regionPositions, Runnable ifSuccess) {
+        final RegionLock lock = this.internalTryTakeExactReadOnlyLockNow(regionPositions);
         if (lock == null) {
             return false;
         }
@@ -168,13 +197,19 @@ public class ShreddedPaperRegionLocker {
     }
 
     @Nullable
+    public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> regionPositions) {
+        final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(regionPositions);
+        return lock == null ? null : new WriteRegionLock(lock);
+    }
+
+    @Nullable
     public RegionLock tryTakeReadOnlyLockNow(RegionPos centerPos) {
         return internalTryTakeReadOnlyLockNow(centerPos, REGION_LOCK_RADIUS);
     }
 
     @Nullable
     public ReadOnlyRegionLock internalTryTakeReadOnlyLockNow(RegionPos centerPos, int lockRadius) {
-        final ReadOnlyRegionLock lock = new ReadOnlyRegionLock(lockRadius);
+        final ReadOnlyRegionLock lock = new ReadOnlyRegionLock((lockRadius * 2 + 1) * (lockRadius * 2 + 1));
 
         for (int x = -lockRadius; x <= lockRadius; x++) {
             for (int z = -lockRadius; z <= lockRadius; z++) {
@@ -184,6 +219,21 @@ public class ShreddedPaperRegionLocker {
                     lock.unlock();
                     return null;
                 }
+            }
+        }
+
+        return lock;
+    }
+
+    @Nullable
+    public ReadOnlyRegionLock internalTryTakeExactReadOnlyLockNow(Collection<RegionPos> regionPositions) {
+        final List<RegionPos> sortedRegions = sortedUniqueRegions(regionPositions);
+        final ReadOnlyRegionLock lock = new ReadOnlyRegionLock(sortedRegions.size());
+
+        for (final RegionPos regionPos : sortedRegions) {
+            if (!lock.tryLockRegion(regionPos)) {
+                lock.unlock();
+                return null;
             }
         }
 
@@ -205,6 +255,33 @@ public class ShreddedPaperRegionLocker {
         return nextTask.get();
     }
 
+    @Nullable
+    public CompletableFuture<Void> onUnlock(Collection<RegionPos> regionPositions, Supplier<CompletableFuture<Void>> nextTask) {
+        for (final RegionPos regionPos : sortedUniqueRegions(regionPositions)) {
+            LockedRegion lockedRegion = this.lockedRegions.get(regionPos);
+            if (lockedRegion != null) {
+                return lockedRegion.onUnlock(nextTask);
+            }
+        }
+
+        return nextTask.get();
+    }
+
+    private static List<RegionPos> sortedUniqueRegions(Collection<RegionPos> regionPositions) {
+        if (regionPositions.isEmpty()) {
+            throw new IllegalArgumentException("regionPositions must not be empty");
+        }
+
+        final List<RegionPos> sortedRegions = new ArrayList<>(regionPositions);
+        sortedRegions.sort(Comparator.comparingLong(RegionPos::toLong));
+        for (int i = sortedRegions.size() - 1; i > 0; i--) {
+            if (sortedRegions.get(i).longKey == sortedRegions.get(i - 1).longKey) {
+                sortedRegions.remove(i);
+            }
+        }
+        return sortedRegions;
+    }
+
     /**
      * globalLock.writeLock() will claim all regions
      */
@@ -223,9 +300,9 @@ public class ShreddedPaperRegionLocker {
         private final Thread thread;
         private long globalLockStamp = 0;
 
-        private ReadOnlyRegionLock(int lockRadius) {
+        private ReadOnlyRegionLock(int expectedRegionCount) {
             this.thread = Thread.currentThread();
-            this.readLocks = new ArrayList<>((lockRadius * 2 + 1) * (lockRadius * 2 + 1));
+            this.readLocks = new ArrayList<>(expectedRegionCount);
         }
 
         protected boolean tryLockRegion(RegionPos regionPos) {

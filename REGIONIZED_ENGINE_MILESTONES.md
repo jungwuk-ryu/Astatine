@@ -155,7 +155,15 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Run `git diff --check` for owner abstraction foundation.
 - [x] Commit owner abstraction foundation as a no-behavior-change migration
   step.
-- [ ] Add exact-cell-set owner locking APIs.
+- [x] Add exact-cell-set owner locking APIs while preserving existing
+  radius-based lock behavior.
+- [x] Compile exact-cell-set owner locking APIs with
+  `./gradlew shreddedpaper-server:compileJava --stacktrace`.
+- [x] Receive sub-agent review for exact-cell-set owner locking APIs and patch
+  every blocker before commit.
+- [x] Faraday reported no blockers for exact-cell-set owner locking APIs.
+- [x] Run `git diff --check` for exact-cell-set owner locking APIs.
+- [x] Commit exact-cell-set owner locking APIs.
 - [ ] Add merge-only quiescent owner aggregation.
 - [ ] Add split-by-cell owner deaggregation with hysteresis.
 
