@@ -1,9 +1,19 @@
 --- a/net/minecraft/world/ticks/LevelTicks.java
 +++ b/net/minecraft/world/ticks/LevelTicks.java
-@@ -285,4 +_,10 @@
+@@ -284,5 +_,20 @@
+     @FunctionalInterface
      interface PosAndContainerConsumer<T> {
          void accept(long pos, LevelChunkTicks<T> container);
      }
++
++    // ShreddedPaper start
++    public void shreddedpaper$collectTicksInArea(BoundingBox area, List<ScheduledTick<T>> ticks) {
++        Predicate<ScheduledTick<T>> predicate = scheduledTick -> area.isInside(scheduledTick.pos());
++        this.alreadyRunThisTick.stream().filter(predicate).forEach(ticks::add);
++        this.toRunThisTick.stream().filter(predicate).forEach(ticks::add);
++        this.forContainersInArea(area, (pos, container) -> container.getAll().filter(predicate).forEach(ticks::add));
++    }
++    // ShreddedPaper end
 +
 +    // ShreddedPaper start
 +    public boolean isEmpty() {

@@ -1,27 +1,25 @@
 package io.multipaper.shreddedpaper.region;
 
-import com.mojang.logging.LogUtils;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.Vec3i;
-import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.world.ticks.ScheduledTick;
-import org.slf4j.Logger;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.LongSummaryStatistics;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.LongPredicate;
-import java.util.function.Supplier;
 
 public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
-
-    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     private final LongPredicate tickingFutureReadyPredicate;
     private final Long2ObjectMap<LevelTicks<T>> regions = new Long2ObjectOpenHashMap<>();
@@ -92,21 +90,69 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
 
     @Override
     public void clearArea(BoundingBox box) {
-        // Surely no one will miss this
+        for (LevelTicks<T> region : getRegionsInArea(box)) {
+            region.clearArea(box);
+        }
     }
 
     @Override
     public void copyArea(BoundingBox box, Vec3i offset) {
-        // Surely no one will miss this
+        copyAreaFrom(this, box, offset);
     }
 
     @Override
     public void copyAreaFrom(LevelTicks<T> scheduler, BoundingBox box, Vec3i offset) {
-        // Surely no one will miss this
+        List<ScheduledTick<T>> ticks = new ArrayList<>();
+        scheduler.shreddedpaper$collectTicksInArea(box, ticks);
+        LongSummaryStatistics subTickOrder = ticks.stream().mapToLong(ScheduledTick::subTickOrder).summaryStatistics();
+        long min = subTickOrder.getMin();
+        long max = subTickOrder.getMax();
+        ticks.forEach(tick -> schedule(new ScheduledTick<>(
+            tick.type(),
+            tick.pos().offset(offset),
+            tick.triggerTick(),
+            tick.priority(),
+            tick.subTickOrder() - min + max + 1L
+        )));
+    }
+
+    @Override
+    public void shreddedpaper$collectTicksInArea(BoundingBox area, List<ScheduledTick<T>> ticks) {
+        for (LevelTicks<T> region : getRegionsInArea(area)) {
+            region.shreddedpaper$collectTicksInArea(area, ticks);
+        }
     }
 
     @Override
     public int count() {
-        return -1;
+        int count = 0;
+        for (LevelTicks<T> region : getAllRegions()) {
+            count += region.count();
+        }
+        return count;
+    }
+
+    private List<LevelTicks<T>> getAllRegions() {
+        return regionsLock.read(() -> new ArrayList<>(regions.values()));
+    }
+
+    private List<LevelTicks<T>> getRegionsInArea(BoundingBox area) {
+        int minRegionX = SectionPos.posToSectionCoord(area.minX()) >> RegionPos.REGION_SHIFT;
+        int minRegionZ = SectionPos.posToSectionCoord(area.minZ()) >> RegionPos.REGION_SHIFT;
+        int maxRegionX = SectionPos.posToSectionCoord(area.maxX()) >> RegionPos.REGION_SHIFT;
+        int maxRegionZ = SectionPos.posToSectionCoord(area.maxZ()) >> RegionPos.REGION_SHIFT;
+
+        return regionsLock.read(() -> {
+            List<LevelTicks<T>> result = new ArrayList<>();
+            for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+                    LevelTicks<T> region = regions.get(RegionPos.asLong(regionX, regionZ));
+                    if (region != null) {
+                        result.add(region);
+                    }
+                }
+            }
+            return result;
+        });
     }
 }

@@ -263,6 +263,19 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Run at least a focused server jar build task before runtime testing:
   `shreddedpaper-server:createMojmapPaperclipJar` passed and produced
   `shreddedpaper-server/build/libs/shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar`.
+- [x] Re-run `applyAllPatches` after `LevelTicksRegionProxy` no-op removal:
+  passed.
+- [x] Re-run `shreddedpaper-server:compileJava --stacktrace` after
+  `LevelTicksRegionProxy` no-op removal: passed.
+- [x] Add focused `LevelTicksRegionProxyTest` coverage for cross-region count,
+  clear, and copy sub-tick order semantics.
+- [x] Run `shreddedpaper-server:compileTestJava --stacktrace`: passed.
+- [x] Run focused `LevelTicksRegionProxyTestSuite`; the Gradle task failed only
+  because existing unrelated suite classes discover no tests under this filter,
+  while `TEST-io.multipaper.shreddedpaper.region.LevelTicksRegionProxyTest.xml`
+  reports 3 tests, 0 failures, 0 errors.
+- [ ] Decide separately whether to mark the existing empty suite classes
+  `failIfNoTests = false` or adjust the Gradle test include/filter behavior.
 
 ### H. Runtime Harness In `D:\worldgen`
 
@@ -450,8 +463,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 
 - [ ] Remove exception-tolerant concurrent iteration from `LevelChunkRegion`.
 - [ ] Convert hot region state to owner-thread mutation plus mailbox ingress.
-- [ ] Fix `LevelTicksRegionProxy.clearArea`, `copyArea`, `copyAreaFrom`, and
+- [x] Fix `LevelTicksRegionProxy.clearArea`, `copyArea`, `copyAreaFrom`, and
   `count`.
+- [x] Add focused tests for `LevelTicksRegionProxy` region-spanning count,
+  clear, and copy behavior.
 - [ ] Implement eager tick deadline offset handling for merge-like data moves.
 - [ ] Define deterministic delay semantics for region tasks, including delay 0.
 - [ ] Add tests for scheduled ticks, delayed tasks, and cross-region task order.
@@ -506,7 +521,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 ## Current Blockers
 
 - [ ] Dynamic merge/split regionizer is not yet implemented.
-- [ ] Independent scheduler is not yet wired into the world tick path.
-- [ ] Global tracker and player flush phases still contain world-level coupling.
-- [ ] `LevelTicksRegionProxy` still has stubbed methods.
-- [ ] No `D:\worldgen` runtime baseline has been captured yet.
+- [x] Independent scheduler is wired into the world tick path for current fixed
+  ShreddedPaper regions.
+- [x] Global tracker and player flush phases are skipped globally in independent
+  mode and run from owner region ticks.
+- [x] `LevelTicksRegionProxy` no longer has stubbed area/copy/count methods.
+- [x] `D:\worldgen` runtime baseline has been captured for startup,
+  `/region top`, `/tps`, forceload, JFR, and clean shutdown.
