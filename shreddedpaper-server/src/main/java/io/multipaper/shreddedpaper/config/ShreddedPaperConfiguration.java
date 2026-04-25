@@ -46,8 +46,16 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int degradedRegionThreads = -1;
         @Comment("Maximum queued tasks per region task class before backpressure/rejection begins.")
         public int regionMailboxCapacity = 4096;
-        @Comment("Reserved queued tasks for critical system work per region.")
+        @Comment("Warning reserve threshold for non-dropping critical system work per region.")
         public int criticalRegionMailboxCapacity = 1024;
+        @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
+        public int playerActionRegionMailboxCapacity = 2048;
+        @Comment("Maximum queued plugin tasks per region before RegionScheduler fail-fast rejection.")
+        public int pluginRegionMailboxCapacity = 1024;
+        @Comment("Maximum queued tracker/broadcast tasks per region. Repeated holder updates should be coalesced before reaching this queue.")
+        public int trackerBroadcastRegionMailboxCapacity = 1024;
+        @Comment("Maximum queued explosion/physics tasks per region.")
+        public int explosionPhysicsRegionMailboxCapacity = 2048;
         @Comment("Target per-region cooperative work budget in milliseconds.")
         public long regionTickBudgetMs = 45;
         @Comment("Maximum deferred TNT explosions kept as frozen live entities per world. Overflow TNT is discarded without exploding to prevent hostile-load entity/save debt.")

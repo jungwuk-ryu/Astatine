@@ -13,5 +13,8 @@ public final class RegionQueueEvent extends Event {
     public String action;
     public String taskClass;
     public int depth;
+    public int queuedForClass;
+    public int capacity;
     public long rejected;
+    public long rejectedForClass;
 }

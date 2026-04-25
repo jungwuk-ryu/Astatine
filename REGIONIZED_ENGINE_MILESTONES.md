@@ -102,8 +102,32 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   bounded mailbox ingress.
 - [x] Preserve delay 0 semantics as "eligible on next mailbox drain" rather than
   forcing all tasks to wait at least one extra tick.
-- [ ] Add task-class-specific overflow behavior beyond logging: plugin
+- [x] Add task-class-specific overflow behavior beyond logging: plugin
   fail-fast, player quota, broadcast coalescing, and critical reserve policy.
+- [x] Reject bounded critical-system queue after sub-agent review: too many
+  existing internal callers treat `CRITICAL_SYSTEM` as non-dropping and ignore
+  `offer(false)`, so a hard cap could silently lose world-state handoff work.
+- [x] Restore `CRITICAL_SYSTEM` as a non-dropping queue while keeping a critical
+  reserve threshold that emits operator-visible log/JFR signals when exceeded.
+- [x] Add class-specific mailbox capacities for player actions, plugin tasks,
+  tracker/broadcast work, and explosion/physics work.
+- [x] Count ingress plus delayed tasks in the same per-class queued quota so
+  delayed plugin/task floods cannot bypass the ingress queue cap.
+- [x] Preserve plugin fail-fast behavior: `RegionScheduler` receives `false`
+  from mailbox `offer` and throws `RejectedExecutionException`.
+- [x] Rate-limit mailbox rejection logs and JFR rejection events to the first
+  and every 256th rejection per bounded task class while including class
+  capacity and rejection counters.
+- [x] Re-run compile after class-specific mailbox overflow policy.
+- [x] Receive sub-agent correctness/performance review for class-specific
+  mailbox overflow policy.
+- [x] Patch every class-specific mailbox overflow blocker before commit:
+  Faraday and Aquinas both rejected bounded `CRITICAL_SYSTEM` because existing
+  internal callers treat it as non-dropping; the queue was restored to
+  non-dropping with reserve-threshold observability, then re-reviewed with no
+  release blocker.
+- [x] Run `git diff --check` for class-specific mailbox overflow policy.
+- [x] Commit class-specific mailbox overflow policy.
 - [ ] Add task affinity fields for location/entity once dynamic split/merge is
   wired.
 - [ ] Add mailbox redistribution rules for future split/merge.
