@@ -18,7 +18,14 @@ public final class RegionTickEvent extends Event {
     public int mailboxDepth;
     public int criticalSystemQueued;
     public int playerActionQueued;
+    public int chunkIoLoadQueued;
     public int chunkIoSaveQueued;
+    public int chunkIoInFlight;
+    public int chunkIoDeferred;
+    public int chunkIoCapacity;
+    public long chunkIoRejected;
+    public long chunkIoDowngraded;
+    public double chunkIoPressure;
     public int pluginQueued;
     public int trackerBroadcastQueued;
     public int explosionPhysicsQueued;

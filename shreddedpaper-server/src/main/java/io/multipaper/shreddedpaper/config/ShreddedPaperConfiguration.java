@@ -50,6 +50,16 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
         public int playerActionRegionMailboxCapacity = 2048;
+        @Comment("Maximum queued deferred chunk load/generation retry tasks per region before async chunk request backpressure rejects plugin/external requests.")
+        public int chunkIoLoadRegionMailboxCapacity = 1024;
+        @Comment("Maximum in-flight ticketed async chunk load/generation requests per normal region owner before requests are deferred.")
+        public int chunkIoLoadMaxInflightNormalPerRegion = 256;
+        @Comment("Maximum in-flight ticketed async chunk load/generation requests per degraded region owner before requests are deferred.")
+        public int chunkIoLoadMaxInflightDegradedPerRegion = 32;
+        @Comment("Region-local delay in ticks before retrying an async chunk load/generation request deferred by per-region QoS.")
+        public long chunkIoLoadDeferredRetryDelayTicks = 2L;
+        @Comment("Lower admitted async chunk load/generation requests to LOW priority while the target region is degraded.")
+        public boolean chunkIoLoadDowngradeDegradedPriority = true;
         @Comment("Maximum queued background chunk save tasks per region before autosave/save-all backpressure begins.")
         public int chunkIoSaveRegionMailboxCapacity = 512;
         @Comment("Maximum background autosave tasks admitted for one region owner per autosave producer pass.")

@@ -15,7 +15,7 @@
  import it.unimi.dsi.fastutil.longs.LongSet;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
-@@ -103,4 +_,24 @@
+@@ -103,4 +_,27 @@
      private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
 +        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && ShreddedPaperTickThread.isShreddedPaperTickThread()) {
 +            final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
@@ -33,6 +33,9 @@
 +                event.thread = Thread.currentThread().getName();
 +                event.sync = true;
 +                event.rejected = true;
++                event.inFlight = 0;
++                event.capacity = 0;
++                event.priority = ca.spottedleaf.concurrentutil.util.Priority.BLOCKING.name();
 +                event.commit();
 +            }
 +            throw new IllegalStateException(
@@ -73,7 +76,7 @@
          this.mainThreadProcessor = new ServerChunkCache.MainThreadExecutor(level);
          this.mainThread = Thread.currentThread();
          Path path = levelStorageAccess.getDimensionPath(level.dimension()).resolve("data");
-@@ -350,14 +_,14 @@
+@@ -350,14 +_,16 @@
      }
  
      public CompletableFuture<ChunkResult<ChunkAccess>> getChunkFuture(int x, int z, ChunkStatus chunkStatus, boolean requireChunk) {
@@ -82,7 +85,10 @@
          CompletableFuture<ChunkResult<ChunkAccess>> chunkFutureMainThread;
          if (flag) {
              chunkFutureMainThread = this.getChunkFutureMainThread(x, z, chunkStatus, requireChunk);
-             this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
+-            this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
++            if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++                this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
++            }
          } else {
              chunkFutureMainThread = CompletableFuture.<CompletableFuture<ChunkResult<ChunkAccess>>>supplyAsync(
 -                    () -> this.getChunkFutureMainThread(x, z, chunkStatus, requireChunk), this.mainThreadProcessor

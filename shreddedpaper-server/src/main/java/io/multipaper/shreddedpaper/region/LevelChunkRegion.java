@@ -280,6 +280,7 @@ public class LevelChunkRegion {
 
     public boolean isMergeQuiescent() {
         return !this.runtimeState.mailbox().hasPendingTasks()
+                && !this.runtimeState.chunkIoTracker().hasPendingWork()
                 && this.internalTasks.getTotalTasksExecuted() >= this.internalTasks.getTotalTasksScheduled();
     }
 
@@ -680,6 +681,7 @@ public class LevelChunkRegion {
                 && playerTickingChunkRequests.isEmpty()
                 && tickingEntities.size() == 0
                 && !this.runtimeState.mailbox().hasPendingTasks()
+                && !this.runtimeState.chunkIoTracker().hasPendingWork()
                 && internalTasks.getTotalTasksExecuted() >= internalTasks.getTotalTasksScheduled()
                 && players.isEmpty()
                 && unloadQueue.isEmpty()

@@ -24,6 +24,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
     private final AtomicBoolean cleanupRequested = new AtomicBoolean();
     private final AtomicLong batchGeneration = new AtomicLong();
     private final AtomicLong busySink = new AtomicLong();
+    private final AtomicLong activeChunkBatches = new AtomicLong();
 
     @Override
     public void onEnable() {
@@ -150,6 +151,28 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
         this.busySink.lazySet(value);
     }
 
+    public void beginChunkBatch() {
+        this.activeChunkBatches.incrementAndGet();
+    }
+
+    public void finishChunkBatch() {
+        final long remaining = this.activeChunkBatches.decrementAndGet();
+        if (remaining < 0L) {
+            this.activeChunkBatches.compareAndSet(remaining, 0L);
+        }
+    }
+
+    public StatusSnapshot statusSnapshot() {
+        return new StatusSnapshot(
+            this.batchGeneration.get(),
+            this.cleanupRequested.get(),
+            this.managedTasks.size(),
+            this.managedEntities.size(),
+            this.managedChunkTickets.size(),
+            Math.max(0L, this.activeChunkBatches.get())
+        );
+    }
+
     private record ManagedEntity(UUID entityId, io.papermc.paper.threadedregions.scheduler.EntityScheduler scheduler, Entity entity) {
         private ManagedEntity(final Entity entity) {
             this(entity.getUniqueId(), entity.getScheduler(), entity);
@@ -157,5 +180,15 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
     }
 
     private record ManagedChunkTicket(World world, int chunkX, int chunkZ) {
+    }
+
+    public record StatusSnapshot(
+        long batch,
+        boolean cleanupRequested,
+        int managedTasks,
+        int managedEntities,
+        int managedChunkTickets,
+        long activeChunkBatches
+    ) {
     }
 }

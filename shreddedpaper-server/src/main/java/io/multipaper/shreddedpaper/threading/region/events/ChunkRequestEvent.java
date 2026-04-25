@@ -54,4 +54,13 @@ public final class ChunkRequestEvent extends Event {
 
     @Label("Rejected")
     public boolean rejected;
+
+    @Label("In Flight")
+    public int inFlight;
+
+    @Label("Capacity")
+    public int capacity;
+
+    @Label("Priority")
+    public String priority;
 }

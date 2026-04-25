@@ -530,7 +530,151 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   class caps, such as `PLUGIN`, can move a region into `DEGRADED` before total
   mailbox depth looks dangerous.
 - [ ] Add per-region explosion backlog metric.
-- [ ] Add per-region chunk IO/generation debt metric.
+- [x] Add per-region chunk IO/generation debt metric: `RegionTick`,
+  `/region top`, `/region inspect`, and overload scoring now include chunk IO
+  in-flight count, deferred retry count, rejected count, and pressure.
+
+### F2. Chunk IO And Generation QoS
+
+- [x] Map every region-thread chunk load/generation path before patching:
+  `ServerChunkCache.syncLoad`, `ServerChunkCache.getChunkFuture`,
+  `ChunkTaskScheduler.scheduleChunkLoad`, player chunk loader scheduling,
+  `MoonriseRegionFileIO.loadData/loadDataAsync`, entity/POI data load tasks,
+  and plugin `CraftWorld#getChunkAtAsync`; sub-agent review recorded remaining
+  deep executor ingress risks in `ChunkLoadTask`, `ChunkUpgradeGenericStatusTask`,
+  `MoonriseRegionFileIO`, and `NewChunkHolder` save paths.
+- [x] Classify each path as a hard reject, async continuation, bounded retry,
+  priority downgrade, or intentional blocking durability path. Current patch
+  treats region-worker full sync loads as hard reject, ticketed async plugin/API
+  loads as bounded retry, degraded owners as priority downgrade, player loader
+  no-ticket requests as intentionally preserved, and shutdown/save-all as
+  durability exceptions.
+- [x] Add a distinct `CHUNK_IO_LOAD` mailbox class so deferred chunk
+  load/generation retries cannot consume `CRITICAL_SYSTEM`, plugin, tracker, or
+  save-lane capacity.
+- [x] Add per-region chunk IO/generation tracker state with in-flight count,
+  deferred retry count, rejected count, downgraded count, completed count, and
+  pressure calculation.
+- [x] Add config knobs for normal/degraded per-region async chunk request caps,
+  deferred retry delay, deferred mailbox capacity, and degraded priority
+  downgrade.
+- [x] Wire `ChunkTaskScheduler.scheduleChunkLoad` admission so plugin/external
+  ticketed async chunk loads above the target region quota are retried through a
+  bounded region-local `CHUNK_IO_LOAD` mailbox instead of flooding the global
+  chunk executor.
+- [x] Preserve player chunk loader and already-loaded fast paths so normal
+  player movement does not regress under chunkgen DoS protection.
+- [x] Preserve `BLOCKING`/shutdown/durability paths as explicit exceptions and
+  document why they are not hostile-load scheduling paths.
+- [x] Emit sampled JFR `ChunkRequest` events for deferred, rejected, downgraded,
+  admitted-over-pressure, and completed chunk IO/generation requests without
+  per-chunk spam.
+- [x] Include chunk IO in `/region top`, `/region inspect`, `RegionTick`, and
+  overload/degraded-lane decisions.
+- [x] Self-review for deadlocks: no deferred retry may wait on the same region
+  mailbox or exact owner marker lock while holding chunk scheduler/ticket locks.
+- [x] Sub-agent review: correctness/race review of chunk request admission,
+  retry completion semantics, and merge/split owner routing.
+- [x] Sub-agent review: performance review of caps, pressure math, sampling, and
+  normal-region priority preservation.
+- [x] Compile: run `applyAllPatches`, `compileJava --rerun-tasks`, load-test
+  plugin build, and paperclip jar build.
+- [x] Runtime smoke: verify new `rlt status`, `rlt scenario gen`,
+  `rlt scenario load`, `region top`, RCON `tps`, and clean RCON `stop` in
+  `D:\worldgen`.
+- [x] Hostile-load test: `rlt at world 0 100 0 scenario gen 12 1024 6 false
+  1200 1` queued 12 independent generation regions while the control probe
+  logged `avgLagMs=0.667`, `p95LagMs=1.412`, `maxLagMs=186.410`; `/tps`
+  remained near 20 after the run.
+- [x] Load-dominant test: after pregeneration, `scenario load 4 256 6 false
+  600 1` completed with control `avgLagMs=0.418`, `p95LagMs=1.299`,
+  `maxLagMs=146.032`.
+- [x] Patch Nash lifecycle blocker: chunk IO debt is now part of runtime-state
+  idleness, merge quiescence, and region emptiness. `RegionRuntimeState`
+  refuses to detach idle cells while `RegionChunkIoTracker` has in-flight or
+  deferred retry work, and `LevelChunkRegion` split/merge/empty checks include
+  the same pending-work guard.
+- [x] Patch Newton cold-region QoS blocker: chunk IO admission now creates or
+  reuses the target cell runtime state through
+  `LevelChunkRegionMap.getOrCreateRuntimeStateForCell(...)`, so detached/cold
+  target regions no longer bypass per-region caps before the first owner tick.
+- [x] Re-run `applyAllPatches` after lifecycle and cold-region QoS fixes:
+  passed on 2026-04-25.
+- [x] Re-run `compileJava --stacktrace` after lifecycle and cold-region QoS
+  fixes: passed on 2026-04-25.
+- [x] Rebuild `createMojmapPaperclipJar` and the load-test plugin after F2
+  fixes: both passed on 2026-04-25.
+- [x] Verify deferred/downgrade activation under an intentionally low runtime
+  cap in `D:\worldgen`: temporarily set normal cap `16`, degraded cap `4`, and
+  retry delay `1`, then ran
+  `rlt at world 0 100 0 scenario gen 1 4096 8 false 400 1`.
+- [x] Runtime cap evidence: `/region top` reported target regions as
+  `DEGRADED` with examples like `chunkIO=16/4 deferred=48 1200%` and later
+  `chunkDowngraded=48`; control region stayed normal and `/tps` returned to
+  `20.0` after the burst.
+- [x] Runtime latency evidence for the low-cap run: `RegionLoadTest` logged
+  `scenario control finished at chunk=0,0: samples=400 periodTicks=1
+  avgLagMs=0.360 p95LagMs=1.557 maxLagMs=188.548`, while the remote generation
+  batch completed `289/289` chunks in `7787.32ms`.
+- [x] JFR cap evidence:
+  `D:\worldgen\logs\codex-region-foundation.jfr` contains `RegionTickEvent`
+  count `1549`, `ChunkRequest` count `79`, `RegionOverBudgetEvent` count `45`,
+  and `RegionMergeEvent` count `35`; `ChunkRequest` grouped output showed
+  `75` `async-load-deferred` events and `4` `async-load-downgraded` events.
+- [x] Restore `D:\worldgen\shreddedpaper.yml` chunk IO caps to release defaults
+  after the low-cap proof run: normal `256`, degraded `32`, retry delay `2`.
+- [x] Receive Euler performance re-review: no blocker for the implemented
+  external ticketed async-request QoS slice, but two high-quality follow-ups
+  were accepted: scenario control probes must cover the entire hostile run, and
+  internal chunk executor ingress still needs its own F2b isolation layer.
+- [x] Patch scenario proof harness: `/rlt scenario` now treats the `samples`
+  argument as a minimum and keeps the control probe running until every scenario
+  chunk batch finishes, so p95/max evidence covers the whole hostile burst.
+- [x] Receive Fermat correctness re-review: previous lifecycle/cold-region
+  blockers were closed, but a split-created owner could be visible before its
+  scheduler was armed, turning a capped deferred retry into a transient hard
+  reject.
+- [x] Patch split-window chunk IO retry race: chunk load retry admission now
+  queues through `scheduleTaskIfRegionExists(...)`, allowing retry work to wait
+  in the just-split region mailbox before the scheduler is armed. Autosave and
+  other armed-only paths still use `scheduleTaskIfSchedulerArmed(...)`.
+- [x] Re-run `applyAllPatches`, `compileJava`, load-test plugin build, and
+  `createMojmapPaperclipJar` after the scenario probe and split-window fixes:
+  all passed on 2026-04-25.
+- [x] Runtime full-burst proof after scenario probe fix: with low caps
+  normal `16`, degraded `4`, retry delay `1`, ran
+  `rlt at world 0 100 0 scenario gen 1 8192 8 false 400 1`; remote batch
+  finished `289/289` chunks in `10233.98ms`, and the control probe finished
+  after the batch with `samples=400 avgLagMs=0.358 p95LagMs=1.537
+  maxLagMs=76.110`.
+- [x] Runtime probe-extension proof: ran
+  `rlt at world 0 100 0 scenario gen 1 16384 8 false 100 1`; remote batch
+  finished in `10814.90ms`, and the control probe extended beyond the minimum
+  to `samples=206`, finishing at the same timestamp with `avgLagMs=2.681
+  p95LagMs=1.157 maxLagMs=577.851`.
+- [x] JFR proof after re-review fixes:
+  `D:\worldgen\logs\codex-chunkqos-probe-20260425-220338.jfr` contains
+  `RegionTickEvent` count `3980`, `ChunkRequest` count `253`,
+  `RegionMergeEvent` count `101`, and `RegionOverBudgetEvent` count `40`;
+  grouped `ChunkRequest` output showed `245` sampled `async-load-deferred`
+  events and `8` sampled `async-load-downgraded` events. These are sampled
+  activation events, not exact total request counts.
+- [x] Restore `D:\worldgen\shreddedpaper.yml` chunk IO caps to release defaults
+  again after the probe-extension proof run: normal `256`, degraded `32`, retry
+  delay `2`.
+- [x] Investigate patch-file whitespace review item: replacing unified-diff
+  blank context marker lines (`" "`) with truly empty lines makes
+  `applyAllPatches` fail with `Failed to apply 5/648 hunks`. Keep those marker
+  lines because paperweight patch syntax requires them; use `git diff --check`
+  excluding Minecraft `.patch` hunk context when checking ordinary source
+  whitespace.
+- [ ] F2b required next validation target: add region-owner QoS around internal
+  worldgen worker enqueue, chunk load/decode worker enqueue, region-file IO
+  queue ingress, and generation-task async `join()` tails. Current admission
+  protects external ticketed async requests but intentionally does not yet
+  throttle player loader no-ticket requests or every internal neighbor fanout.
+- [ ] Commit chunk IO/generation QoS as one coherent patch after review and
+  runtime evidence.
 
 ### G. Compile And Static Verification Loop
 
@@ -580,6 +724,15 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   deprecation/removal warnings.
 - [x] Re-run `shreddedpaper-server:createMojmapPaperclipJar --stacktrace` after
   final autosave/save-all review fixes: passed.
+- [x] Re-run `applyAllPatches` after `CHUNK_IO_LOAD` admission patch was
+  manually added to Minecraft source patches: passed with 160 Minecraft source
+  patches applied.
+- [x] Re-run `shreddedpaper-server:compileJava --rerun-tasks --stacktrace`
+  after `CHUNK_IO_LOAD` admission patch: passed with only existing
+  deprecation/removal warnings.
+- [x] Re-run `shreddedpaper-server:createMojmapPaperclipJar --stacktrace` after
+  `CHUNK_IO_LOAD` admission patch: passed and produced
+  `shreddedpaper-server/build/libs/shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar`.
 - [x] Deploy the final rebuilt jar to `D:\worldgen`, restart through
   `D:\worldgen\codex-server-launch.ps1`, and verify RCON smoke:
   `rlt ... crossqueue 64 600 0`, `region top`, `save-all`,
@@ -633,6 +786,16 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Remove the temporary forced chunk `[0, 0]` from the `D:\worldgen` test
   world during the next controlled runtime run: RCON reported no chunks were
   currently force-loaded.
+- [x] Deploy chunk IO QoS build to `D:\worldgen` on 2026-04-25, replacing
+  `shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar` after creating a
+  timestamped backup, and restart through `codex-server-launch.ps1`.
+- [x] Runtime startup after chunk IO QoS build: server reached `Done` in
+  44.080s on the final F2 verification run, `RegionLoadTest` loaded, and RCON
+  `/rlt status` responded.
+- [x] Runtime shutdown after chunk IO QoS tests: RCON `stop` returned
+  `Stopping the server`; server save/shutdown completed through all three
+  worlds, Java exited, and the stale launcher pid file was removed after
+  verifying no process remained.
 
 ### I. Load-Test Plugin
 
@@ -644,6 +807,14 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Add command: create tracker/broadcast update flood.
 - [x] Add command: create plugin scheduler/mailbox flood.
 - [x] Add command: force chunk generation load away from players.
+- [x] Add command: force load-only async chunk requests away from players:
+  `/rlt chunkload <radiusChunks> [urgent]`.
+- [x] Add command: one-shot chunk QoS scenario combining control probe plus N
+  remote chunkgen/chunkload regions:
+  `/rlt scenario <gen|load> <regions> <strideChunks> <radiusChunks> [urgent]
+  [samples] [periodTicks]`.
+- [x] Add command: report active harness state with `/rlt status`, including
+  managed tasks, entities, chunk tickets, and active chunk batches.
 - [x] Add command: place a normal-region probe that records tick cadence/MSPT.
 - [x] Build the plugin jar with
   `./gradlew -p tools/region-load-test-plugin clean build`.
@@ -722,6 +893,12 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Capture plugin smoke JFR:
   `D:\worldgen\logs\codex-regionload-plugin-foliaflag-20260425-064052.jfr`.
 - [x] Restore `D:\worldgen\server.properties` after temporary RCON testing.
+- [x] Rebuild the load-test plugin after `chunkload`, `scenario`, and `status`
+  command additions: `..\..\gradlew.bat build` from
+  `tools\region-load-test-plugin` passed.
+- [x] Deploy the rebuilt plugin to
+  `D:\worldgen\plugins\region-load-test-plugin-0.1.0-SNAPSHOT.jar` and verify
+  RCON `/rlt status` reports the new active chunk-batch counters.
 
 ### J. Hostile-Load Acceptance Tests
 
@@ -802,6 +979,19 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   with `/tps` at 20.0, and
   `D:\worldgen\logs\codex-syncload-sampling-20260425-1549.jfr` contains only
   sampled `ChunkRequest` counts `1` and `256`.
+- [x] Chunk generation QoS smoke: `rlt at world 0 100 0 scenario gen 4 256 6
+  false 600 1` completed four 169-chunk generation batches in roughly
+  13.8s-16.0s; the control probe logged `avgLagMs=4.499`,
+  `p95LagMs=2.090`, `maxLagMs=1518.175`.
+- [x] Chunk load-only QoS smoke: `scenario load 4 256 6 false 600 1`
+  completed in roughly 0.96s-1.26s per batch, with expected `null` results for
+  chunks that were not already loadable without generation; the control probe
+  logged `avgLagMs=0.418`, `p95LagMs=1.299`, `maxLagMs=146.032`.
+- [x] Chunk generation hostile-load run with regions >= tick workers:
+  `scenario gen 12 1024 6 false 1200 1` queued 12 independent generation
+  regions. Eleven remote batches finished around 68.2s-68.3s, one previously
+  generated batch finished in 25.6s, and the control probe logged
+  `avgLagMs=0.667`, `p95LagMs=1.412`, `maxLagMs=186.410`.
 - [x] Rerun after fixed-y spawn deployment: no chunk-load crash; far normal
   probe logged `avgLagMs=0.052`, `p95LagMs=1.150`, `maxLagMs=91.308`, and
   `/tps` stayed 20.0 during the run.

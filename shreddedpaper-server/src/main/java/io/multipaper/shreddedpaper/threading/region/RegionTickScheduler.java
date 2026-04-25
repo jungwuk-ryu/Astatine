@@ -231,11 +231,17 @@ public final class RegionTickScheduler {
             double ewmaScheduleLagMs,
             int mailboxDepth,
             double mailboxClassPressure,
+            int chunkIoInFlight,
+            int chunkIoDeferred,
+            int chunkIoCapacity,
+            double chunkIoPressure,
+            long chunkIoDowngraded,
+            long chunkIoRejected,
             long rejectedTasks,
             long nextStartNanos
     ) {
         private double sortScore() {
-            return Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D);
+            return Math.max(Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D), this.chunkIoPressure * 50.0D);
         }
     }
 
@@ -375,14 +381,16 @@ public final class RegionTickScheduler {
 
             final long tickEnd = System.nanoTime();
             final long wallNanos = Math.max(0L, tickEnd - actualStart);
+            final RegionChunkIoTracker.Snapshot chunkIo = this.state.chunkIoTracker().snapshot();
             this.state.overloadController().recordTick(
                     wallNanos,
                     scheduleLag,
                     this.state.mailbox().depth(),
                     this.state.mailbox().maxClassPressure(),
-                    deferred
+                    deferred,
+                    chunkIo
             );
-            this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred);
+            this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred, chunkIo);
 
             this.activatePendingSplitRegions(scheduledStart);
             if (failure != null || this.retired.get() || region.isEmpty()) {
@@ -433,6 +441,7 @@ public final class RegionTickScheduler {
 
         private RegionTickSnapshot snapshot() {
             final RegionOverloadController overload = this.state.overloadController();
+            final RegionChunkIoTracker.Snapshot chunkIo = this.state.chunkIoTracker().snapshot();
             return new RegionTickSnapshot(
                     this.level.getWorld().getName(),
                     this.state.regionPos(),
@@ -441,6 +450,12 @@ public final class RegionTickScheduler {
                     overload.ewmaScheduleLagMs(),
                     this.state.mailbox().depth(),
                     this.state.mailbox().maxClassPressure(),
+                    overload.lastChunkIoInFlight(),
+                    overload.lastChunkIoDeferred(),
+                    chunkIo.capacity(),
+                    overload.lastChunkIoPressure(),
+                    chunkIo.downgraded(),
+                    chunkIo.rejected(),
                     this.state.mailbox().rejected(),
                     this.scheduledStartNanos
             );
@@ -451,7 +466,8 @@ public final class RegionTickScheduler {
                 final long actualStart,
                 final long wallNanos,
                 final long scheduleLag,
-                final long deferred
+                final long deferred,
+                final RegionChunkIoTracker.Snapshot chunkIo
         ) {
             final RegionTickEvent event = new RegionTickEvent();
             event.world = this.level.getWorld().getName();
@@ -465,7 +481,14 @@ public final class RegionTickScheduler {
             event.mailboxDepth = this.state.mailbox().depth();
             event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
             event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
+            event.chunkIoLoadQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_LOAD);
             event.chunkIoSaveQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_SAVE);
+            event.chunkIoInFlight = chunkIo.inFlight();
+            event.chunkIoDeferred = chunkIo.deferredRetries();
+            event.chunkIoCapacity = chunkIo.capacity();
+            event.chunkIoRejected = chunkIo.rejected();
+            event.chunkIoDowngraded = chunkIo.downgraded();
+            event.chunkIoPressure = chunkIo.pressure();
             event.pluginQueued = this.state.mailbox().queued(RegionTaskClass.PLUGIN);
             event.trackerBroadcastQueued = this.state.mailbox().queued(RegionTaskClass.TRACKER_BROADCAST);
             event.explosionPhysicsQueued = this.state.mailbox().queued(RegionTaskClass.EXPLOSION_PHYSICS);

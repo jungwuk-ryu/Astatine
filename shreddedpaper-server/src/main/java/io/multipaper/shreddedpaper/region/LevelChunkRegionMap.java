@@ -20,6 +20,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
+import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
 import io.multipaper.shreddedpaper.threading.region.events.RegionMergeEvent;
 import io.multipaper.shreddedpaper.threading.region.events.RegionSplitEvent;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
@@ -642,10 +643,32 @@ public class LevelChunkRegionMap {
         });
     }
 
+    public boolean scheduleTaskIfRegionExists(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
+        return this.regionsLock.read(() -> {
+            final LevelChunkRegion region = this.getExistingRegionLocked(regionPos);
+            return region != null && region.scheduleTask(taskClass, task, delayInTicks, regionPos);
+        });
+    }
+
     public long ownerIdForCellOr(RegionPos regionPos, long missingValue) {
         return this.regionsLock.read(() -> {
             final RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
             return owner == null ? missingValue : owner.id();
+        });
+    }
+
+    public RegionRuntimeState runtimeStateForCellOrNull(RegionPos regionPos) {
+        return this.regionsLock.read(() -> {
+            final RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
+            final LevelChunkRegion region = owner == null ? null : owner.region();
+            return region == null ? null : region.getRuntimeState();
+        });
+    }
+
+    public RegionRuntimeState getOrCreateRuntimeStateForCell(RegionPos regionPos) {
+        return this.regionsLock.write(() -> {
+            final LevelChunkRegion region = this.getOrCreateRegionLocked(regionPos);
+            return region.getRuntimeState();
         });
     }
 

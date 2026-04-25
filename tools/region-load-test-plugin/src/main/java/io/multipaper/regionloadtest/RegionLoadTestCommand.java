@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 public final class RegionLoadTestCommand implements TabExecutor {
 
@@ -43,7 +44,10 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "crossqueue",
         "syncload",
         "chunkgen",
+        "chunkload",
+        "scenario",
         "probe",
+        "status",
         "at"
     );
 
@@ -156,12 +160,29 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
                 return this.handleChunkGenerationLoad(sender, anchor, effectiveArgs, commandBatch);
             }
+            case "chunkload" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleChunkLoadOnly(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "scenario" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleScenario(sender, anchor, effectiveArgs, commandBatch);
+            }
             case "probe" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
                 if (anchor == null) {
                     return true;
                 }
                 return this.handleProbe(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "status" -> {
+                return this.handleStatus(sender);
             }
             default -> {
                 sender.sendMessage("Unknown subcommand. Use /" + label + " help");
@@ -967,48 +988,73 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return true;
         }
 
-        final World world = base.getWorld();
-        final int centerChunkX = base.getBlockX() >> 4;
-        final int centerChunkZ = base.getBlockZ() >> 4;
-        final int total = (radius * 2 + 1) * (radius * 2 + 1);
-        final AtomicInteger remaining = new AtomicInteger(total);
-        final AtomicInteger success = new AtomicInteger();
-        final AtomicInteger failure = new AtomicInteger();
-        final long startedAt = System.nanoTime();
+        this.startChunkBatch(sender, base, radius, true, urgent, commandBatch, "chunk generation");
+        return true;
+    }
 
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                final int chunkX = centerChunkX + dx;
-                final int chunkZ = centerChunkZ + dz;
-                world.getChunkAtAsync(chunkX, chunkZ, true, urgent).whenComplete((chunk, throwable) -> {
-                    if (this.plugin.shouldAbortBatch(commandBatch)) {
-                        return;
-                    }
-                    if (throwable == null) {
-                        success.incrementAndGet();
-                    } else {
-                        failure.incrementAndGet();
-                        this.plugin.getLogger().warning("Chunk generation task failed at "
-                            + chunkX + "," + chunkZ + ": " + throwable.getMessage());
-                    }
-
-                    if (remaining.decrementAndGet() == 0) {
-                        final double elapsedMs = (System.nanoTime() - startedAt) / 1_000_000.0D;
-                        this.replyLater(sender, String.format(
-                            Locale.ROOT,
-                            "Chunk generation batch finished: total=%d success=%d failure=%d urgent=%s elapsedMs=%.2f",
-                            total,
-                            success.get(),
-                            failure.get(),
-                            urgent,
-                            elapsedMs
-                        ));
-                    }
-                });
-            }
+    private boolean handleChunkLoadOnly(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt chunkload <radiusChunks> [urgent=false]");
+            return true;
         }
 
-        sender.sendMessage("Queued chunk generation load: totalChunks=" + total + ", urgent=" + urgent);
+        final Integer radius = this.parseInt(sender, args[1], "radiusChunks");
+        final Boolean urgent = args.length >= 3 ? this.parseBoolean(sender, args[2], "urgent") : Boolean.FALSE;
+        if (radius == null || urgent == null) {
+            return true;
+        }
+        if (radius < 0) {
+            sender.sendMessage("radiusChunks must be zero or greater.");
+            return true;
+        }
+
+        this.startChunkBatch(sender, base, radius, false, urgent, commandBatch, "chunk load-only");
+        return true;
+    }
+
+    private boolean handleScenario(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 5) {
+            sender.sendMessage("Usage: /rlt scenario <gen|load> <regions> <strideChunks> <radiusChunks> [urgent=false] [samples=1200] [periodTicks=1]");
+            return true;
+        }
+
+        final String mode = args[1].toLowerCase(Locale.ROOT);
+        final boolean generate;
+        if ("gen".equals(mode) || "chunkgen".equals(mode)) {
+            generate = true;
+        } else if ("load".equals(mode) || "chunkload".equals(mode)) {
+            generate = false;
+        } else {
+            sender.sendMessage("mode must be gen or load.");
+            return true;
+        }
+
+        final Integer regions = this.parseInt(sender, args[2], "regions");
+        final Integer strideChunks = this.parseInt(sender, args[3], "strideChunks");
+        final Integer radius = this.parseInt(sender, args[4], "radiusChunks");
+        final Boolean urgent = args.length >= 6 ? this.parseBoolean(sender, args[5], "urgent") : Boolean.FALSE;
+        final Integer samples = args.length >= 7 ? this.parseInt(sender, args[6], "samples") : 1200;
+        final Integer periodTicks = args.length >= 8 ? this.parseInt(sender, args[7], "periodTicks") : 1;
+        if (regions == null || strideChunks == null || radius == null || urgent == null || samples == null || periodTicks == null) {
+            return true;
+        }
+        if (regions < 1 || strideChunks < 1 || radius < 0 || samples < 2 || periodTicks < 1) {
+            sender.sendMessage("regions/strideChunks must be positive, radiusChunks >= 0, samples >= 2, periodTicks >= 1.");
+            return true;
+        }
+
+        final AtomicInteger remainingScenarioBatches = new AtomicInteger(regions);
+        this.startProbe(sender, base, samples, periodTicks, commandBatch, "scenario control",
+            () -> remainingScenarioBatches.get() > 0);
+        for (int i = 1; i <= regions; i++) {
+            final Location loadAnchor = base.clone().add((double) strideChunks * 16.0D * i, 0.0D, 0.0D);
+            this.startChunkBatch(sender, loadAnchor, radius, generate, urgent, commandBatch,
+                "scenario " + (generate ? "chunk generation" : "chunk load-only") + " region=" + i,
+                remainingScenarioBatches::decrementAndGet);
+        }
+        sender.sendMessage("Started scenario: mode=" + mode + ", regions=" + regions + ", strideChunks=" + strideChunks
+            + ", radiusChunks=" + radius + ", urgent=" + urgent + ", minSamples=" + samples
+            + ", periodTicks=" + periodTicks + ", probeExtendsUntilBatchesFinish=true");
         return true;
     }
 
@@ -1028,12 +1074,134 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return true;
         }
 
+        this.startProbe(sender, probeLocation, samples, periodTicks, commandBatch, "probe");
+        return true;
+    }
+
+    private boolean handleStatus(final CommandSender sender) {
+        final RegionLoadTestPlugin.StatusSnapshot status = this.plugin.statusSnapshot();
+        sender.sendMessage("RegionLoadTest status: batch=" + status.batch()
+            + ", cleanupRequested=" + status.cleanupRequested()
+            + ", managedTasks=" + status.managedTasks()
+            + ", managedEntities=" + status.managedEntities()
+            + ", managedChunkTickets=" + status.managedChunkTickets()
+            + ", activeChunkBatches=" + status.activeChunkBatches());
+        return true;
+    }
+
+    private void startChunkBatch(
+        final CommandSender sender,
+        final Location base,
+        final int radius,
+        final boolean generate,
+        final boolean urgent,
+        final long commandBatch,
+        final String label
+    ) {
+        this.startChunkBatch(sender, base, radius, generate, urgent, commandBatch, label, null);
+    }
+
+    private void startChunkBatch(
+        final CommandSender sender,
+        final Location base,
+        final int radius,
+        final boolean generate,
+        final boolean urgent,
+        final long commandBatch,
+        final String label,
+        final Runnable onFinish
+    ) {
+        final World world = base.getWorld();
+        final int centerChunkX = base.getBlockX() >> 4;
+        final int centerChunkZ = base.getBlockZ() >> 4;
+        final int total = (radius * 2 + 1) * (radius * 2 + 1);
+        final AtomicInteger remaining = new AtomicInteger(total);
+        final AtomicInteger success = new AtomicInteger();
+        final AtomicInteger nullResult = new AtomicInteger();
+        final AtomicInteger failure = new AtomicInteger();
+        final long startedAt = System.nanoTime();
+        this.plugin.beginChunkBatch();
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                final int chunkX = centerChunkX + dx;
+                final int chunkZ = centerChunkZ + dz;
+                world.getChunkAtAsync(chunkX, chunkZ, generate, urgent).whenComplete((chunk, throwable) -> {
+                    if (this.plugin.shouldAbortBatch(commandBatch)) {
+                        if (remaining.decrementAndGet() == 0) {
+                            this.finishChunkBatch(onFinish);
+                        }
+                        return;
+                    }
+                    if (throwable == null && chunk != null) {
+                        success.incrementAndGet();
+                    } else if (throwable == null) {
+                        nullResult.incrementAndGet();
+                    } else {
+                        failure.incrementAndGet();
+                        this.plugin.getLogger().warning(label + " failed at "
+                            + chunkX + "," + chunkZ + ": " + throwable.getMessage());
+                    }
+
+                    if (remaining.decrementAndGet() == 0) {
+                        this.finishChunkBatch(onFinish);
+                        final double elapsedMs = (System.nanoTime() - startedAt) / 1_000_000.0D;
+                        this.replyLater(sender, String.format(
+                            Locale.ROOT,
+                            "%s batch finished: centerChunk=%d,%d total=%d success=%d null=%d failure=%d generate=%s urgent=%s elapsedMs=%.2f",
+                            label,
+                            centerChunkX,
+                            centerChunkZ,
+                            total,
+                            success.get(),
+                            nullResult.get(),
+                            failure.get(),
+                            generate,
+                            urgent,
+                            elapsedMs
+                        ));
+                    }
+                });
+            }
+        }
+
+        sender.sendMessage("Queued " + label + ": centerChunk=" + centerChunkX + "," + centerChunkZ
+            + ", totalChunks=" + total + ", generate=" + generate + ", urgent=" + urgent);
+    }
+
+    private void finishChunkBatch(final Runnable onFinish) {
+        this.plugin.finishChunkBatch();
+        if (onFinish != null) {
+            onFinish.run();
+        }
+    }
+
+    private void startProbe(
+        final CommandSender sender,
+        final Location probeLocation,
+        final int samples,
+        final int periodTicks,
+        final long commandBatch,
+        final String label
+    ) {
+        this.startProbe(sender, probeLocation, samples, periodTicks, commandBatch, label, () -> false);
+    }
+
+    private void startProbe(
+        final CommandSender sender,
+        final Location probeLocation,
+        final int samples,
+        final int periodTicks,
+        final long commandBatch,
+        final String label,
+        final BooleanSupplier continueAfterMinSamples
+    ) {
         final long expectedPeriodNanos = TimeUnit.MILLISECONDS.toNanos(periodTicks * 50L);
-        final AtomicInteger remaining = new AtomicInteger(samples);
+        final AtomicInteger runs = new AtomicInteger();
         final AtomicLong lastRunNanos = new AtomicLong(System.nanoTime());
         final AtomicLong maxLagNanos = new AtomicLong(Long.MIN_VALUE);
         final AtomicLong totalLagNanos = new AtomicLong();
-        final long[] lagSamples = new long[Math.max(1, samples - 1)];
+        final List<Long> lagSamples = new ArrayList<>(Math.max(1, samples - 1));
 
         final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, probeLocation, task -> {
             if (this.plugin.shouldAbortBatch(commandBatch)) {
@@ -1042,22 +1210,25 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 return;
             }
             final long now = System.nanoTime();
-            final int current = samples - remaining.get();
+            final int current = runs.getAndIncrement();
             if (current > 0) {
                 final long elapsed = now - lastRunNanos.getAndSet(now);
                 final long lag = elapsed - expectedPeriodNanos;
                 totalLagNanos.addAndGet(lag);
                 maxLagNanos.accumulateAndGet(lag, Math::max);
-                lagSamples[Math.min(current - 1, lagSamples.length - 1)] = lag;
+                lagSamples.add(lag);
             } else {
                 lastRunNanos.set(now);
             }
 
-            if (remaining.decrementAndGet() <= 0) {
+            if (runs.get() >= samples && !continueAfterMinSamples.getAsBoolean()) {
                 task.cancel();
                 this.plugin.untrackTask(task);
-                final int measuredSamples = Math.max(1, samples - 1);
-                final long[] measuredLags = Arrays.copyOf(lagSamples, measuredSamples);
+                final int measuredSamples = Math.max(1, lagSamples.size());
+                final long[] measuredLags = new long[measuredSamples];
+                for (int i = 0; i < lagSamples.size(); i++) {
+                    measuredLags[i] = lagSamples.get(i);
+                }
                 Arrays.sort(measuredLags);
                 final int p95Index = Math.min(measuredSamples - 1, Math.max(0, (int)Math.ceil(measuredSamples * 0.95D) - 1));
                 final double avgLagMs = totalLagNanos.get() / (double) measuredSamples / 1_000_000.0D;
@@ -1065,10 +1236,11 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 final double p95LagMs = measuredLags[p95Index] / 1_000_000.0D;
                 this.replyLater(sender, String.format(
                     Locale.ROOT,
-                    "Probe finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f p95LagMs=%.3f maxLagMs=%.3f",
+                    "%s finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f p95LagMs=%.3f maxLagMs=%.3f",
+                    label,
                     probeLocation.getBlockX() >> 4,
                     probeLocation.getBlockZ() >> 4,
-                    samples,
+                    runs.get(),
                     periodTicks,
                     avgLagMs,
                     p95LagMs,
@@ -1078,9 +1250,8 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }, 1L, periodTicks);
 
         this.plugin.trackTask(scheduledTask);
-        sender.sendMessage("Started normal-region probe at chunk=" + (probeLocation.getBlockX() >> 4)
+        sender.sendMessage("Started " + label + " at chunk=" + (probeLocation.getBlockX() >> 4)
             + "," + (probeLocation.getBlockZ() >> 4) + " for samples=" + samples + ", periodTicks=" + periodTicks);
-        return true;
     }
 
     private void sendHelp(final CommandSender sender, final String label) {
@@ -1094,7 +1265,10 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " crossqueue <chunkOffsetX> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " syncload <chunkOffsetX> [attempts]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
+        sender.sendMessage("/" + label + " chunkload <radiusChunks> [urgent]");
+        sender.sendMessage("/" + label + " scenario <gen|load> <regions> <strideChunks> <radiusChunks> [urgent] [samples] [periodTicks]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");
+        sender.sendMessage("/" + label + " status");
         sender.sendMessage("/" + label + " at <world> <x> <y> <z> <subcommand> [args...]");
         sender.sendMessage("/" + label + " cleanup");
     }

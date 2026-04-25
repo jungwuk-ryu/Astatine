@@ -15,6 +15,9 @@ public final class RegionOverloadController {
     private volatile double ewmaScheduleLagMs;
     private volatile int lastMailboxDepth;
     private volatile double lastMailboxClassPressure;
+    private volatile double lastChunkIoPressure;
+    private volatile int lastChunkIoInFlight;
+    private volatile int lastChunkIoDeferred;
     private int quarantineStrikes;
 
     public RegionOverloadController(final ServerLevel level, final RegionPos regionPos) {
@@ -36,7 +39,8 @@ public final class RegionOverloadController {
             final long scheduleLagNanos,
             final int mailboxDepth,
             final double mailboxClassPressure,
-            final long deferredWork
+            final long deferredWork,
+            final RegionChunkIoTracker.Snapshot chunkIo
     ) {
         final double mspt = tickNanos / 1.0E6D;
         final double lagMs = Math.max(0L, scheduleLagNanos) / 1.0E6D;
@@ -44,6 +48,9 @@ public final class RegionOverloadController {
         this.ewmaScheduleLagMs = this.ewmaScheduleLagMs == 0.0D ? lagMs : (this.ewmaScheduleLagMs * (1.0D - EWMA_ALPHA)) + (lagMs * EWMA_ALPHA);
         this.lastMailboxDepth = mailboxDepth;
         this.lastMailboxClassPressure = mailboxClassPressure;
+        this.lastChunkIoPressure = chunkIo.pressure();
+        this.lastChunkIoInFlight = chunkIo.inFlight();
+        this.lastChunkIoDeferred = chunkIo.deferredRetries();
 
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         if (this.ewmaMspt >= config.quarantinedRegionMsptThreshold) {
@@ -55,7 +62,7 @@ public final class RegionOverloadController {
             this.quarantineStrikes = 0;
         }
 
-        if (this.ewmaMspt >= config.degradedRegionMsptThreshold || deferredWork > 0L || mailboxClassPressure >= 0.5D) {
+        if (this.ewmaMspt >= config.degradedRegionMsptThreshold || deferredWork > 0L || mailboxClassPressure >= 0.5D || chunkIo.pressure() >= 0.5D || chunkIo.deferredRetries() > 0) {
             this.loadClass = RegionLoadClass.DEGRADED;
         } else {
             this.loadClass = RegionLoadClass.NORMAL;
@@ -80,5 +87,17 @@ public final class RegionOverloadController {
 
     public double lastMailboxClassPressure() {
         return this.lastMailboxClassPressure;
+    }
+
+    public double lastChunkIoPressure() {
+        return this.lastChunkIoPressure;
+    }
+
+    public int lastChunkIoInFlight() {
+        return this.lastChunkIoInFlight;
+    }
+
+    public int lastChunkIoDeferred() {
+        return this.lastChunkIoDeferred;
     }
 }

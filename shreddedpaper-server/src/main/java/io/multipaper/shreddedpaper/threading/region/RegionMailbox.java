@@ -27,6 +27,7 @@ public final class RegionMailbox {
     private static final RegionTaskClass[] DRAIN_ORDER = {
             RegionTaskClass.CRITICAL_SYSTEM,
             RegionTaskClass.PLAYER_ACTION,
+            RegionTaskClass.CHUNK_IO_LOAD,
             RegionTaskClass.CHUNK_IO_SAVE,
             RegionTaskClass.PLUGIN,
             RegionTaskClass.TRACKER_BROADCAST,
@@ -205,6 +206,7 @@ public final class RegionMailbox {
         final int configured = switch (taskClass) {
             case CRITICAL_SYSTEM -> config.criticalRegionMailboxCapacity;
             case PLAYER_ACTION -> config.playerActionRegionMailboxCapacity;
+            case CHUNK_IO_LOAD -> config.chunkIoLoadRegionMailboxCapacity;
             case CHUNK_IO_SAVE -> config.chunkIoSaveRegionMailboxCapacity;
             case PLUGIN -> config.pluginRegionMailboxCapacity;
             case TRACKER_BROADCAST -> config.trackerBroadcastRegionMailboxCapacity;
@@ -370,6 +372,7 @@ public final class RegionMailbox {
     private int drainQuantum(final RegionTaskClass taskClass) {
         return switch (taskClass) {
             case CRITICAL_SYSTEM -> 64;
+            case CHUNK_IO_LOAD -> 8;
             case CHUNK_IO_SAVE -> 4;
             case PLAYER_ACTION, TRACKER_BROADCAST, EXPLOSION_PHYSICS -> 32;
             case PLUGIN -> 16;

@@ -99,7 +99,7 @@ public final class RegionCommand extends Command {
     }
 
     private String format(final RegionTickScheduler.RegionTickSnapshot snapshot) {
-        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% rejected=%d".formatted(
+        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% chunkIO=%d/%d deferred=%d %.0f%% rejected=%d chunkRejected=%d chunkDowngraded=%d".formatted(
                 snapshot.world(),
                 snapshot.regionPos(),
                 snapshot.loadClass(),
@@ -107,7 +107,13 @@ public final class RegionCommand extends Command {
                 snapshot.ewmaScheduleLagMs(),
                 snapshot.mailboxDepth(),
                 snapshot.mailboxClassPressure() * 100.0D,
-                snapshot.rejectedTasks()
+                snapshot.chunkIoInFlight(),
+                snapshot.chunkIoCapacity(),
+                snapshot.chunkIoDeferred(),
+                snapshot.chunkIoPressure() * 100.0D,
+                snapshot.rejectedTasks(),
+                snapshot.chunkIoRejected(),
+                snapshot.chunkIoDowngraded()
         );
     }
 }
