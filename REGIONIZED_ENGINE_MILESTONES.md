@@ -730,6 +730,76 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Run `git diff --check` for first budget hardening patch.
 - [x] Commit first budget hardening patch.
 - [ ] Add TNT/explosion backlog hooks or a deferred processing queue.
+- [x] Add first TNT explosion budget gate: when a region is already over
+  `EXPLOSION` budget, keep the primed TNT alive with fuse 1 instead of
+  discarding it, so pending explosions remain region-local backlog.
+- [x] Reject live-fuse TNT backlog after sub-agent review: it can create
+  client/server lifecycle divergence and drift the eventual explosion
+  location through one extra physics tick.
+- [x] Replace live-fuse TNT backlog with a region-local `EXPLOSION_PHYSICS`
+  task that captures the original explosion position, fire flag, radius, and
+  portal damage calculator choice, while firing `ExplosionPrimeEvent` only
+  once at fuse expiry.
+- [x] Reject removed-entity deferred task after sub-agent review: delayed
+  `EntityExplodeEvent` source semantics and mailbox rejection behavior are not
+  release-grade.
+- [x] Replace task backlog with a live frozen TNT pending-explosion state that
+  preserves the source entity until actual explosion, stores original
+  explosion parameters, persists pending state, and skips normal TNT physics
+  while over budget.
+- [x] Re-run `compileJava` after TNT explosion budget gate.
+- [x] Re-run `compileJava` after deferred TNT explosion task patch.
+- [x] Re-run `applyAllPatches` after frozen TNT pending-explosion patch.
+- [x] Fix frozen TNT compile blocker by using the entity movement sync flags
+  available in this mapping (`hurtMarked`/`needsSync`) instead of the
+  unavailable `hasImpulse` field.
+- [x] Re-run `compileJava` after frozen TNT pending-explosion patch.
+- [x] Receive first post-compile sub-agent review for frozen TNT pending state:
+  Faraday found the Spigot TNT cap could starve pending TNT, and pure deadline
+  gating had no guaranteed deferred-drain progress.
+- [x] Patch Faraday blocker by handling pending deferred TNT before the Spigot
+  active TNT ticking cap.
+- [x] Patch Faraday forward-progress risk by adding
+  `RegionTickBudget.canDrainDeferred`, allowing one already-deferred work item
+  per work type to drain even after the region deadline.
+- [x] Receive second post-compile sub-agent review for frozen TNT pending state:
+  Aquinas found the deferred flag was server-private, pending TNT did not
+  re-check `TNT_EXPLODES`, and delayed `ExplosionPrimeEvent` semantics needed
+  explicit compatibility tracking.
+- [x] Patch Aquinas client divergence blocker by syncing deferred TNT state via
+  `SynchedEntityData` and making client ticks use the same frozen branch.
+- [x] Patch Aquinas gamerule risk by re-checking `TNT_EXPLODES` before draining
+  a pending deferred explosion and discarding without explosion if disabled.
+- [x] Document TNT deferred compatibility behavior: `ExplosionPrimeEvent` is
+  fired once at fuse expiry and its cancellation/radius/fire result is the
+  persisted decision for a later budget-drained explosion.
+- [x] Re-run `applyAllPatches` after TNT review blocker fixes.
+- [x] Re-run `compileJava` after TNT review blocker fixes.
+- [x] Receive second Aquinas re-review: live deferred TNT entities still formed
+  an unbounded backlog under hostile sustained TNT injection.
+- [x] Add a bounded per-world deferred TNT backlog cap
+  (`deferredTntBacklogPerWorld`) with explicit overflow policy: overflow TNT
+  is discarded without exploding to stop entity iteration, memory, and save
+  payload debt from growing without bound.
+- [x] Track loaded deferred TNT slots and release them on drain, gamerule
+  discard, normal removal, and reload/restore failure paths.
+- [x] Re-run `applyAllPatches` after deferred TNT backlog cap.
+- [x] Re-run `compileJava` after deferred TNT backlog cap.
+- [x] Receive Aquinas high-severity follow-up: the cap was bounded but the
+  default of 8192 live frozen TNT entities was still too high for hostile-load
+  defaults and overflow was not operator-visible.
+- [x] Lower default `deferredTntBacklogPerWorld` to 1024.
+- [x] Add operator-visible overflow logging every 256 dropped deferred TNT
+  explosions per process, including world name and configured cap.
+- [x] Re-run `applyAllPatches` after cap default/logging hardening.
+- [x] Re-run `compileJava` after cap default/logging hardening.
+- [x] Receive final Faraday/Aquinas delta review after cap/logging hardening;
+  no remaining release blocker or high-confidence serious regression found.
+- [x] Receive sub-agent correctness/performance review for TNT explosion
+  budget gate.
+- [x] Patch every TNT explosion budget blocker before commit.
+- [x] Run `git diff --check` for TNT explosion budget gate.
+- [x] Commit TNT explosion budget gate.
 - [ ] Add broadcast/tracker coalescing where repeated updates can be merged.
 - [ ] Add `/region top`, `/region inspect`, and `/region dump`.
 - [ ] Commit hostile-load isolation.

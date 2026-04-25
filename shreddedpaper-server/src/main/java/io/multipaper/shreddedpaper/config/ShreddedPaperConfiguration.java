@@ -50,6 +50,8 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Target per-region cooperative work budget in milliseconds.")
         public long regionTickBudgetMs = 45;
+        @Comment("Maximum deferred TNT explosions kept as frozen live entities per world. Overflow TNT is discarded without exploding to prevent hostile-load entity/save debt.")
+        public int deferredTntBacklogPerWorld = 1024;
         @Comment("EWMA MSPT threshold that moves a region into the degraded scheduler lane.")
         public long degradedRegionMsptThreshold = 75;
         @Comment("EWMA MSPT threshold that marks a region as quarantined.")
