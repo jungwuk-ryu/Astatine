@@ -5,6 +5,7 @@ public enum RegionWorkType {
     REGION_TASK,
     BLOCK_TICK,
     FLUID_TICK,
+    BLOCK_EVENT,
     CHUNK_TICK,
     ENTITY_TICK,
     TRACKER,

@@ -385,7 +385,7 @@ public class LevelChunkRegion {
         this.blockEvents.addAll(blockEvents);
     }
 
-    public boolean hasBlockEvents() {
+    public synchronized boolean hasBlockEvents() {
         return !this.blockEvents.isEmpty();
     }
 

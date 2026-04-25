@@ -329,7 +329,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   actually held.
 - [ ] Inspect whether `processUnloads(region)` can block tick workers on IO or
   global chunk locks.
-- [ ] Inspect whether `level.runBlockEvents(region)` needs budget/defer support.
+- [x] Inspect whether `level.runBlockEvents(region)` needs budget/defer support.
+- [x] Add first-pass budget/defer support to `level.runBlockEvents(region)` so
+  block events are processed between cooperative budget checks and unprocessed
+  events remain region-local for the next tick.
 - [ ] Inspect whether `level.tickBlockEntities(...)` can be partially deferred
   without corrupting vanilla order.
 - [ ] Inspect whether `ShreddedPaperChangesBroadcaster.broadcastChanges()` is
@@ -683,6 +686,22 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [ ] Move slow regions into `DEGRADED` lane and enforce degraded worker cap.
 - [ ] Add cooperative budget hooks to chunk ticks, entity ticks, tracker work,
   player flushing, and internal task draining.
+- [ ] Add continuation cursors before allowing per-item cooperative budget
+  checks for chunk ticks, entity task ticks, entity ticks, tracker work, and
+  player ticks; sub-agent review rejected cursorless partial iteration because
+  it can starve tail entries.
+- [ ] Add owner-cell continuation cursor before allowing partial block/fluid
+  scheduled tick dispatch; sub-agent review rejected cursorless cell-loop
+  breaks because merged owners can starve later cells.
+- [x] Add first-pass block-event cooperative budget checks and `BLOCK_EVENT`
+  work accounting.
+- [x] Re-run `applyAllPatches` after first budget hardening patch.
+- [x] Re-run `compileJava` after first budget hardening patch.
+- [x] Receive sub-agent correctness/performance review for first budget
+  hardening patch.
+- [x] Patch or defer every first budget hardening blocker before commit.
+- [x] Run `git diff --check` for first budget hardening patch.
+- [x] Commit first budget hardening patch.
 - [ ] Add TNT/explosion backlog hooks or a deferred processing queue.
 - [ ] Add broadcast/tracker coalescing where repeated updates can be merged.
 - [ ] Add `/region top`, `/region inspect`, and `/region dump`.

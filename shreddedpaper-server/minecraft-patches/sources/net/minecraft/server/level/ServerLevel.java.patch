@@ -17,6 +17,8 @@
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
++import io.multipaper.shreddedpaper.threading.region.RegionWorkType;
 +import io.multipaper.shreddedpaper.util.NoOpServerWaypointManager;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -566,10 +568,12 @@
 +    public void runBlockEvents(LevelChunkRegion region) { // ShreddedPaper
 +        List<BlockEventData> blockEventsToReschedule = blockEventsToRescheduleThreadLocal.get(); // ShreddedPaper
 +        blockEventsToReschedule.clear(); // ShreddedPaper
++        RegionTickBudget budget = RegionTickBudget.current(); // ShreddedPaper
  
 -        while (!this.blockEvents.isEmpty()) {
 -            BlockEventData blockEventData = this.blockEvents.removeFirst();
 +        while (region.hasBlockEvents()) { // ShreddedPaper
++            if (budget != null && !budget.canContinue(RegionWorkType.BLOCK_EVENT)) break; // ShreddedPaper
 +            BlockEventData blockEventData = (BlockEventData) region.removeFirstBlockEvent(); // ShreddedPaper
              if (this.shouldTickBlocksAt(blockEventData.pos())) {
                  if (this.doBlockEvent(blockEventData)) {
