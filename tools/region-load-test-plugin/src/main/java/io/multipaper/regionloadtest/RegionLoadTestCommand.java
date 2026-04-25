@@ -3,6 +3,7 @@ package io.multipaper.regionloadtest;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.command.Command;
@@ -37,6 +38,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tntspread",
         "path",
         "tracker",
+        "broadcast",
         "scheduler",
         "chunkgen",
         "probe",
@@ -121,6 +123,13 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
                 return this.handleTrackerFlood(sender, anchor, effectiveArgs, commandBatch);
             }
+            case "broadcast" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleBroadcastFlood(sender, anchor, effectiveArgs, commandBatch);
+            }
             case "scheduler" -> {
                 return this.handleSchedulerFlood(sender, anchorOverride, effectiveArgs, commandBatch);
             }
@@ -156,7 +165,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return this.filter(ROOT_SUBCOMMANDS, args[0]);
         }
         if (args.length == 2 && equalsAny(args[0], "scheduler")) {
-            return this.filter(List.of("region", "global", "async"), args[1]);
+            return this.filter(List.of("region", "regionlocal", "global", "async"), args[1]);
         }
         return Collections.emptyList();
     }
@@ -486,6 +495,117 @@ public final class RegionLoadTestCommand implements TabExecutor {
         this.plugin.trackTask(scheduledTask);
     }
 
+    private boolean handleBroadcastFlood(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 3) {
+            sender.sendMessage("Usage: /rlt broadcast <chunks=1..64> <blocksPerChunk=1..4096> [ticks=200]");
+            return true;
+        }
+
+        final Integer chunks = this.parseInt(sender, args[1], "chunks");
+        final Integer blocksPerChunk = this.parseInt(sender, args[2], "blocksPerChunk");
+        final Integer ticks = args.length >= 4 ? this.parseInt(sender, args[3], "ticks") : 200;
+        if (chunks == null || blocksPerChunk == null || ticks == null) {
+            return true;
+        }
+        if (chunks < 1 || chunks > 64 || blocksPerChunk < 1 || blocksPerChunk > 4096 || ticks < 1) {
+            sender.sendMessage("chunks must be 1..64, blocksPerChunk must be 1..4096, and ticks must be positive.");
+            return true;
+        }
+
+        final World world = Objects.requireNonNull(base.getWorld());
+        final int anchorChunkX = base.getBlockX() >> 4;
+        final int anchorChunkZ = base.getBlockZ() >> 4;
+        final int regionMinChunkX = Math.floorDiv(anchorChunkX, 8) * 8;
+        final int regionMinChunkZ = Math.floorDiv(anchorChunkZ, 8) * 8;
+        final int y = Math.max(world.getMinHeight() + 1, Math.min(world.getMaxHeight() - 2, base.getBlockY()));
+        final List<int[]> targetChunks = new ArrayList<>(chunks);
+        for (int chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
+            final int chunkX = regionMinChunkX + (chunkIndex & 7);
+            final int chunkZ = regionMinChunkZ + (chunkIndex >> 3);
+            if (!world.isChunkLoaded(chunkX, chunkZ)) {
+                this.releaseBroadcastChunkTickets(world, targetChunks);
+                sender.sendMessage("Broadcast target chunk is not loaded: " + chunkX + "," + chunkZ
+                    + ". Run /rlt chunkgen for this area first.");
+                return true;
+            }
+            this.plugin.trackChunkTicket(world, chunkX, chunkZ);
+            if (!world.isChunkLoaded(chunkX, chunkZ)) {
+                this.plugin.untrackChunkTicket(world, chunkX, chunkZ);
+                this.releaseBroadcastChunkTickets(world, targetChunks);
+                sender.sendMessage("Broadcast target chunk unloaded before its plugin ticket was installed: " + chunkX + "," + chunkZ);
+                return true;
+            }
+            targetChunks.add(new int[] {chunkX, chunkZ});
+        }
+
+        int queuedTasks = 0;
+        final List<ScheduledTask> scheduledTasks = new ArrayList<>(targetChunks.size());
+        for (final int[] targetChunk : targetChunks) {
+            final int chunkX = targetChunk[0];
+            final int chunkZ = targetChunk[1];
+            final Location taskLocation = new Location(world, (chunkX << 4) + 8.0D, y, (chunkZ << 4) + 8.0D);
+            final AtomicInteger remaining = new AtomicInteger(ticks);
+            final AtomicInteger phase = new AtomicInteger();
+            try {
+                final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, taskLocation, task -> {
+                    if (this.plugin.shouldAbortBatch(commandBatch) || !world.isChunkLoaded(chunkX, chunkZ)) {
+                        task.cancel();
+                        this.plugin.untrackTask(task);
+                        this.plugin.untrackChunkTicket(world, chunkX, chunkZ);
+                        return;
+                    }
+                    if (remaining.getAndDecrement() <= 0) {
+                        task.cancel();
+                        this.plugin.untrackTask(task);
+                        this.plugin.untrackChunkTicket(world, chunkX, chunkZ);
+                        return;
+                    }
+                    this.applyBroadcastBlockChanges(world, chunkX, chunkZ, y, blocksPerChunk, phase.getAndIncrement());
+                }, 1L, 1L);
+                this.plugin.trackTask(scheduledTask);
+                scheduledTasks.add(scheduledTask);
+                queuedTasks++;
+            } catch (final RuntimeException schedulingFailure) {
+                for (final ScheduledTask scheduledTask : scheduledTasks) {
+                    scheduledTask.cancel();
+                    this.plugin.untrackTask(scheduledTask);
+                }
+                this.releaseBroadcastChunkTickets(world, targetChunks);
+                sender.sendMessage("Broadcast scheduling failed after queueing " + queuedTasks
+                    + " task(s): " + schedulingFailure.getClass().getSimpleName());
+                return true;
+            }
+        }
+
+        sender.sendMessage("Queued broadcast flood: chunks=" + chunks + ", blocksPerChunk=" + blocksPerChunk
+            + ", ticks=" + ticks + ", queuedTasks=" + queuedTasks + ", regionMinChunk=" + regionMinChunkX + "," + regionMinChunkZ);
+        return true;
+    }
+
+    private void releaseBroadcastChunkTickets(final World world, final List<int[]> targetChunks) {
+        for (final int[] targetChunk : targetChunks) {
+            this.plugin.untrackChunkTicket(world, targetChunk[0], targetChunk[1]);
+        }
+    }
+
+    private void applyBroadcastBlockChanges(
+        final World world,
+        final int chunkX,
+        final int chunkZ,
+        final int y,
+        final int blocksPerChunk,
+        final int phase
+    ) {
+        final Material material = (phase & 1) == 0 ? Material.WHITE_CONCRETE : Material.BLACK_CONCRETE;
+        final int maxLayers = Math.max(1, world.getMaxHeight() - y - 1);
+        for (int blockIndex = 0; blockIndex < blocksPerChunk; blockIndex++) {
+            final int localX = blockIndex & 15;
+            final int localZ = (blockIndex >> 4) & 15;
+            final int localY = y + ((blockIndex >> 8) % maxLayers);
+            world.getBlockAt((chunkX << 4) + localX, localY, (chunkZ << 4) + localZ).setType(material, false);
+        }
+    }
+
     private boolean handleSchedulerFlood(final CommandSender sender, final Location anchorOverride, final String[] args, final long commandBatch) {
         if (args.length < 3) {
             sender.sendMessage("Usage: /rlt scheduler <region|regionlocal|global|async> <tasks> [payloadIterations=0]");
@@ -711,6 +831,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " tntspread <grids> <width> <depth> [spacing] [fuse] [regionChunks] [regionStride]");
         sender.sendMessage("/" + label + " path <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
+        sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");
         sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");

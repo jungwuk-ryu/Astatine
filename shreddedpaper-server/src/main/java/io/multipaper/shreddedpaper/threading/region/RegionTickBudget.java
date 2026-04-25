@@ -20,7 +20,7 @@ public final class RegionTickBudget {
     private final long deadlineNanos;
     private final Map<RegionWorkType, Long> deferred = new EnumMap<>(RegionWorkType.class);
     private final Set<RegionWorkType> deferredDrainUsed = EnumSet.noneOf(RegionWorkType.class);
-    private boolean overBudgetEventCommitted;
+    private final Set<RegionWorkType> overBudgetEventCommitted = EnumSet.noneOf(RegionWorkType.class);
 
     RegionTickBudget(final ServerLevel level, final RegionPos regionPos, final long startNanos, final long budgetMillis) {
         this.level = level;
@@ -70,16 +70,13 @@ public final class RegionTickBudget {
 
     public void markDeferred(final RegionWorkType type, final long count) {
         this.deferred.merge(type, count, Long::sum);
-        if (!this.overBudgetEventCommitted) {
-            this.commitOverBudgetEvent(type, count);
-        }
+        this.commitOverBudgetEvent(type, count);
     }
 
     private void commitOverBudgetEvent(final RegionWorkType type, final long deferredCount) {
-        if (this.overBudgetEventCommitted) {
+        if (!this.overBudgetEventCommitted.add(type)) {
             return;
         }
-        this.overBudgetEventCommitted = true;
         final RegionOverBudgetEvent event = new RegionOverBudgetEvent();
         event.world = this.level.getWorld().getName();
         event.regionX = this.regionPos.x;

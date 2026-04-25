@@ -681,9 +681,9 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   queued `1024`, rejected `3976`, logged `RegionMailbox` capacity-full warnings
   with `queued=1024/1024`, kept `/tps` at 20.0, and a far normal probe logged
   `avgLagMs=-0.008`, `p95LagMs=1.206`, `maxLagMs=1.882`.
-- [ ] Plugin flood JFR file evidence: current server recording is
-  `dumponexit`; dump or stop the server after the next test window and archive
-  the resulting `RegionQueue` events.
+- [x] Plugin flood JFR file evidence: `D:\worldgen\logs\codex-plugin-flood-queue-20260425-1440.jfr`
+  contains `16` `RegionQueueEvent` entries for `taskClass=PLUGIN`, all at
+  `capacity=1024`, with rejected samples from `1` through `3840`.
 - [x] Add load-test harness mode for per-region plugin mailbox saturation:
   `scheduler regionlocal` should queue all tasks into one target region and
   report queued/rejected counts instead of throwing out of the command.
@@ -691,10 +691,36 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Run `scheduler regionlocal` above `pluginRegionMailboxCapacity` and
   confirm rejected count increases while `/tps` and a far normal probe stay
   healthy.
-- [ ] Tracker flood test: verify broadcaster/tracker work does not become a
-  global barrier.
-- [ ] Tracker flood evidence: run normal-region probe concurrently and record
+- [x] Tracker/broadcast flood test: verify playerless tracker/block-change
+  pressure does not become a global barrier.
+- [ ] Tracker/broadcast evidence: run normal-region probe concurrently and record
   `RegionOverBudget` events for tracker/broadcast work.
+- [x] Tracker flood first RCON-only attempt: `tracker 900 300 16` kept `/tps`
+  at 20.0 and far probe region healthy, but did not create enough broadcaster
+  pressure without connected players.
+- [x] Add load-test harness mode for playerless broadcaster pressure:
+  `broadcast <chunks> <blocksPerChunk> [ticks]` toggles blocks inside one
+  8x8 chunk region to drive chunk-holder broadcast work from RCON.
+- [x] Build, review, deploy, and smoke-test `broadcast`.
+- [x] Harden `broadcast` after sub-agent review: fail closed unless chunks are
+  already loaded, install plugin chunk tickets during the test, schedule one
+  region task per target chunk, release tickets on completion/abort/cleanup, and
+  rollback tickets/tasks if scheduling fails partway through.
+- [x] Run `broadcast` with a far normal probe and capture `RegionOverBudget`
+  work type plus `/region top`, `/tps`, and JFR evidence.
+- [x] Broadcast runtime evidence: with 64 force-loaded chunks and
+  `broadcast 64 2048 100`, target region reached `DEGRADED mspt=46.43` while
+  the far normal probe logged `avgLagMs=0.000`, `p95LagMs=1.067`,
+  `maxLagMs=45.050`; `/tps` returned to 20.0 after the setup window.
+- [x] Add work-type-specific over-budget JFR events so `REGION_TASK` no longer
+  hides later over-budget work types in the same region tick.
+- [x] Work-type JFR evidence: `D:\worldgen\logs\codex-broadcast-worktype-20260425-1513.jfr`
+  contains `960` `RegionOverBudgetEvent` entries split across work types
+  (`REGION_TASK`, `CHUNK_TICK`, `BLOCK_TICK`, `FLUID_TICK`, `ENTITY_TICK`,
+  `BLOCK_ENTITY`, `PLAYER`, `TRACKER`, and `INTERNAL_TASK`).
+- [ ] True `BROADCAST` work-type evidence still requires a connected watcher or
+  fake-player harness; playerless block changes did not produce a `BROADCAST`
+  over-budget event even under heavy block-change pressure.
 - [x] Chunk generation DoS test: verify normal regions keep chunk priority for
   the current async chunk request path.
 - [x] Chunk generation DoS evidence: run attacker-region `chunkgen` and a far

@@ -1,6 +1,7 @@
 package io.multipaper.regionloadtest;
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -19,6 +20,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
 
     private final Map<UUID, ManagedEntity> managedEntities = new ConcurrentHashMap<>();
     private final Set<ScheduledTask> managedTasks = ConcurrentHashMap.newKeySet();
+    private final Set<ManagedChunkTicket> managedChunkTickets = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean cleanupRequested = new AtomicBoolean();
     private final AtomicLong batchGeneration = new AtomicLong();
     private final AtomicLong busySink = new AtomicLong();
@@ -99,9 +101,30 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
             }
         }
 
+        int removedChunkTickets = 0;
+        for (final ManagedChunkTicket ticket : new ArrayList<>(this.managedChunkTickets)) {
+            if (this.managedChunkTickets.remove(ticket)) {
+                ticket.world().removePluginChunkTicket(ticket.chunkX(), ticket.chunkZ(), this);
+                removedChunkTickets++;
+            }
+        }
+
         if (sender != null) {
             sender.sendMessage("RegionLoadTest cleanup queued: cancelledTasks=" + cancelledTasks
-                + ", entityRemovalsQueued=" + queuedEntityRemovals);
+                + ", entityRemovalsQueued=" + queuedEntityRemovals
+                + ", chunkTicketsRemoved=" + removedChunkTickets);
+        }
+    }
+
+    public void trackChunkTicket(final World world, final int chunkX, final int chunkZ) {
+        world.addPluginChunkTicket(chunkX, chunkZ, this);
+        this.managedChunkTickets.add(new ManagedChunkTicket(world, chunkX, chunkZ));
+    }
+
+    public void untrackChunkTicket(final World world, final int chunkX, final int chunkZ) {
+        final ManagedChunkTicket ticket = new ManagedChunkTicket(world, chunkX, chunkZ);
+        if (this.managedChunkTickets.remove(ticket)) {
+            world.removePluginChunkTicket(chunkX, chunkZ, this);
         }
     }
 
@@ -131,5 +154,8 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
         private ManagedEntity(final Entity entity) {
             this(entity.getUniqueId(), entity.getScheduler(), entity);
         }
+    }
+
+    private record ManagedChunkTicket(World world, int chunkX, int chunkZ) {
     }
 }
