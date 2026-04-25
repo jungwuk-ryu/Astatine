@@ -40,6 +40,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tracker",
         "broadcast",
         "scheduler",
+        "syncload",
         "chunkgen",
         "probe",
         "at"
@@ -132,6 +133,13 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
             case "scheduler" -> {
                 return this.handleSchedulerFlood(sender, anchorOverride, effectiveArgs, commandBatch);
+            }
+            case "syncload" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleSyncLoadGuardProbe(sender, anchor, effectiveArgs, commandBatch);
             }
             case "chunkgen" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
@@ -693,6 +701,105 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }
     }
 
+    private boolean handleSyncLoadGuardProbe(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt syncload <chunkOffsetX> [attempts=1]");
+            return true;
+        }
+
+        final Integer chunkOffsetX = this.parseInt(sender, args[1], "chunkOffsetX");
+        final Integer attempts = args.length >= 3 ? this.parseInt(sender, args[2], "attempts") : 1;
+        if (chunkOffsetX == null || attempts == null) {
+            return true;
+        }
+        if (attempts < 1) {
+            sender.sendMessage("attempts must be positive.");
+            return true;
+        }
+
+        final World world = base.getWorld();
+        final int sourceChunkX = base.getBlockX() >> 4;
+        final int sourceChunkZ = base.getBlockZ() >> 4;
+        final int targetChunkX = sourceChunkX + chunkOffsetX;
+        final int targetChunkZ = sourceChunkZ;
+        final int targetBlockX = (targetChunkX << 4) + 8;
+        final int targetBlockZ = (targetChunkZ << 4) + 8;
+        final AtomicInteger remaining = new AtomicInteger(attempts);
+        final AtomicInteger guardRejections = new AtomicInteger();
+        final AtomicInteger unexpectedSuccess = new AtomicInteger();
+        final AtomicInteger unexpectedFailure = new AtomicInteger();
+        final boolean loadedBefore = world.isChunkLoaded(targetChunkX, targetChunkZ);
+
+        int queued = 0;
+        for (int i = 0; i < attempts; i++) {
+            try {
+                final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().run(this.plugin, base, task -> {
+                    try {
+                        if (this.plugin.shouldAbortBatch(commandBatch)) {
+                            return;
+                        }
+                        world.getHighestBlockYAt(targetBlockX, targetBlockZ);
+                        unexpectedSuccess.incrementAndGet();
+                    } catch (final IllegalStateException exception) {
+                        if (exception.getMessage() != null && exception.getMessage().contains("Synchronous chunk load is not allowed")) {
+                            guardRejections.incrementAndGet();
+                        } else {
+                            unexpectedFailure.incrementAndGet();
+                            this.plugin.getLogger().warning("Unexpected IllegalStateException from syncload probe: " + exception.getMessage());
+                        }
+                    } catch (final Throwable throwable) {
+                        unexpectedFailure.incrementAndGet();
+                        this.plugin.getLogger().warning("Unexpected throwable from syncload probe: " + throwable.getClass().getName()
+                            + ": " + throwable.getMessage());
+                    } finally {
+                        this.plugin.untrackTask(task);
+                        this.finishSyncLoadGuardProbeIfDone(sender, remaining, sourceChunkX, sourceChunkZ, targetChunkX, targetChunkZ,
+                            loadedBefore, attempts, guardRejections, unexpectedSuccess, unexpectedFailure);
+                    }
+                });
+                this.plugin.trackTask(scheduledTask);
+                queued++;
+            } catch (final RuntimeException schedulingFailure) {
+                unexpectedFailure.incrementAndGet();
+                this.plugin.getLogger().warning("Could not schedule syncload probe task: " + schedulingFailure.getMessage());
+                this.finishSyncLoadGuardProbeIfDone(sender, remaining, sourceChunkX, sourceChunkZ, targetChunkX, targetChunkZ,
+                    loadedBefore, attempts, guardRejections, unexpectedSuccess, unexpectedFailure);
+            }
+        }
+
+        sender.sendMessage("Queued sync-load guard probe: sourceChunk=" + sourceChunkX + "," + sourceChunkZ
+            + ", targetChunk=" + targetChunkX + "," + targetChunkZ
+            + ", loadedBefore=" + loadedBefore
+            + ", attempts=" + attempts
+            + ", queued=" + queued);
+        return true;
+    }
+
+    private void finishSyncLoadGuardProbeIfDone(
+        final CommandSender sender,
+        final AtomicInteger remaining,
+        final int sourceChunkX,
+        final int sourceChunkZ,
+        final int targetChunkX,
+        final int targetChunkZ,
+        final boolean loadedBefore,
+        final int attempts,
+        final AtomicInteger guardRejections,
+        final AtomicInteger unexpectedSuccess,
+        final AtomicInteger unexpectedFailure
+    ) {
+        if (remaining.decrementAndGet() != 0) {
+            return;
+        }
+        this.replyLater(sender, "Sync-load guard probe finished: sourceChunk=" + sourceChunkX + "," + sourceChunkZ
+            + ", targetChunk=" + targetChunkX + "," + targetChunkZ
+            + ", loadedBefore=" + loadedBefore
+            + ", attempts=" + attempts
+            + ", guardRejections=" + guardRejections.get()
+            + ", unexpectedSuccess=" + unexpectedSuccess.get()
+            + ", unexpectedFailure=" + unexpectedFailure.get());
+    }
+
     private boolean handleChunkGenerationLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 2) {
             sender.sendMessage("Usage: /rlt chunkgen <radiusChunks> [urgent=false]");
@@ -833,6 +940,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
         sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");
         sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
+        sender.sendMessage("/" + label + " syncload <chunkOffsetX> [attempts]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");
         sender.sendMessage("/" + label + " at <world> <x> <y> <z> <subcommand> [args...]");

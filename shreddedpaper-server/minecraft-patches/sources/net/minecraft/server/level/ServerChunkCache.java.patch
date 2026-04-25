@@ -1,21 +1,50 @@
 --- a/net/minecraft/server/level/ServerChunkCache.java
 +++ b/net/minecraft/server/level/ServerChunkCache.java
-@@ -1,8 +_,15 @@
- package net.minecraft.server.level;
- 
-+import ca.spottedleaf.moonrise.common.util.TickThread;
+@@ -3,6 +_,14 @@
  import com.google.common.annotations.VisibleForTesting;
  import com.mojang.datafixers.DataFixer;
  import com.mojang.logging.LogUtils;
++import ca.spottedleaf.moonrise.common.util.TickThread;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.LevelChunkRegionMap;
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperChangesBroadcaster;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.events.ChunkRequestEvent;
  import it.unimi.dsi.fastutil.longs.LongSet;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+@@ -103,4 +_,24 @@
+     private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
++        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
++            final long rejectedCount = ChunkRequestEvent.recordSyncLoadRejection();
++            if (ChunkRequestEvent.shouldCommitSample(rejectedCount)) {
++                final ChunkRequestEvent event = new ChunkRequestEvent();
++                event.world = ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level);
++                event.regionX = regionPos.x;
++                event.regionZ = regionPos.z;
++                event.chunkX = chunkX;
++                event.chunkZ = chunkZ;
++                event.status = toStatus.toString();
++                event.action = "sync-load-rejected";
++                event.count = rejectedCount;
++                event.thread = Thread.currentThread().getName();
++                event.sync = true;
++                event.rejected = true;
++                event.commit();
++            }
++            throw new IllegalStateException(
++                "Synchronous chunk load is not allowed from an independent region tick worker; "
++                    + "use async chunk loading and resume on the target region. world="
++                    + ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level)
++                    + ", chunk=[" + chunkX + "," + chunkZ + "], status=" + toStatus
++            );
++        }
+         final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler chunkTaskScheduler = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler();
+         final CompletableFuture<ChunkAccess> completable = new CompletableFuture<>();
+         chunkTaskScheduler.scheduleChunkLoad(
 @@ -73,7 +_,9 @@
      private final @Nullable ChunkStatus[] lastChunkStatus = new ChunkStatus[4];
      private final @Nullable ChunkAccess[] lastChunk = new ChunkAccess[4];

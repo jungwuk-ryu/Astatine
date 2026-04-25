@@ -26,6 +26,7 @@ public final class RegionMailbox {
     private final Map<RegionTaskClass, AtomicInteger> queuedByClass = new EnumMap<>(RegionTaskClass.class);
     private final Map<RegionTaskClass, Integer> capacityByClass = new EnumMap<>(RegionTaskClass.class);
     private final Map<RegionTaskClass, AtomicLong> rejectedByClass = new EnumMap<>(RegionTaskClass.class);
+    private final Map<RegionTaskClass, AtomicLong> failedByClass = new EnumMap<>(RegionTaskClass.class);
     private final PriorityQueue<RegionTask> delayed = new PriorityQueue<>();
     private final AtomicLong rejected = new AtomicLong();
     private final AtomicLong executed = new AtomicLong();
@@ -40,6 +41,7 @@ public final class RegionMailbox {
             this.capacityByClass.put(taskClass, capacity);
             this.queuedByClass.put(taskClass, new AtomicInteger());
             this.rejectedByClass.put(taskClass, new AtomicLong());
+            this.failedByClass.put(taskClass, new AtomicLong());
             this.ingress.put(taskClass, taskClass == RegionTaskClass.CRITICAL_SYSTEM
                     ? new ConcurrentLinkedQueue<>()
                     : new MpscArrayQueue<>(capacity));
@@ -179,7 +181,17 @@ public final class RegionMailbox {
             task.run();
             this.executed.incrementAndGet();
         } catch (final Throwable throwable) {
-            LOGGER.error("Error while executing {} region task in {} {}", task.taskClass(), this.level.getWorld().getName(), this.regionPos, throwable);
+            final long failedForClass = this.failedByClass.get(task.taskClass()).incrementAndGet();
+            if (failedForClass == 1L || (failedForClass & 255L) == 0L) {
+                LOGGER.error(
+                        "Error while executing {} region task in {} {} (failureClass={}); further failures are sampled",
+                        task.taskClass(),
+                        this.level.getWorld().getName(),
+                        this.regionPos,
+                        failedForClass,
+                        throwable
+                );
+            }
         }
     }
 

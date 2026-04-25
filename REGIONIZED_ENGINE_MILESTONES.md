@@ -17,6 +17,37 @@ lands, review feedback arrives, and load-test results change the next step.
 - Each milestone must include: implementation TODO, self-review TODO,
   sub-agent review TODO, compile/runtime verification TODO, and commit TODO.
 
+## Release Completion Gate
+
+The TODO ledger is a guardrail, not the definition of done. Even if every
+granular item below is checked, this project is not release-complete until the
+core design goals are demonstrably true in `D:\worldgen` under hostile load:
+
+- [ ] Dynamic region ownership preserves the Folia-style buffer invariant:
+  neighboring unsafe owners are merged/transient/serialized before concurrent
+  ticks, ticking owners do not grow while ticking, and split hysteresis prevents
+  merge/split churn.
+- [ ] Independent tick cadence is proven: a region with extreme MSPT does not
+  block unrelated worlds/regions when CPU headroom exists, and this is measured
+  with P95 probe lag rather than only `/tps`.
+- [ ] Hostile-load isolation is proven beyond a single TNT case: degraded lane
+  cap, normal worker reservation, bounded mailbox policy, TNT/physics backlog,
+  broadcast/tracker budgeting, and chunk-generation pressure all have runtime
+  evidence.
+- [ ] Cross-region mutation is protocol-based: no hidden global lock or
+  blocking sync-load path can silently turn a local plugin mistake into a global
+  tick or chunk-system barrier.
+- [ ] Observability is production-grade: `/region top`, `/region inspect`,
+  `/region dump`, and JFR events identify region tick, queue, over-budget,
+  merge/split, chunk request, and cross-region task pressure without per-entity
+  or per-packet spam.
+- [ ] Plugin compatibility risks are triaged with the actual `D:\worldgen`
+  plugin set; open-source plugin patches are separated from engine commits and
+  rebuilt into the test server when they are true blockers.
+- [ ] Final acceptance includes a clean build, regenerated patches, runtime
+  startup, stress-test evidence, sub-agent review, and a written residual-risk
+  note for every deferred item.
+
 ## Active Granular TODO Ledger
 
 This section is intentionally detailed. Do not collapse it into high-level
@@ -428,10 +459,13 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Add `/region inspect <world> <regionX> <regionZ>`.
 - [x] Add command output for next-start lag, rejected task count, mailbox depth,
   load class, and EWMA MSPT.
-- [ ] Add JFR `RegionMerge` and `RegionSplit` events when dynamic regionizer
-  work starts.
-- [ ] Add JFR `ChunkRequest` and `CrossRegionTask` events when those systems are
-  wired.
+- [x] Add JFR `RegionMerge` and `RegionSplit` events for dynamic owner
+  merge/split work.
+- [x] Add sampled JFR `ChunkRequest` event for rejected region-worker sync chunk
+  loads; runtime evidence file:
+  `D:\worldgen\logs\codex-syncload-guard-20260425-1546.jfr`.
+- [ ] Add JFR `CrossRegionTask` events when the first-class cross-region task
+  protocol is wired.
 - [ ] Add per-region explosion backlog metric.
 - [ ] Add per-region chunk IO/generation debt metric.
 
@@ -652,9 +686,39 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Rebuild and sub-agent review the fixed-y hostile spawn patch before
   redeploying.
 - [x] Rerun the 12-region TNT spread after fixed-y spawn deployment.
-- [ ] Add engine-side guard/TODO for region tick worker sync chunk/POI loads:
-  this should become async continuation/QoS or controlled plugin failure, not a
-  fatal chunk-system crash.
+- [x] Add engine-side guard for region tick worker sync chunk/POI loads:
+  `ServerChunkCache.syncLoad` now fails fast on independent region workers
+  before scheduling chunk-system work, emits sampled `ChunkRequest` JFR evidence,
+  and turns plugin misuse into controlled task failure instead of a fatal
+  chunk-system crash.
+- [x] Add `/rlt syncload <chunkOffsetX> [attempts]` runtime harness to reproduce
+  unloaded sync height/chunk lookup from a region worker without reintroducing
+  the old TNT spawn bug.
+- [x] Sub-agent review for sync-load guard: Faraday and Aquinas both reported no
+  release blocker and confirmed already-loaded chunk fast paths bypass
+  `syncLoad`; Aquinas requested JFR/log sampling, which was patched.
+- [x] Compile verification for sync-load guard: `applyAllPatches`,
+  `:shreddedpaper-server:compileJava`, load-test plugin `build`, and
+  `:shreddedpaper-server:createMojmapPaperclipJar` passed.
+- [x] Runtime sync-load guard evidence: `D:\worldgen` command
+  `/rlt at world 0 80 0 syncload 50000 3` reported
+  `guardRejections=3`, `unexpectedSuccess=0`, `unexpectedFailure=0`; `/tps`
+  stayed 20.0 and `/region top` showed no degraded regions.
+- [x] JFR sync-load guard evidence:
+  `D:\worldgen\logs\codex-syncload-guard-20260425-1546.jfr` contains sampled
+  `io.multipaper.shreddedpaper.region.ChunkRequest` with
+  `action=sync-load-rejected`, `chunkX=50000`, `status=minecraft:full`, and
+  stack through `CraftWorld#getHighestBlockYAt`.
+- [x] Runtime loaded-chunk fast-path evidence: after `forceload add 0 0` and
+  urgent `/rlt at world 0 80 0 chunkgen 0 true`, `/rlt at world 0 80 0
+  syncload 0 1` reported `loadedBefore=true`, `guardRejections=0`,
+  `unexpectedSuccess=1`, proving already-loaded region-worker chunk reads still
+  bypass `syncLoad`.
+- [x] Runtime sync-load sampling evidence:
+  `/rlt at world 0 80 0 syncload 50001 300` reported `guardRejections=300`
+  with `/tps` at 20.0, and
+  `D:\worldgen\logs\codex-syncload-sampling-20260425-1549.jfr` contains only
+  sampled `ChunkRequest` counts `1` and `256`.
 - [x] Rerun after fixed-y spawn deployment: no chunk-load crash; far normal
   probe logged `avgLagMs=0.052`, `p95LagMs=1.150`, `maxLagMs=91.308`, and
   `/tps` stayed 20.0 during the run.
