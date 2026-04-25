@@ -88,6 +88,38 @@ public final class RegionTickScheduler {
             final ShreddedPaperChunkTicker ticker,
             final ShreddedPaperChunkTicker.ScheduledTickContext tickContext
     ) {
+        this.registerRegion(level, region, ticker, tickContext, System.nanoTime() + TIME_BETWEEN_TICKS_NANOS);
+    }
+
+    public void registerRegionForCurrentTick(
+            final ServerLevel level,
+            final LevelChunkRegion region,
+            final ShreddedPaperChunkTicker ticker,
+            final ShreddedPaperChunkTicker.ScheduledTickContext tickContext,
+            final long scheduledStartNanos
+    ) {
+        this.registerRegion(level, region, ticker, tickContext, Math.max(System.nanoTime(), scheduledStartNanos));
+    }
+
+    public void activateSplitRegionForCurrentTick(
+            final ServerLevel level,
+            final LevelChunkRegion region,
+            final ShreddedPaperChunkTicker ticker,
+            final ShreddedPaperChunkTicker.ScheduledTickContext tickContext,
+            final long scheduledStartNanos
+    ) {
+        this.registerRegionForCurrentTick(level, region, ticker, tickContext, scheduledStartNanos);
+        region.getOwner().armScheduler();
+    }
+
+
+    private void registerRegion(
+            final ServerLevel level,
+            final LevelChunkRegion region,
+            final ShreddedPaperChunkTicker ticker,
+            final ShreddedPaperChunkTicker.ScheduledTickContext tickContext,
+            final long firstStart
+    ) {
         final RegionRuntimeState state = region.getRuntimeState();
         final RegionKey key = new RegionKey(level.uuid, state.ownerId());
         state.attach(region);
@@ -99,7 +131,6 @@ public final class RegionTickScheduler {
                 return previous;
             }
 
-            final long firstStart = System.nanoTime() + TIME_BETWEEN_TICKS_NANOS;
             final RegionHandle created = new RegionHandle(key, level, state, ticker, tickContext, firstStart);
             this.enqueue(created);
             return created;
@@ -219,6 +250,7 @@ public final class RegionTickScheduler {
         private volatile long scheduledStartNanos;
         private volatile long idealStartNanos;
         private volatile long nextMergeProbeNanos;
+        private List<LevelChunkRegion> pendingSplitRegions = List.of();
         private long lockContentionBackoffNanos = TimeUnit.MILLISECONDS.toNanos(1L);
 
         private RegionHandle(
@@ -251,8 +283,12 @@ public final class RegionTickScheduler {
                 return;
             }
             final long now = System.nanoTime();
-            if (now >= this.nextMergeProbeNanos) {
+            final boolean probeRegionLayout = now >= this.nextMergeProbeNanos;
+            if (probeRegionLayout) {
                 this.level.chunkSource.tickingRegions.mergeNearbyOwnersQuiescent(region.getOwner(), ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                if (this.pendingSplitRegions.isEmpty()) {
+                    this.pendingSplitRegions = this.level.chunkSource.tickingRegions.splitDisconnectedOwnerQuiescent(region.getOwner(), ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                }
                 this.nextMergeProbeNanos = now + MERGE_PROBE_INTERVAL_NANOS;
             }
             final long actualStart = System.nanoTime();
@@ -308,6 +344,7 @@ public final class RegionTickScheduler {
             this.state.overloadController().recordTick(wallNanos, scheduleLag, this.state.mailbox().depth(), deferred);
             this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred);
 
+            this.activatePendingSplitRegions(scheduledStart);
             if (failure != null || this.retired.get() || region.isEmpty()) {
                 RegionTickScheduler.this.regions.remove(this.key, this);
                 this.retired.set(true);
@@ -322,6 +359,13 @@ public final class RegionTickScheduler {
                 this.scheduledContext = next;
             }
             RegionTickScheduler.this.enqueue(this);
+        }
+
+        private void activatePendingSplitRegions(final long scheduledStart) {
+            for (final LevelChunkRegion splitRegion : this.pendingSplitRegions) {
+                RegionTickScheduler.this.activateSplitRegionForCurrentTick(this.level, splitRegion, this.ticker, this.scheduledContext, scheduledStart);
+            }
+            this.pendingSplitRegions = List.of();
         }
 
         private RegionTickSnapshot snapshot() {

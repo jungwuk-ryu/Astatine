@@ -22,6 +22,9 @@ public final class RegionOwner {
     private volatile List<RegionPos> cellPositionsSnapshot;
     private volatile List<RegionPos> isolationRadiusOneSnapshot;
     private volatile LevelChunkRegion region;
+    private volatile long lastMergeNanos;
+    private volatile long lastSplitNanos;
+    private volatile boolean schedulerArmed = true;
 
     private RegionOwner(final long id, final RegionPos primaryCell) {
         this.id = id;
@@ -31,6 +34,20 @@ public final class RegionOwner {
 
     public static RegionOwner singleCell(final RegionPos cell) {
         return new RegionOwner(cell.longKey, cell);
+    }
+
+    static RegionOwner splitOwner(final RegionPos primaryCell, final LongOpenHashSet splitCells) {
+        if (!splitCells.contains(primaryCell.longKey)) {
+            throw new IllegalArgumentException("Split owner cells must contain the primary cell");
+        }
+        final RegionOwner owner = new RegionOwner(primaryCell.longKey, primaryCell);
+        synchronized (owner.cells) {
+            owner.cells.clear();
+            owner.cells.addAll(splitCells);
+            owner.invalidateSnapshots();
+        }
+        owner.schedulerArmed = false;
+        return owner;
     }
 
     void attachRegion(final LevelChunkRegion region) {
@@ -158,6 +175,7 @@ public final class RegionOwner {
             }
             this.invalidateSnapshots();
         }
+        this.lastMergeNanos = System.nanoTime();
     }
 
     void clearTransferredCells() {
@@ -170,6 +188,30 @@ public final class RegionOwner {
     private void invalidateSnapshots() {
         this.cellPositionsSnapshot = null;
         this.isolationRadiusOneSnapshot = null;
+    }
+
+    void removeCells(final LongOpenHashSet removedCells) {
+        synchronized (this.cells) {
+            this.cells.removeAll(removedCells);
+            this.cells.add(this.primaryCell.longKey);
+            this.invalidateSnapshots();
+        }
+    }
+
+    boolean canSplit(final long nowNanos, final long cooldownNanos) {
+        return nowNanos - this.lastMergeNanos >= cooldownNanos && nowNanos - this.lastSplitNanos >= cooldownNanos;
+    }
+
+    void recordSplit(final long nowNanos) {
+        this.lastSplitNanos = nowNanos;
+    }
+
+    public boolean isSchedulerArmed() {
+        return this.schedulerArmed;
+    }
+
+    public void armScheduler() {
+        this.schedulerArmed = true;
     }
 
     @Override

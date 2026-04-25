@@ -46,6 +46,10 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
         return Optional.ofNullable(regionsLock.optimisticRead(() -> regions.get(pos.longKey)));
     }
 
+    public boolean hasRegionData(RegionPos pos) {
+        return get(pos).map(region -> !region.isEmpty()).orElse(false);
+    }
+
     public void addContainer(ChunkPos pos, LevelChunkTicks<T> scheduler) {
         get(pos).orElseGet(() -> {
             return regionsLock.write(() -> regions.computeIfAbsent(RegionPos.forChunk(pos).longKey, k -> createRegionLevelTicks()));

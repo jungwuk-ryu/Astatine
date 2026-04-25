@@ -245,7 +245,64 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Patch or explicitly defer every automatic merge/isolation review blocker.
 - [x] Run `git diff --check` for automatic merge/isolation.
 - [x] Commit automatic merge/isolation.
-- [ ] Add split-by-cell owner deaggregation with hysteresis.
+- [x] Add split cooldown metadata to `RegionOwner` so split probes are
+  suppressed after recent merge/split activity.
+- [x] Add `RegionSplit` JFR event for successful owner deaggregation.
+- [x] Add active-cell discovery for chunks, player ticking requests, ticking
+  entities, tracked entities, players, unload queue, ticking block entities,
+  pending block entities, navigating mobs, and block events.
+- [x] Treat non-empty scheduled block/fluid tick containers as active cells so
+  split does not orphan future scheduled work.
+- [x] Make split fail closed while the redstone torch update queue is non-empty
+  because queued toggle state has no cheap cell-affinity accessor yet.
+- [x] Abort split if the existing owner's primary cell is not currently active,
+  preserving owner identity until the owner can be safely removed instead.
+- [x] Partition active owned cells into 4-neighbor connected components.
+- [x] Keep the primary-cell component on the existing owner and create new
+  owners only for disconnected non-primary components.
+- [x] Limit split work to one disconnected component per probe to avoid large
+  deaggregation bursts.
+- [x] Move per-cell runtime state destructively into the new split region:
+  chunks, player ticking requests, ticking entities, tracked entities, players,
+  unload queue, block entities, pending block entities, navigating mobs, and
+  block events.
+- [x] Update moved players' `currentRegion` pointer during split migration.
+- [x] Hold the region map write lock plus exact owner/isolation locks during
+  split so map-routed ingress cannot target a half-migrated owner.
+- [x] Patch stale-owner ingress race by holding the region map read/write lock
+  across lookup plus enqueue/mutation for mailbox tasks, internal tasks,
+  chunk/entity/player membership updates, and block events.
+- [x] Patch sub-agent stale-ingress blockers in Minecraft source patches:
+  chunk task creation/queueing, block entity ticker ingress, nearby-player
+  ticking requests, and chunk unload queue updates now route through
+  `LevelChunkRegionMap` helper APIs.
+- [x] Patch sub-agent same-tick split blocker by returning child regions from
+  split and registering them immediately with the current scheduler context and
+  scheduled start.
+- [x] Patch child self-contention follow-up by deferring child scheduler
+  registration in `RegionHandle.pendingSplitRegions` until the parent owner
+  acquires its tick lock and completes its current tick.
+- [x] Patch staged-child global-scan race by adding a `RegionOwner`
+  scheduler-armed flag; split children remain unarmed until the parent
+  successfully completes and arms/registers them.
+- [x] Patch child activation publish race by combining current-tick scheduler
+  registration and final scheduler-armed publication in one activation API.
+- [x] Patch child activation early-return leak by publishing pending split
+  children before parent failure/retire/empty handling after a completed tick
+  attempt.
+- [x] Apply split cooldown stamps to both source and child owners.
+- [x] Compile split-by-cell owner deaggregation with
+  `./gradlew shreddedpaper-server:compileJava --stacktrace`.
+- [x] Re-run `applyAllPatches` after split and ingress patch-file changes.
+- [x] Re-run `compileJava` after `applyAllPatches`.
+- [x] Receive sub-agent correctness review for split-by-cell owner
+  deaggregation.
+- [x] Receive sub-agent performance/race review for split-by-cell owner
+  deaggregation.
+- [x] Patch or explicitly defer every split-by-cell owner deaggregation review
+  blocker.
+- [x] Run `git diff --check` for split-by-cell owner deaggregation.
+- [x] Commit split-by-cell owner deaggregation.
 
 ### E. Tick Integration
 

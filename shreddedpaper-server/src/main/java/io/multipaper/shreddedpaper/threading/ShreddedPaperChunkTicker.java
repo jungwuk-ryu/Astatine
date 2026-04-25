@@ -48,7 +48,11 @@ public class ShreddedPaperChunkTicker {
 
         if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
             level.chunkSource.tickingRegions.forEach(
-                    region -> RegionTickScheduler.get().registerRegion(level, region, this, tickContext)
+                    region -> {
+                        if (region.getOwner().isSchedulerArmed()) {
+                            RegionTickScheduler.get().registerRegion(level, region, this, tickContext);
+                        }
+                    }
             );
             return CompletableFuture.completedFuture(null);
         }

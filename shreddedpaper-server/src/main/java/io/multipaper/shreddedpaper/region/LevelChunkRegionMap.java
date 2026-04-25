@@ -1,8 +1,12 @@
 package io.multipaper.shreddedpaper.region;
 
+import ca.spottedleaf.concurrentutil.executor.PrioritisedExecutor;
+import ca.spottedleaf.concurrentutil.util.Priority;
 import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.server.level.ServerLevel;
@@ -11,11 +15,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import io.multipaper.shreddedpaper.threading.region.events.RegionMergeEvent;
+import io.multipaper.shreddedpaper.threading.region.events.RegionSplitEvent;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.slf4j.Logger;
@@ -23,12 +29,16 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class LevelChunkRegionMap {
 
     private static final Logger LOGGER = LogUtils.getClassLogger();
     private static final int MAX_MERGED_OWNER_CELLS = 64;
+    private static final int MAX_SPLITS_PER_PROBE = 1;
+    private static final long SPLIT_COOLDOWN_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(10L);
 
     private final ServerLevel level;
     private final SimpleStampedLock regionsLock = new SimpleStampedLock();
@@ -40,25 +50,95 @@ public class LevelChunkRegionMap {
     }
 
     public LevelChunkRegion getOrCreate(RegionPos regionPos) {
-        LevelChunkRegion levelChunkRegion = get(regionPos);
+        final LevelChunkRegion levelChunkRegion = get(regionPos);
 
         if (levelChunkRegion != null) {
             return levelChunkRegion;
         }
 
         return regionsLock.write(() -> {
-            RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
-            if (owner != null) {
-                return owner.region();
-            }
-
-            owner = RegionOwner.singleCell(regionPos);
-            final LevelChunkRegion created = new LevelChunkRegion(this.level, owner);
-            owner.attachRegion(created);
-            this.ownersByCell.put(regionPos.longKey, owner);
-            this.ownersById.put(owner.id(), owner);
-            return created;
+            return this.getOrCreateRegionLocked(regionPos);
         });
+    }
+
+    private LevelChunkRegion getExistingRegionLocked(final RegionPos regionPos) {
+        final RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
+        final LevelChunkRegion region = owner == null ? null : owner.region();
+        if (region != null) {
+            region.bumpLastAccess();
+        }
+        return region;
+    }
+
+    private LevelChunkRegion getOrCreateRegionLocked(final RegionPos regionPos) {
+        final LevelChunkRegion existing = this.getExistingRegionLocked(regionPos);
+        if (existing != null) {
+            return existing;
+        }
+
+        final RegionOwner owner = RegionOwner.singleCell(regionPos);
+        final LevelChunkRegion created = new LevelChunkRegion(this.level, owner);
+        owner.attachRegion(created);
+        this.ownersByCell.put(regionPos.longKey, owner);
+        this.ownersById.put(owner.id(), owner);
+        return created;
+    }
+
+    private void acceptRegionForCell(final RegionPos regionPos, final Consumer<LevelChunkRegion> action) {
+        final boolean accepted = this.regionsLock.read(() -> {
+            final LevelChunkRegion region = this.getExistingRegionLocked(regionPos);
+            if (region == null) {
+                return false;
+            }
+            action.accept(region);
+            return true;
+        });
+        if (accepted) {
+            return;
+        }
+
+        this.regionsLock.write(() -> action.accept(this.getOrCreateRegionLocked(regionPos)));
+    }
+
+    private void acceptExistingRegionForCell(final RegionPos regionPos, final Consumer<LevelChunkRegion> action) {
+        this.regionsLock.read(() -> {
+            final LevelChunkRegion region = this.getExistingRegionLocked(regionPos);
+            if (region != null) {
+                action.accept(region);
+            }
+        });
+    }
+
+    private <T> T applyRegionForCell(final RegionPos regionPos, final Function<LevelChunkRegion, T> action) {
+        final RegionActionResult<T> result = this.regionsLock.read(() -> {
+            final LevelChunkRegion region = this.getExistingRegionLocked(regionPos);
+            if (region == null) {
+                return RegionActionResult.missing();
+            }
+            return RegionActionResult.found(action.apply(region));
+        });
+        if (result.found()) {
+            return result.value();
+        }
+
+        return this.regionsLock.write(() -> action.apply(this.getOrCreateRegionLocked(regionPos)));
+    }
+
+    private void acceptRegionsForCells(final RegionPos firstPos, final RegionPos secondPos, final BiConsumer<LevelChunkRegion, LevelChunkRegion> action) {
+        final boolean accepted = this.regionsLock.read(() -> {
+            final LevelChunkRegion first = this.getExistingRegionLocked(firstPos);
+            final LevelChunkRegion second = this.getExistingRegionLocked(secondPos);
+            if (first == null || second == null) {
+                return false;
+            }
+            action.accept(first, second);
+            return true;
+        });
+        if (accepted) {
+            return;
+        }
+
+        this.regionsLock.write(() -> action.accept(this.getOrCreateRegionLocked(firstPos), this.getOrCreateRegionLocked(secondPos)));
     }
 
     public LevelChunkRegion get(RegionPos regionPos) {
@@ -223,6 +303,196 @@ public class LevelChunkRegionMap {
         event.commit();
     }
 
+    public List<LevelChunkRegion> splitDisconnectedOwnerQuiescent(final RegionOwner owner, final int isolationRadius) {
+        if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
+            return List.of();
+        }
+
+        final long nowNanos = System.nanoTime();
+        if (!owner.canSplit(nowNanos, SPLIT_COOLDOWN_NANOS)) {
+            return List.of();
+        }
+
+        return regionsLock.write(() -> {
+            final RegionOwner current = this.ownersById.get(owner.id());
+            if (current != owner || owner.cellCount() <= 1) {
+                return List.of();
+            }
+            final LevelChunkRegion sourceRegion = owner.region();
+            if (sourceRegion == null || !sourceRegion.canSplitOwner()) {
+                return List.of();
+            }
+
+            final ShreddedPaperRegionLocker.RegionLock ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(
+                    owner.cellPositionsSnapshot(),
+                    owner.isolationCellPositionsSnapshot(isolationRadius)
+            );
+            if (ownerLock == null) {
+                return List.of();
+            }
+
+            try {
+                if (!sourceRegion.canSplitOwner()) {
+                    return List.of();
+                }
+
+                final LongOpenHashSet ownedCells = new LongOpenHashSet(owner.cellsSnapshot());
+                final LongOpenHashSet activeCells = sourceRegion.activeCellKeysSnapshot();
+                retainOnly(activeCells, ownedCells);
+                if (activeCells.isEmpty() || !activeCells.contains(owner.primaryCell().longKey)) {
+                    return List.of();
+                }
+
+                this.removeInactiveCells(owner, ownedCells, activeCells);
+
+                final List<LongOpenHashSet> components = connectedComponents(activeCells);
+                if (components.size() <= 1) {
+                    return List.of();
+                }
+
+                final int keepIndex = selectComponentToKeep(owner.primaryCell().longKey, components);
+                final List<LevelChunkRegion> splitRegions = new ArrayList<>();
+                int splits = 0;
+                for (int i = 0; i < components.size(); i++) {
+                    if (i == keepIndex) {
+                        continue;
+                    }
+                    final LongOpenHashSet splitCells = components.get(i);
+                    if (splitCells.isEmpty()) {
+                        continue;
+                    }
+                    splitRegions.add(this.splitCellsToNewOwner(owner, sourceRegion, splitCells, nowNanos));
+                    splits++;
+                    if (splits >= MAX_SPLITS_PER_PROBE) {
+                        break;
+                    }
+                }
+                if (splits != 0) {
+                    owner.recordSplit(nowNanos);
+                }
+                return List.copyOf(splitRegions);
+            } finally {
+                ownerLock.unlock();
+            }
+        });
+    }
+
+    private void removeInactiveCells(final RegionOwner owner, final LongOpenHashSet ownedCells, final LongOpenHashSet activeCells) {
+        final LongOpenHashSet inactiveCells = new LongOpenHashSet(ownedCells);
+        inactiveCells.removeAll(activeCells);
+        inactiveCells.remove(owner.primaryCell().longKey);
+        if (inactiveCells.isEmpty()) {
+            return;
+        }
+
+        for (final long cellKey : inactiveCells) {
+            this.ownersByCell.remove(cellKey, owner);
+        }
+        owner.removeCells(inactiveCells);
+    }
+
+    private LevelChunkRegion splitCellsToNewOwner(
+            final RegionOwner sourceOwner,
+            final LevelChunkRegion sourceRegion,
+            final LongOpenHashSet splitCells,
+            final long nowNanos
+    ) {
+        final long startNanos = System.nanoTime();
+        final RegionPos newPrimary = new RegionPos(splitCells.iterator().nextLong());
+        final RegionOwner splitOwner = RegionOwner.splitOwner(newPrimary, splitCells);
+        final LevelChunkRegion splitRegion = new LevelChunkRegion(this.level, splitOwner);
+        splitOwner.attachRegion(splitRegion);
+        splitOwner.recordSplit(nowNanos);
+
+        sourceRegion.extractCellsTo(splitRegion, splitCells);
+        sourceOwner.removeCells(splitCells);
+
+        this.ownersById.put(splitOwner.id(), splitOwner);
+        for (final long cellKey : splitCells) {
+            this.ownersByCell.put(cellKey, splitOwner);
+        }
+        this.commitSplitEvent(sourceOwner, splitOwner, splitCells.size(), System.nanoTime() - startNanos);
+        return splitRegion;
+    }
+
+    private void commitSplitEvent(final RegionOwner sourceOwner, final RegionOwner splitOwner, final int movedCells, final long durationNanos) {
+        final RegionSplitEvent event = new RegionSplitEvent();
+        final RegionPos sourceCell = sourceOwner.primaryCell();
+        final RegionPos splitCell = splitOwner.primaryCell();
+        event.world = this.level.getWorld().getName();
+        event.sourceRegionX = sourceCell.x;
+        event.sourceRegionZ = sourceCell.z;
+        event.newRegionX = splitCell.x;
+        event.newRegionZ = splitCell.z;
+        event.movedCells = movedCells;
+        event.sourceCellsAfter = sourceOwner.cellCount();
+        event.durationNanos = durationNanos;
+        event.commit();
+    }
+
+    private static void retainOnly(final LongOpenHashSet cells, final LongOpenHashSet allowedCells) {
+        for (final LongIterator iterator = cells.iterator(); iterator.hasNext();) {
+            if (!allowedCells.contains(iterator.nextLong())) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private static List<LongOpenHashSet> connectedComponents(final LongOpenHashSet cells) {
+        final List<LongOpenHashSet> components = new ArrayList<>();
+        final LongOpenHashSet remaining = new LongOpenHashSet(cells);
+        final LongArrayList queue = new LongArrayList();
+        while (!remaining.isEmpty()) {
+            final long start = remaining.iterator().nextLong();
+            remaining.remove(start);
+            queue.clear();
+            queue.add(start);
+            final LongOpenHashSet component = new LongOpenHashSet();
+            component.add(start);
+
+            for (int index = 0; index < queue.size(); index++) {
+                final long cellKey = queue.getLong(index);
+                final int x = (int) cellKey;
+                final int z = (int) (cellKey >> 32);
+                addNeighborIfPresent(RegionPos.asLong(x + 1, z), remaining, component, queue);
+                addNeighborIfPresent(RegionPos.asLong(x - 1, z), remaining, component, queue);
+                addNeighborIfPresent(RegionPos.asLong(x, z + 1), remaining, component, queue);
+                addNeighborIfPresent(RegionPos.asLong(x, z - 1), remaining, component, queue);
+            }
+
+            components.add(component);
+        }
+        return components;
+    }
+
+    private static void addNeighborIfPresent(
+            final long neighbor,
+            final LongOpenHashSet remaining,
+            final LongOpenHashSet component,
+            final LongArrayList queue
+    ) {
+        if (remaining.remove(neighbor)) {
+            component.add(neighbor);
+            queue.add(neighbor);
+        }
+    }
+
+    private static int selectComponentToKeep(final long primaryCell, final List<LongOpenHashSet> components) {
+        int largestIndex = 0;
+        int largestSize = -1;
+        for (int i = 0; i < components.size(); i++) {
+            final LongOpenHashSet component = components.get(i);
+            if (component.contains(primaryCell)) {
+                return i;
+            }
+            if (component.size() > largestSize) {
+                largestIndex = i;
+                largestSize = component.size();
+            }
+        }
+        return largestIndex;
+    }
+
     private void removeOwnerLocked(RegionOwner owner, LevelChunkRegion region) {
         for (final long cellKey : owner.cellsSnapshot()) {
             this.ownersByCell.remove(cellKey, owner);
@@ -233,11 +503,11 @@ public class LevelChunkRegionMap {
     }
 
     public void addTickingChunk(LevelChunk levelChunk) {
-        getOrCreate(RegionPos.forChunk(levelChunk.getPos())).add(levelChunk);
+        this.acceptRegionForCell(RegionPos.forChunk(levelChunk.getPos()), region -> region.add(levelChunk));
     }
 
     public void removeTickingChunk(LevelChunk levelChunk) {
-        getOrCreate(RegionPos.forChunk(levelChunk.getPos())).remove(levelChunk);
+        this.acceptRegionForCell(RegionPos.forChunk(levelChunk.getPos()), region -> region.remove(levelChunk));
     }
 
     public void forEach(Consumer<LevelChunkRegion> consumer) {
@@ -259,7 +529,7 @@ public class LevelChunkRegionMap {
         }
 
         entity.previousTickingChunkPosRegion = entity.chunkPosition();
-        getOrCreate(RegionPos.forChunk(entity.chunkPosition())).addTickingEntity(entity);
+        this.acceptRegionForCell(RegionPos.forChunk(entity.chunkPosition()), region -> region.addTickingEntity(entity));
     }
 
     public void removeTickingEntity(Entity entity) {
@@ -267,7 +537,7 @@ public class LevelChunkRegionMap {
             throw new IllegalStateException("Entity has not been added to a ticking list " + entity);
         }
 
-        getOrCreate(RegionPos.forChunk(entity.previousTickingChunkPosRegion)).removeTickingEntity(entity);
+        this.acceptRegionForCell(RegionPos.forChunk(entity.previousTickingChunkPosRegion), region -> region.removeTickingEntity(entity));
         entity.previousTickingChunkPosRegion = null;
     }
 
@@ -283,12 +553,12 @@ public class LevelChunkRegionMap {
 
         if (!fromRegion.equals(toRegion)) {
             entity.previousTickingChunkPosRegion = newChunkPos;
-            final LevelChunkRegion fromOwner = getOrCreate(fromRegion);
-            final LevelChunkRegion toOwner = getOrCreate(toRegion);
-            if (fromOwner != toOwner) {
-                fromOwner.removeTickingEntity(entity);
-                toOwner.addTickingEntity(entity);
-            }
+            this.acceptRegionsForCells(fromRegion, toRegion, (fromOwner, toOwner) -> {
+                if (fromOwner != toOwner) {
+                    fromOwner.removeTickingEntity(entity);
+                    toOwner.addTickingEntity(entity);
+                }
+            });
         }
     }
 
@@ -298,11 +568,12 @@ public class LevelChunkRegionMap {
         }
 
         entity.previousTrackedChunkPosRegion = entity.chunkPosition();
-        getOrCreate(RegionPos.forChunk(entity.chunkPosition())).addTrackedEntity(entity);
-
-        if (entity instanceof Mob mob) {
-            getOrCreate(RegionPos.forChunk(entity.chunkPosition())).addNavigationMob(mob);
-        }
+        this.acceptRegionForCell(RegionPos.forChunk(entity.chunkPosition()), region -> {
+            region.addTrackedEntity(entity);
+            if (entity instanceof Mob mob) {
+                region.addNavigationMob(mob);
+            }
+        });
     }
 
     public void removeTrackedEntity(Entity entity) {
@@ -311,10 +582,10 @@ public class LevelChunkRegionMap {
         }
 
         if (entity instanceof Mob mob) {
-            getOrCreate(RegionPos.forChunk(entity.chunkPosition())).removeNavigationMob(mob);
+            this.acceptRegionForCell(RegionPos.forChunk(entity.chunkPosition()), region -> region.removeNavigationMob(mob));
         }
 
-        getOrCreate(RegionPos.forChunk(entity.previousTrackedChunkPosRegion)).removeTrackedEntity(entity);
+        this.acceptRegionForCell(RegionPos.forChunk(entity.previousTrackedChunkPosRegion), region -> region.removeTrackedEntity(entity));
         entity.previousTrackedChunkPosRegion = null;
     }
 
@@ -330,19 +601,19 @@ public class LevelChunkRegionMap {
 
         if (!fromRegion.equals(toRegion)) {
             entity.previousTrackedChunkPosRegion = newChunkPos;
-            final LevelChunkRegion fromOwner = getOrCreate(fromRegion);
-            final LevelChunkRegion toOwner = getOrCreate(toRegion);
-            if (fromOwner == toOwner) {
-                return;
-            }
+            this.acceptRegionsForCells(fromRegion, toRegion, (fromOwner, toOwner) -> {
+                if (fromOwner == toOwner) {
+                    return;
+                }
 
-            fromOwner.removeTrackedEntity(entity);
-            toOwner.addTrackedEntity(entity);
+                fromOwner.removeTrackedEntity(entity);
+                toOwner.addTrackedEntity(entity);
 
-            if (entity instanceof Mob mob) {
-                fromOwner.removeNavigationMob(mob);
-                toOwner.addNavigationMob(mob);
-            }
+                if (entity instanceof Mob mob) {
+                    fromOwner.removeNavigationMob(mob);
+                    toOwner.addNavigationMob(mob);
+                }
+            });
         }
     }
 
@@ -361,7 +632,15 @@ public class LevelChunkRegionMap {
     }
 
     public boolean scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
-        return getOrCreate(regionPos).scheduleTask(taskClass, task, delayInTicks);
+        return this.applyRegionForCell(regionPos, region -> region.scheduleTask(taskClass, task, delayInTicks));
+    }
+
+    public PrioritisedExecutor.PrioritisedTask createInternalTask(final RegionPos regionPos, final Runnable task, final Priority priority) {
+        return this.applyRegionForCell(regionPos, region -> region.getInternalTaskQueue().createTask(task, priority));
+    }
+
+    public PrioritisedExecutor.PrioritisedTask queueInternalTask(final RegionPos regionPos, final Runnable task, final Priority priority) {
+        return this.applyRegionForCell(regionPos, region -> region.getInternalTaskQueue().queueTask(task, priority));
     }
 
     /**
@@ -370,7 +649,7 @@ public class LevelChunkRegionMap {
      * tasks must be read-only. Eg loading a chunk, saving data, sending packets, etc.
      */
     public void execute(RegionPos regionPos, Runnable task) {
-        getOrCreate(regionPos).getInternalTaskQueue().queueTask(task);
+        this.acceptRegionForCell(regionPos, region -> region.getInternalTaskQueue().queueTask(task));
     }
 
     /**
@@ -384,13 +663,14 @@ public class LevelChunkRegionMap {
 
     public void addPlayer(ServerPlayer player) {
         player.previousChunkPosRegion = player.chunkPosition();
-        LevelChunkRegion region = getOrCreate(RegionPos.forChunk(player.chunkPosition()));
-        region.addPlayer(player);
-        player.currentRegion = region;
+        this.acceptRegionForCell(RegionPos.forChunk(player.chunkPosition()), region -> {
+            region.addPlayer(player);
+            player.currentRegion = region;
+        });
     }
 
     public void removePlayer(ServerPlayer player) {
-        getOrCreate(RegionPos.forChunk(player.chunkPosition())).removePlayer(player);
+        this.acceptRegionForCell(RegionPos.forChunk(player.chunkPosition()), region -> region.removePlayer(player));
         player.currentRegion = null;
     }
 
@@ -400,18 +680,38 @@ public class LevelChunkRegionMap {
 
         if (!fromRegion.equals(toRegion)) {
             player.previousChunkPosRegion = player.chunkPosition();
-            final LevelChunkRegion fromOwner = getOrCreate(fromRegion);
-            final LevelChunkRegion toOwner = getOrCreate(toRegion);
-            if (fromOwner != toOwner) {
-                fromOwner.removePlayer(player);
-                toOwner.addPlayer(player);
-                player.currentRegion = toOwner;
-            }
+            this.acceptRegionsForCells(fromRegion, toRegion, (fromOwner, toOwner) -> {
+                if (fromOwner != toOwner) {
+                    fromOwner.removePlayer(player);
+                    toOwner.addPlayer(player);
+                    player.currentRegion = toOwner;
+                }
+            });
         }
     }
 
     public void addBlockEvent(BlockEventData blockEvent) {
-        getOrCreate(RegionPos.forBlockPos(blockEvent.pos())).addBlockEvent(blockEvent);
+        this.acceptRegionForCell(RegionPos.forBlockPos(blockEvent.pos()), region -> region.addBlockEvent(blockEvent));
+    }
+
+    public void addPlayerTickingRequest(final ChunkPos chunkPos) {
+        this.acceptRegionForCell(RegionPos.forChunk(chunkPos), region -> region.addPlayerTickingRequest(chunkPos));
+    }
+
+    public void removePlayerTickingRequest(final ChunkPos chunkPos) {
+        this.acceptExistingRegionForCell(RegionPos.forChunk(chunkPos), region -> region.removePlayerTickingRequest(chunkPos));
+    }
+
+    public void addUnloadChunk(final ChunkPos chunkPos) {
+        this.acceptRegionForCell(RegionPos.forChunk(chunkPos), region -> region.addUnloadChunk(chunkPos));
+    }
+
+    public void removeUnloadChunk(final ChunkPos chunkPos) {
+        this.acceptExistingRegionForCell(RegionPos.forChunk(chunkPos), region -> region.removeUnloadChunk(chunkPos));
+    }
+
+    public void addPendingBlockEntityTicker(final TickingBlockEntity ticker) {
+        this.acceptRegionForCell(RegionPos.forBlockPos(ticker.getPos()), region -> region.addPendingBlockEntityTicker(ticker));
     }
 
     public void forEachRegionInBoundingBox(BoundingBox box, Consumer<LevelChunkRegion> consumer) {
@@ -470,5 +770,15 @@ public class LevelChunkRegionMap {
         }
 
         return navigatingMobs;
+    }
+
+    private record RegionActionResult<T>(boolean found, T value) {
+        private static <T> RegionActionResult<T> found(final T value) {
+            return new RegionActionResult<>(true, value);
+        }
+
+        private static <T> RegionActionResult<T> missing() {
+            return new RegionActionResult<>(false, null);
+        }
     }
 }

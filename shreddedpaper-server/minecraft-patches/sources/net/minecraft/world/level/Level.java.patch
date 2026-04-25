@@ -13,8 +13,6 @@
  import java.util.function.Predicate;
  import java.util.stream.Collectors;
 +
-+import io.multipaper.shreddedpaper.region.LevelChunkRegion;
-+import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.PerThreadNeighborUpdater;
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
@@ -174,10 +172,7 @@
      public void addBlockEntityTicker(TickingBlockEntity ticker) {
 -        (this.tickingBlockEntities ? this.pendingBlockEntityTickers : this.blockEntityTickers).add(ticker);
 +        // ShreddedPaper start - handle block entities ourselves
-+        LevelChunkRegion region = ((ServerLevel) this).chunkSource.tickingRegions.getOrCreate(RegionPos.forChunk(new ChunkPos(ticker.getPos())));
-+        synchronized (region.pendingBlockEntityTickers) {
-+            region.pendingBlockEntityTickers.add(ticker);
-+        }
++        ((ServerLevel) this).chunkSource.tickingRegions.addPendingBlockEntityTicker(ticker);
 +        // ShreddedPaper end - handle block entities ourselves
 +//        (this.tickingBlockEntities ? this.pendingBlockEntityTickers : this.blockEntityTickers).add(ticker); // ShreddedPaper - handle block entities ourselves
      }

@@ -29,6 +29,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -90,6 +91,18 @@ public class LevelChunkRegion {
 
     public synchronized void removePlayerTickingRequest(final ChunkPos chunkPos) {
         this.playerTickingChunkRequests.remove(chunkPos.toLong());
+    }
+
+    public synchronized void addUnloadChunk(final ChunkPos chunkPos) {
+        this.unloadQueue.add(chunkPos.toLong());
+    }
+
+    public synchronized void removeUnloadChunk(final ChunkPos chunkPos) {
+        this.unloadQueue.remove(chunkPos.toLong());
+    }
+
+    public synchronized void addPendingBlockEntityTicker(final TickingBlockEntity ticker) {
+        this.pendingBlockEntityTickers.add(ticker);
     }
 
     public boolean isPlayerTickingRequested(final ChunkPos chunkPos) {
@@ -408,6 +421,162 @@ public class LevelChunkRegion {
             removed++;
         }
         return chunksByCell;
+    }
+
+    public synchronized boolean canSplitOwner() {
+        return this.isMergeQuiescent() && (this.redstoneUpdateInfos == null || this.redstoneUpdateInfos.isEmpty());
+    }
+
+    public synchronized LongOpenHashSet activeCellKeysSnapshot() {
+        final LongOpenHashSet activeCells = new LongOpenHashSet();
+        for (final LevelChunk levelChunk : this.levelChunks) {
+            activeCells.add(RegionPos.asLongForChunk(levelChunk.getPos()));
+        }
+        for (final long chunkKey : this.playerTickingChunkRequests) {
+            activeCells.add(RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)));
+        }
+
+        final IteratorSafeOrderedReferenceSet.Iterator<Entity> tickingIterator = this.tickingEntities.iterator();
+        try {
+            while (tickingIterator.hasNext()) {
+                activeCells.add(RegionPos.asLongForChunk(tickingIterator.next().chunkPosition()));
+            }
+        } finally {
+            tickingIterator.finishedIterating();
+        }
+
+        for (final Entity entity : this.trackedEntities) {
+            activeCells.add(RegionPos.asLongForChunk(entity.chunkPosition()));
+        }
+        for (final ServerPlayer player : this.players) {
+            activeCells.add(RegionPos.asLongForChunk(player.chunkPosition()));
+        }
+        for (final long chunkKey : this.unloadQueue) {
+            activeCells.add(RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)));
+        }
+        for (final TickingBlockEntity ticker : this.tickingBlockEntities) {
+            activeCells.add(RegionPos.asLongForBlockPos(ticker.getPos()));
+        }
+        for (final TickingBlockEntity ticker : this.pendingBlockEntityTickers) {
+            activeCells.add(RegionPos.asLongForBlockPos(ticker.getPos()));
+        }
+        for (final Mob mob : this.navigatingMobs) {
+            activeCells.add(RegionPos.asLongForChunk(mob.chunkPosition()));
+        }
+        for (final BlockEventData blockEvent : this.blockEvents) {
+            activeCells.add(RegionPos.asLongForBlockPos(blockEvent.pos()));
+        }
+        for (final long cellKey : this.owner.cellsSnapshot()) {
+            final RegionPos cell = new RegionPos(cellKey);
+            if (hasScheduledTicks(this.level.blockTicks, cell) || hasScheduledTicks(this.level.fluidTicks, cell)) {
+                activeCells.add(cellKey);
+            }
+        }
+        return activeCells;
+    }
+
+    private static boolean hasScheduledTicks(final Object ticks, final RegionPos cell) {
+        return ticks instanceof LevelTicksRegionProxy<?> proxy && proxy.hasRegionData(cell);
+    }
+
+    public void extractCellsTo(final LevelChunkRegion target, final LongOpenHashSet splitCells) {
+        if (this.level != target.level) {
+            throw new IllegalArgumentException("Cannot split regions across worlds");
+        }
+
+        final List<Entity> tickingToMove = new ArrayList<>();
+        synchronized (this) {
+            final IteratorSafeOrderedReferenceSet.Iterator<Entity> tickingIterator = this.tickingEntities.iterator();
+            try {
+                while (tickingIterator.hasNext()) {
+                    final Entity entity = tickingIterator.next();
+                    if (splitCells.contains(RegionPos.asLongForChunk(entity.chunkPosition()))) {
+                        tickingToMove.add(entity);
+                    }
+                }
+            } finally {
+                tickingIterator.finishedIterating();
+            }
+
+            synchronized (target) {
+                for (final Iterator<LevelChunk> iterator = this.levelChunks.iterator(); iterator.hasNext();) {
+                    final LevelChunk levelChunk = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForChunk(levelChunk.getPos()))) {
+                        target.levelChunks.add(levelChunk);
+                        iterator.remove();
+                    }
+                }
+
+                for (final LongIterator iterator = this.playerTickingChunkRequests.iterator(); iterator.hasNext();) {
+                    final long chunkKey = iterator.nextLong();
+                    if (splitCells.contains(RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)))) {
+                        target.playerTickingChunkRequests.add(chunkKey);
+                        iterator.remove();
+                    }
+                }
+
+                for (final Entity entity : tickingToMove) {
+                    target.tickingEntities.add(entity);
+                    this.tickingEntities.remove(entity);
+                }
+
+                for (final Iterator<Entity> iterator = this.trackedEntities.iterator(); iterator.hasNext();) {
+                    final Entity entity = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForChunk(entity.chunkPosition()))) {
+                        target.trackedEntities.add(entity);
+                        iterator.remove();
+                    }
+                }
+
+                for (final Iterator<ServerPlayer> iterator = this.players.iterator(); iterator.hasNext();) {
+                    final ServerPlayer player = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForChunk(player.chunkPosition()))) {
+                        target.players.add(player);
+                        player.currentRegion = target;
+                        iterator.remove();
+                    }
+                }
+
+                for (final LongIterator iterator = this.unloadQueue.iterator(); iterator.hasNext();) {
+                    final long chunkKey = iterator.nextLong();
+                    if (splitCells.contains(RegionPos.asLongForChunk(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)))) {
+                        target.unloadQueue.add(chunkKey);
+                        iterator.remove();
+                    }
+                }
+
+                for (final Iterator<TickingBlockEntity> iterator = this.tickingBlockEntities.iterator(); iterator.hasNext();) {
+                    final TickingBlockEntity ticker = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForBlockPos(ticker.getPos()))) {
+                        target.tickingBlockEntities.add(ticker);
+                        iterator.remove();
+                    }
+                }
+                for (final Iterator<TickingBlockEntity> iterator = this.pendingBlockEntityTickers.iterator(); iterator.hasNext();) {
+                    final TickingBlockEntity ticker = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForBlockPos(ticker.getPos()))) {
+                        target.pendingBlockEntityTickers.add(ticker);
+                        iterator.remove();
+                    }
+                }
+
+                for (final Iterator<Mob> iterator = this.navigatingMobs.iterator(); iterator.hasNext();) {
+                    final Mob mob = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForChunk(mob.chunkPosition()))) {
+                        target.navigatingMobs.add(mob);
+                        iterator.remove();
+                    }
+                }
+
+                for (final Iterator<BlockEventData> iterator = this.blockEvents.iterator(); iterator.hasNext();) {
+                    final BlockEventData blockEvent = iterator.next();
+                    if (splitCells.contains(RegionPos.asLongForBlockPos(blockEvent.pos()))) {
+                        target.blockEvents.add(blockEvent);
+                        iterator.remove();
+                    }
+                }
+            }
+        }
     }
 
     public boolean isEmpty() {

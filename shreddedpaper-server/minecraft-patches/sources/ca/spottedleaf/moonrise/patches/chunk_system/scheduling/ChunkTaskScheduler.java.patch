@@ -63,7 +63,7 @@
      public PrioritisedExecutor.PrioritisedTask createChunkTask(final int chunkX, final int chunkZ, final Runnable run,
                                                                 final Priority priority) {
 -        return this.mainThreadExecutor.createTask(run, priority);
-+        return world.chunkSource.tickingRegions.getOrCreate(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ))).getInternalTaskQueue().createTask(run, priority); // ShreddedPaper
++        return world.chunkSource.tickingRegions.createInternalTask(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ)), run, priority); // ShreddedPaper
      }
  
      public PrioritisedExecutor.PrioritisedTask scheduleChunkTask(final int chunkX, final int chunkZ, final Runnable run) {
@@ -72,7 +72,7 @@
      public PrioritisedExecutor.PrioritisedTask scheduleChunkTask(final int chunkX, final int chunkZ, final Runnable run,
                                                                   final Priority priority) {
 -        return this.mainThreadExecutor.queueTask(run, priority);
-+        return world.chunkSource.tickingRegions.getOrCreate(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ))).getInternalTaskQueue().queueTask(run, priority); // ShreddedPaper
++        return world.chunkSource.tickingRegions.queueInternalTask(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ)), run, priority); // ShreddedPaper
      }
  
      public boolean halt(final boolean sync, final long maxWaitNS) {
