@@ -52,7 +52,7 @@ public final class RegionCommand extends Command {
         }
 
         final List<RegionTickScheduler.RegionTickSnapshot> snapshots = scheduler.snapshots();
-        sender.sendMessage("Top ShreddedPaper regions by EWMA MSPT:");
+        sender.sendMessage("Top ShreddedPaper regions by EWMA MSPT or mailbox class pressure:");
         snapshots.stream().limit(10L).forEach(snapshot -> sender.sendMessage(this.format(snapshot)));
     }
 
@@ -99,13 +99,14 @@ public final class RegionCommand extends Command {
     }
 
     private String format(final RegionTickScheduler.RegionTickSnapshot snapshot) {
-        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d rejected=%d".formatted(
+        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% rejected=%d".formatted(
                 snapshot.world(),
                 snapshot.regionPos(),
                 snapshot.loadClass(),
                 snapshot.ewmaMspt(),
                 snapshot.ewmaScheduleLagMs(),
                 snapshot.mailboxDepth(),
+                snapshot.mailboxClassPressure() * 100.0D,
                 snapshot.rejectedTasks()
         );
     }

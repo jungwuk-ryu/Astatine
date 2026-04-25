@@ -141,7 +141,7 @@ public final class RegionTickScheduler {
         return this.regions.values().stream()
                 .filter(handle -> !handle.retired.get())
                 .map(RegionHandle::snapshot)
-                .sorted(Comparator.comparingDouble(RegionTickSnapshot::ewmaMspt).reversed())
+                .sorted(Comparator.comparingDouble(RegionTickSnapshot::sortScore).reversed())
                 .toList();
     }
 
@@ -230,9 +230,13 @@ public final class RegionTickScheduler {
             double ewmaMspt,
             double ewmaScheduleLagMs,
             int mailboxDepth,
+            double mailboxClassPressure,
             long rejectedTasks,
             long nextStartNanos
     ) {
+        private double sortScore() {
+            return Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D);
+        }
     }
 
     private final class RegionHandle implements Delayed {
@@ -436,6 +440,7 @@ public final class RegionTickScheduler {
                     overload.ewmaMspt(),
                     overload.ewmaScheduleLagMs(),
                     this.state.mailbox().depth(),
+                    this.state.mailbox().maxClassPressure(),
                     this.state.mailbox().rejected(),
                     this.scheduledStartNanos
             );
