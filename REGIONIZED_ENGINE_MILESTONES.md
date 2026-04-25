@@ -695,10 +695,31 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   global barrier.
 - [ ] Tracker flood evidence: run normal-region probe concurrently and record
   `RegionOverBudget` events for tracker/broadcast work.
-- [ ] Chunk generation DoS test: verify normal regions keep chunk priority.
-- [ ] Chunk generation DoS evidence: run attacker-region `chunkgen` and a far
+- [x] Chunk generation DoS test: verify normal regions keep chunk priority for
+  the current async chunk request path.
+- [x] Chunk generation DoS evidence: run attacker-region `chunkgen` and a far
   normal region chunk request/probe concurrently; record chunk wait lag and
   `/region top`.
+- [x] Chunk generation DoS first attempt: `chunkgen 20 false` in attacker
+  region plus far probe and `chunkgen 2 true` in normal region exposed a
+  scheduler lifecycle crash before QoS could be measured.
+- [x] Chunk generation DoS root cause: a stale source `RegionHandle` could start
+  after dynamic owner merge detached and cleared its owner cells, then pass an
+  empty owner-cell snapshot into `ShreddedPaperRegionLocker`.
+- [x] Patch stale-owner scheduler guard: retire detached or empty-owner handles
+  before lock acquisition, revalidate after exact owner/isolation lock, and
+  requeue when live owner cell layout changes under the handle.
+- [x] Request Faraday/Aquinas review for the stale-owner scheduler guard; both
+  reported no blockers and recommended keeping the guard in
+  `RegionTickScheduler` without adding map-lock reads.
+- [x] Rebuild/deploy the stale-owner guard jar and rerun the same chunkgen
+  reproduction until no crash occurs.
+- [x] Chunk generation DoS rerun evidence after stale-owner guard: fresh
+  `chunkgen 20 false` queued `1681` attacker chunks while a far normal region
+  ran `probe 2000 1` plus urgent `chunkgen 2 true`; urgent normal chunkgen
+  finished `25/25` in `2943.42ms`, attacker chunkgen finished `1681/1681` in
+  `48806.29ms`, `/tps` stayed at 20.0 except one 5s sample at 19.2, and the far
+  probe logged `avgLagMs=0.646`, `p95LagMs=1.481`, `maxLagMs=434.575`.
 - [ ] Record logs, `/region top`, JFR, spark output, and CPU utilization for each
   test.
 - [ ] For every failed acceptance, add a root-cause note and a new patch TODO.

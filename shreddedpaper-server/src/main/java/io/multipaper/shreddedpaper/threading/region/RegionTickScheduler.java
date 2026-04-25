@@ -278,16 +278,24 @@ public final class RegionTickScheduler {
 
             final LevelChunkRegion region = this.state.currentRegion();
             if (region == null) {
-                RegionTickScheduler.this.regions.remove(this.key, this);
-                this.retired.set(true);
+                this.retire();
+                return;
+            }
+            if (this.retireIfDetached(region)) {
                 return;
             }
             final long now = System.nanoTime();
             final boolean probeRegionLayout = now >= this.nextMergeProbeNanos;
             if (probeRegionLayout) {
                 this.level.chunkSource.tickingRegions.mergeNearbyOwnersQuiescent(region.getOwner(), ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                if (this.retireIfDetached(region)) {
+                    return;
+                }
                 if (this.pendingSplitRegions.isEmpty()) {
                     this.pendingSplitRegions = this.level.chunkSource.tickingRegions.splitDisconnectedOwnerQuiescent(region.getOwner(), ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                    if (this.retireIfDetached(region)) {
+                        return;
+                    }
                 }
                 this.nextMergeProbeNanos = now + MERGE_PROBE_INTERVAL_NANOS;
             }
@@ -298,20 +306,37 @@ public final class RegionTickScheduler {
             long deferred = 0L;
             Throwable failure = null;
             ShreddedPaperRegionLocker.RegionLock ownerLock = null;
+            boolean requeueAfterLayoutChange = false;
 
             try {
                 final List<RegionPos> ownerCells = region.getOwner().cellPositionsSnapshot();
+                if (ownerCells.isEmpty()) {
+                    this.retire();
+                    return;
+                }
                 final List<RegionPos> isolationCells = region.getOwner().isolationCellPositionsSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
                 ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(ownerCells, isolationCells);
                 if (ownerLock != null) {
-                    RegionTickBudget.setCurrent(budget);
-                    this.ticker.tickRegionFromIndependentScheduler(
-                            this.level,
-                            region,
-                            budget,
-                            this.scheduledContext,
-                            scheduledStart
-                    );
+                    if (this.retireIfDetached(region)) {
+                        return;
+                    }
+                    final List<RegionPos> currentOwnerCells = region.getOwner().cellPositionsSnapshot();
+                    if (currentOwnerCells.isEmpty()) {
+                        this.retire();
+                        return;
+                    }
+                    if (!currentOwnerCells.equals(ownerCells)) {
+                        requeueAfterLayoutChange = true;
+                    } else {
+                        RegionTickBudget.setCurrent(budget);
+                        this.ticker.tickRegionFromIndependentScheduler(
+                                this.level,
+                                region,
+                                budget,
+                                this.scheduledContext,
+                                scheduledStart
+                        );
+                    }
                 }
             } catch (final Throwable throwable) {
                 failure = throwable;
@@ -327,6 +352,11 @@ public final class RegionTickScheduler {
                     ownerLock.unlock();
                 }
                 this.ticking.set(false);
+            }
+
+            if (requeueAfterLayoutChange) {
+                this.requeueAfterOwnerLayoutChange();
+                return;
             }
 
             if (ownerLock == null) {
@@ -346,8 +376,7 @@ public final class RegionTickScheduler {
 
             this.activatePendingSplitRegions(scheduledStart);
             if (failure != null || this.retired.get() || region.isEmpty()) {
-                RegionTickScheduler.this.regions.remove(this.key, this);
-                this.retired.set(true);
+                this.retire();
                 return;
             }
 
@@ -358,6 +387,30 @@ public final class RegionTickScheduler {
             if (next != null) {
                 this.scheduledContext = next;
             }
+            RegionTickScheduler.this.enqueue(this);
+        }
+
+        private boolean retireIfDetached(final LevelChunkRegion region) {
+            if (this.state.currentRegion() != region || region.getOwner().region() != region || region.getOwner().cellCount() == 0) {
+                this.retire();
+                return true;
+            }
+            return false;
+        }
+
+        private void retire() {
+            RegionTickScheduler.this.regions.remove(this.key, this);
+            this.retired.set(true);
+            this.ticking.set(false);
+            this.pendingSplitRegions = List.of();
+        }
+
+        private void requeueAfterOwnerLayoutChange() {
+            if (this.retired.get()) {
+                return;
+            }
+            this.scheduledStartNanos = System.nanoTime() + this.lockContentionBackoffNanos;
+            this.lockContentionBackoffNanos = Math.min(TimeUnit.MILLISECONDS.toNanos(50L), this.lockContentionBackoffNanos << 1);
             RegionTickScheduler.this.enqueue(this);
         }
 
