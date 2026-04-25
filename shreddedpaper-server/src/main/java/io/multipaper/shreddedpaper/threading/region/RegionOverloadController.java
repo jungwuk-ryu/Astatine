@@ -48,7 +48,7 @@ public final class RegionOverloadController {
         this.ewmaScheduleLagMs = this.ewmaScheduleLagMs == 0.0D ? lagMs : (this.ewmaScheduleLagMs * (1.0D - EWMA_ALPHA)) + (lagMs * EWMA_ALPHA);
         this.lastMailboxDepth = mailboxDepth;
         this.lastMailboxClassPressure = mailboxClassPressure;
-        this.lastChunkIoPressure = chunkIo.pressure();
+        this.lastChunkIoPressure = chunkIo.requestPressure();
         this.lastChunkIoInFlight = chunkIo.inFlight();
         this.lastChunkIoDeferred = chunkIo.deferredRetries();
 
@@ -62,7 +62,17 @@ public final class RegionOverloadController {
             this.quarantineStrikes = 0;
         }
 
-        if (this.ewmaMspt >= config.degradedRegionMsptThreshold || deferredWork > 0L || mailboxClassPressure >= 0.5D || chunkIo.pressure() >= 0.5D || chunkIo.deferredRetries() > 0) {
+        if (this.ewmaMspt >= config.degradedRegionMsptThreshold
+                || deferredWork > 0L
+                || mailboxClassPressure >= 0.5D
+                || chunkIo.requestPressure() >= 0.5D
+                || chunkIo.deferredRetries() > 0
+                || chunkIo.executorWaitingTasks() + chunkIo.executorBacklogQueuedTasks() > chunkIo.executorCapacity()
+                || chunkIo.executorDeferredRetries() > 0
+                || chunkIo.executorOverflowInFlight() > 0
+                || chunkIo.executorBacklogEmergencyInFlight() > 0
+                || chunkIo.executorBacklogEmergencyRetries() > 0
+                || chunkIo.executorBackpressuredRetries() > 0) {
             this.loadClass = RegionLoadClass.DEGRADED;
         } else {
             this.loadClass = RegionLoadClass.NORMAL;

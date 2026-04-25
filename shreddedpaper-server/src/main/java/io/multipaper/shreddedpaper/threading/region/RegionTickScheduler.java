@@ -210,6 +210,7 @@ public final class RegionTickScheduler {
                 break;
             }
         }
+        RegionChunkExecutorLimiter.shutdownEmergencyExecutors();
         this.normalQueue.clear();
         this.degradedQueue.clear();
         this.regions.clear();
@@ -237,11 +238,38 @@ public final class RegionTickScheduler {
             double chunkIoPressure,
             long chunkIoDowngraded,
             long chunkIoRejected,
+            int chunkIoExecutorWaiting,
+            int chunkIoExecutorBacklogQueued,
+            int chunkIoExecutorBacklogCapacity,
+            double chunkIoExecutorBacklogPressure,
+            long chunkIoExecutorBacklogBackpressure,
+            long chunkIoExecutorBacklogDeferred,
+            int chunkIoExecutorBacklogEmergencyInFlight,
+            long chunkIoExecutorBacklogEmergency,
+            int chunkIoExecutorBacklogEmergencyRetries,
+            long chunkIoExecutorBacklogEmergencyRejected,
+            int chunkIoExecutorInFlight,
+            int chunkIoExecutorDeferred,
+            int chunkIoExecutorCapacity,
+            double chunkIoExecutorPressure,
+            long chunkIoExecutorDowngraded,
+            long chunkIoExecutorRejected,
+            int chunkIoExecutorOverflowInFlight,
+            int chunkIoExecutorOverflowCapacity,
+            double chunkIoExecutorOverflowPressure,
+            long chunkIoExecutorOverflowAdmitted,
+            long chunkIoExecutorOverflowBackpressure,
+            int chunkIoExecutorBackpressureWaiters,
+            int chunkIoExecutorBackpressureCapacity,
+            double chunkIoExecutorBackpressurePressure,
             long rejectedTasks,
             long nextStartNanos
     ) {
         private double sortScore() {
-            return Math.max(Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D), this.chunkIoPressure * 50.0D);
+            return Math.max(
+                    Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D),
+                    Math.max(this.chunkIoPressure, this.chunkIoExecutorPressure) * 50.0D
+            );
         }
     }
 
@@ -456,6 +484,30 @@ public final class RegionTickScheduler {
                     overload.lastChunkIoPressure(),
                     chunkIo.downgraded(),
                     chunkIo.rejected(),
+                    chunkIo.executorWaitingTasks(),
+                    chunkIo.executorBacklogQueuedTasks(),
+                    chunkIo.executorBacklogCapacity(),
+                    chunkIo.executorBacklogPressure(),
+                    chunkIo.executorBacklogBackpressure(),
+                    chunkIo.executorBacklogDeferred(),
+                    chunkIo.executorBacklogEmergencyInFlight(),
+                    chunkIo.executorBacklogEmergency(),
+                    chunkIo.executorBacklogEmergencyRetries(),
+                    chunkIo.executorBacklogEmergencyRejected(),
+                    chunkIo.executorInFlight(),
+                    chunkIo.executorDeferredRetries(),
+                    chunkIo.executorCapacity(),
+                    chunkIo.executorPressure(),
+                    chunkIo.executorDowngraded(),
+                    chunkIo.executorRejected(),
+                    chunkIo.executorOverflowInFlight(),
+                    chunkIo.executorOverflowCapacity(),
+                    chunkIo.executorOverflowPressure(),
+                    chunkIo.executorOverflowAdmitted(),
+                    chunkIo.executorOverflowBackpressure(),
+                    chunkIo.executorBackpressuredRetries(),
+                    chunkIo.executorBackpressureCapacity(),
+                    chunkIo.executorBackpressurePressure(),
                     this.state.mailbox().rejected(),
                     this.scheduledStartNanos
             );
@@ -488,7 +540,31 @@ public final class RegionTickScheduler {
             event.chunkIoCapacity = chunkIo.capacity();
             event.chunkIoRejected = chunkIo.rejected();
             event.chunkIoDowngraded = chunkIo.downgraded();
-            event.chunkIoPressure = chunkIo.pressure();
+            event.chunkIoPressure = chunkIo.requestPressure();
+            event.chunkIoExecutorWaiting = chunkIo.executorWaitingTasks();
+            event.chunkIoExecutorBacklogQueued = chunkIo.executorBacklogQueuedTasks();
+            event.chunkIoExecutorBacklogCapacity = chunkIo.executorBacklogCapacity();
+            event.chunkIoExecutorBacklogBackpressure = chunkIo.executorBacklogBackpressure();
+            event.chunkIoExecutorBacklogDeferred = chunkIo.executorBacklogDeferred();
+            event.chunkIoExecutorBacklogEmergencyInFlight = chunkIo.executorBacklogEmergencyInFlight();
+            event.chunkIoExecutorBacklogEmergency = chunkIo.executorBacklogEmergency();
+            event.chunkIoExecutorBacklogEmergencyRetries = chunkIo.executorBacklogEmergencyRetries();
+            event.chunkIoExecutorBacklogEmergencyRejected = chunkIo.executorBacklogEmergencyRejected();
+            event.chunkIoExecutorBacklogPressure = chunkIo.executorBacklogPressure();
+            event.chunkIoExecutorInFlight = chunkIo.executorInFlight();
+            event.chunkIoExecutorDeferred = chunkIo.executorDeferredRetries();
+            event.chunkIoExecutorCapacity = chunkIo.executorCapacity();
+            event.chunkIoExecutorRejected = chunkIo.executorRejected();
+            event.chunkIoExecutorDowngraded = chunkIo.executorDowngraded();
+            event.chunkIoExecutorPressure = chunkIo.executorPressure();
+            event.chunkIoExecutorOverflowInFlight = chunkIo.executorOverflowInFlight();
+            event.chunkIoExecutorOverflowCapacity = chunkIo.executorOverflowCapacity();
+            event.chunkIoExecutorOverflowAdmitted = chunkIo.executorOverflowAdmitted();
+            event.chunkIoExecutorOverflowBackpressure = chunkIo.executorOverflowBackpressure();
+            event.chunkIoExecutorOverflowPressure = chunkIo.executorOverflowPressure();
+            event.chunkIoExecutorBackpressureWaiters = chunkIo.executorBackpressuredRetries();
+            event.chunkIoExecutorBackpressureCapacity = chunkIo.executorBackpressureCapacity();
+            event.chunkIoExecutorBackpressurePressure = chunkIo.executorBackpressurePressure();
             event.pluginQueued = this.state.mailbox().queued(RegionTaskClass.PLUGIN);
             event.trackerBroadcastQueued = this.state.mailbox().queued(RegionTaskClass.TRACKER_BROADCAST);
             event.explosionPhysicsQueued = this.state.mailbox().queued(RegionTaskClass.EXPLOSION_PHYSICS);

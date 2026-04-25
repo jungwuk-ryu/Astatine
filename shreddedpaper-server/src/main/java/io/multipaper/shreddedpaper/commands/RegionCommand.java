@@ -99,7 +99,7 @@ public final class RegionCommand extends Command {
     }
 
     private String format(final RegionTickScheduler.RegionTickSnapshot snapshot) {
-        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% chunkIO=%d/%d deferred=%d %.0f%% rejected=%d chunkRejected=%d chunkDowngraded=%d".formatted(
+        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% chunkIO=%d/%d deferred=%d %.0f%% exec=%d/%d waiting=%d backlogQueued=%d backlogEmergencyInFlight=%d backlogEmergencyRetries=%d backlog=%d/%d backlogPressure=%.0f%% deferred=%d overflow=%d/%d overflowPressure=%.0f%% backpressure=%d/%d backpressurePressure=%.0f%% execPressure=%.0f%% rejected=%d chunkRejected=%d chunkDowngraded=%d execFallback=%d execBackpressure=%d execBacklogBackpressure=%d execBacklogDeferred=%d execBacklogEmergency=%d execBacklogEmergencyRejected=%d execDowngraded=%d".formatted(
                 snapshot.world(),
                 snapshot.regionPos(),
                 snapshot.loadClass(),
@@ -111,9 +111,33 @@ public final class RegionCommand extends Command {
                 snapshot.chunkIoCapacity(),
                 snapshot.chunkIoDeferred(),
                 snapshot.chunkIoPressure() * 100.0D,
+                snapshot.chunkIoExecutorInFlight(),
+                snapshot.chunkIoExecutorCapacity(),
+                snapshot.chunkIoExecutorWaiting(),
+                snapshot.chunkIoExecutorBacklogQueued(),
+                snapshot.chunkIoExecutorBacklogEmergencyInFlight(),
+                snapshot.chunkIoExecutorBacklogEmergencyRetries(),
+                snapshot.chunkIoExecutorWaiting() + snapshot.chunkIoExecutorBacklogQueued(),
+                snapshot.chunkIoExecutorBacklogCapacity(),
+                snapshot.chunkIoExecutorBacklogPressure() * 100.0D,
+                snapshot.chunkIoExecutorDeferred(),
+                snapshot.chunkIoExecutorOverflowInFlight(),
+                snapshot.chunkIoExecutorOverflowCapacity(),
+                snapshot.chunkIoExecutorOverflowPressure() * 100.0D,
+                snapshot.chunkIoExecutorBackpressureWaiters(),
+                snapshot.chunkIoExecutorBackpressureCapacity(),
+                snapshot.chunkIoExecutorBackpressurePressure() * 100.0D,
+                snapshot.chunkIoExecutorPressure() * 100.0D,
                 snapshot.rejectedTasks(),
                 snapshot.chunkIoRejected(),
-                snapshot.chunkIoDowngraded()
+                snapshot.chunkIoDowngraded(),
+                snapshot.chunkIoExecutorRejected(),
+                snapshot.chunkIoExecutorOverflowBackpressure(),
+                snapshot.chunkIoExecutorBacklogBackpressure(),
+                snapshot.chunkIoExecutorBacklogDeferred(),
+                snapshot.chunkIoExecutorBacklogEmergency(),
+                snapshot.chunkIoExecutorBacklogEmergencyRejected(),
+                snapshot.chunkIoExecutorDowngraded()
         );
     }
 }

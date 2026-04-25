@@ -668,13 +668,170 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   lines because paperweight patch syntax requires them; use `git diff --check`
   excluding Minecraft `.patch` hunk context when checking ordinary source
   whitespace.
-- [ ] F2b required next validation target: add region-owner QoS around internal
-  worldgen worker enqueue, chunk load/decode worker enqueue, region-file IO
-  queue ingress, and generation-task async `join()` tails. Current admission
-  protects external ticketed async requests but intentionally does not yet
-  throttle player loader no-ticket requests or every internal neighbor fanout.
-- [ ] Commit chunk IO/generation QoS as one coherent patch after review and
-  runtime evidence.
+- [x] Commit chunk IO/generation QoS as one coherent patch after review and
+  runtime evidence: commit `b956994 Add region chunk IO load QoS`.
+
+#### F2b. Internal Chunk Executor Ingress QoS
+
+- [x] Collect sub-agent design feedback for internal executor ingress. Laplace
+  accepted the main starvation surface (`parallelGenExecutor` and off-main
+  load/decode) and warned against hiding region `internalTasks` behind another
+  queue or dropping internal engine work.
+- [x] Narrow first F2b patch scope to safety-first worker ingress:
+  `ChunkUpgradeGenericStatusTask` parallel generation and `ChunkLoadTask`
+  off-main chunk/entity/POI decode. Region-file IO, compression, save
+  serialization, radius-aware generation, and async generation `join()` tail
+  measurement remain explicit follow-up items in this same milestone.
+- [x] Add internal executor deferred retry accounting. Initial mailbox-based
+  retry was rejected after performance review because it tick-gated worker
+  replenishment; the patch now uses a non-dropping, permit-release-triggered
+  per-region wait queue with a warning reserve.
+- [x] Add config knobs for internal executor deferred retry reserve,
+  normal/degraded in-flight caps, and degraded priority downgrade.
+- [x] Extend per-region chunk IO tracker with internal executor in-flight,
+  deferred retry, rejected/fallback, downgraded, completed, and pressure
+  counters.
+- [x] Add a permit-aware `PrioritisedTask` wrapper that creates the real
+  executor task immediately, gates only `queue()`/`execute()` admission,
+  preserves cancel/priority/sub-order/stream delegation, and releases permits
+  on completion or successful pre-run cancellation.
+- [x] Make deferred internal engine work non-lossy: retry immediately when an
+  executor permit is released instead of waiting for the next region tick; keep
+  deferred retry counts in region pending-work accounting.
+- [x] Count deferred internal executor work as region pending work so
+  split/merge/detach/empty checks cannot strand it.
+- [x] Expose internal executor pressure in `RegionTick` JFR events and
+  `/region top|dump|inspect` as separate `exec=` fields while keeping combined
+  chunk IO pressure in degraded-lane scoring.
+- [x] Patch parallel-capable worldgen tasks to use the internal executor QoS
+  wrapper; leave radius-aware generation unchanged until its area ordering and
+  cancellation semantics are reviewed separately.
+- [x] Patch off-main chunk/entity/POI load-decode tasks to use the internal
+  executor QoS wrapper without changing on-main region task rescue behavior.
+- [x] Regenerate Minecraft source patches and inspect that only the intended
+  `ChunkLoadTask` and `ChunkUpgradeGenericStatusTask` source patches are added
+  or updated.
+- [x] Static verification: run `applyAllPatches`, `compileJava --stacktrace`,
+  load-test plugin build, and paperclip jar build.
+- [x] Self-review `PrioritisedTask` semantics: double queue, cancel before
+  queue, cancel while deferred, cancel after permit, priority changes during
+  deferral, and permit underflow.
+- [x] Sub-agent correctness review: request focused review on cancellation,
+  non-lossy fallback, split/merge ownership, and lifecycle accounting.
+- [x] Sub-agent performance review: request focused review on normal-region
+  throughput, degraded caps, JFR sampling, and queue-pressure behavior.
+- [x] Patch performance review high finding: executor in-flight pressure alone
+  no longer demotes a healthy region; only request-side pressure, deferred work,
+  or normal tick/mailbox overload moves the owner to `DEGRADED`.
+- [x] Patch performance review high finding: deferred executor work is no
+  longer region-tick-gated; permit release and enqueue both drain a per-region
+  waiter queue immediately.
+- [x] Patch correctness review blocker: deferred waiter enqueue now self-drains
+  to close the lost-wakeup window where the last permit could be released
+  before the waiter was visible.
+- [x] Patch correctness review blocker: stale cancelled waiters are skipped
+  until capacity fills or the queue is empty, so cancelled callbacks cannot
+  consume a full wakeup batch and strand live work.
+- [x] Patch correctness review medium: `PermitTask.cancel()` now returns success
+  for wrapper-cancelled `NEW`/`WAITING` tasks and preserves `COMPLETED` state.
+- [x] Sub-agent re-review after fixes: correctness and performance reviewers
+  reported no blocker/high/medium findings.
+- [x] Add lifetime visible waiting registration for wrapped executor tasks:
+  a queued `PrioritisedTask` now counts as per-region pending work before it
+  reaches the real Moonrise worker executor, closing the hidden WAITING handoff
+  hole found in review.
+- [x] Reject producer parking after runtime/thread-dump review: the first
+  non-dropping design could keep Moonrise region-file callbacks waiting for
+  executor permits. Replace it with non-blocking admission, deferred retry, and
+  overflow/backpressure accounting.
+- [x] Add tracker-owned bounded backlog admission queue. When the visible
+  waiting cap is full, the task enters `executorBacklogWaiters` and remains in
+  region pending-work accounting via `executorBacklogQueuedTasks`.
+- [x] Add async-load backpressure coupling: new async chunk-load admissions are
+  deferred with `async-load-deferred-executor-backlog` while internal executor
+  waiting plus backlog queue is saturated, preventing unbounded upstream ticket
+  growth.
+- [x] Add last-resort emergency executor for non-dropping engine work after the
+  per-region backlog queue and overflow/backpressure reserves are full. This is
+  bounded globally and reported as `executor-*-backlog-emergency` plus
+  `backlogEmergencyInFlight` in JFR and `/region top`.
+- [x] Patch sub-agent blocker from Curie/Anscombe: emergency executor rejection
+  no longer recursively calls `deferBacklogAdmission(...)` on the producer
+  thread. It registers a coalesced detached emergency retry token instead.
+- [x] Patch sub-agent blocker from Curie: emergency retry visibility is now a
+  lifetime bridge. `executorBacklogEmergencyInFlight` remains visible until the
+  retry token is registered, and the retry token remains visible until waiting,
+  backlog, or emergency visibility is reacquired.
+- [x] Patch sub-agent high from Anscombe: static emergency executor and retry
+  executor are drained/shut down before `RegionTickScheduler` clears region
+  queues and runtime state.
+- [x] Patch sub-agent high from Anscombe: emergency in-flight and emergency
+  retry waiters force `DEGRADED` classification so the last-resort path remains
+  isolated from normal-lane reservation.
+- [x] Rate-limit executor backlog/backpressure saturation logs to the first and
+  every 256th event so forced hostile load does not become log IO load.
+- [x] Extend observability with `executorBacklogQueued`,
+  `executorBacklogEmergencyInFlight`, `executorBacklogEmergencyRetries`,
+  `executorBacklogEmergencyRejected`, backlog pressure, deferred/backpressure
+  counters, and emergency counters in `RegionTickEvent` and `/region`.
+- [x] Runtime forced low-cap proof in `D:\worldgen`: with executor normal cap
+  `1`, degraded cap `1`, overflow `4`, effective backlog cap `64`, and load
+  caps `512`, ran
+  `rlt at world 0 100 0 scenario gen 2 700000 10 false 80 1`. Both remote
+  441-chunk generation batches completed; TPS stayed at `20.0, 20.0, 20.0,
+  20.0` early and `16.8, 19.7, 19.9, 20.0` during the burst.
+- [x] Forced low-cap `/region top` evidence after the run:
+  `execBacklogEmergency=47` in region `87501,-1` and
+  `execBacklogEmergency=26` in region `175001,0`; both showed backlog
+  backpressure/deferred/overflow activity and `execBacklogEmergencyRejected=0`.
+- [x] Forced low-cap JFR proof:
+  `D:\worldgen\logs\codex-f2b-emergency-latest-20260426-032347.jfr`.
+  Sampled `ChunkRequest` actions included
+  `executor-load-decode-backlog-emergency=27`,
+  `executor-load-decode-backlog-deferred=39`,
+  `executor-load-decode-backlog-backpressure=40`,
+  `executor-load-decode-overflow-fallback=68`,
+  `executor-load-decode-overflow-backpressure=68`,
+  `executor-generation-deferred=25`, and
+  `async-load-deferred-executor-backlog=18`.
+- [x] Forced low-cap thread-dump proof:
+  `D:\worldgen\logs\codex-f2b-emergency-latest-thread-dump.txt` had no
+  `RegionChunkExecutorLimiter` or `RegionChunkIoTracker` producer-thread wait
+  frames after completion.
+- [x] Record invalid stress input artifact: the attempted
+  `rlt ... scenario gen 2 1500000 10 ...` generated center chunk `3000000,0`
+  and crashed with vanilla/Paper's "Trying to create chunk out of reasonable
+  bounds" guard. This was a test-coordinate error, not an F2b engine blocker.
+- [x] Restore `D:\worldgen\shreddedpaper.yml` internal executor caps to release
+  defaults after forced proof: executor normal `8`, degraded `2`, overflow `64`,
+  backlog `8192`, deferred reserve `1024`, backpressure reserve `4096`, load
+  normal `256`, load degraded `32`.
+- [x] Runtime release smoke in `D:\worldgen`: with release caps, restarted the
+  real plugin set and ran
+  `rlt at world 0 100 0 scenario gen 1 600000 6 false 60 1`. The 169-chunk
+  generation batch completed immediately enough that `activeChunkBatches=0` on
+  the first poll; TPS reported `17.6, 19.7, 19.7, 19.7`.
+- [x] Release-smoke JFR proof:
+  `D:\worldgen\logs\codex-f2b-release-latest-20260426-032730.jfr` sampled only
+  `executor-load-decode-deferred=4` and `executor-load-decode-downgraded=1`;
+  no emergency path was taken under release caps.
+- [x] Sub-agent final re-review after blocker/high fixes: Curie reported no
+  blocker/high findings; Anscombe reported no blocker/high findings and noted
+  runtime verification as the remaining non-static evidence, now satisfied by
+  the forced and release `D:\worldgen` runs above.
+- [x] Static verification after final fixes: `applyAllPatches`,
+  `:shreddedpaper-server:compileJava --rerun-tasks --stacktrace`,
+  `:shreddedpaper-server:createMojmapPaperclipJar --stacktrace`, and
+  `./gradlew.bat -p tools/region-load-test-plugin build --stacktrace` all
+  passed on 2026-04-26.
+- [x] Commit F2b worker-ingress QoS as a separate coherent patch after final
+  `git diff --check`.
+- [ ] F2b follow-up: gate or account for region-file IO queue ingress after
+  reviewing `MoonriseRegionFileIO` coalescing/cancellation semantics.
+- [ ] F2b follow-up: gate compression and save serialization workers only after
+  proving shutdown/save-all durability paths cannot be throttled into data loss.
+- [ ] F2b follow-up: instrument generation `join()` tail time before changing
+  behavior around async generation futures.
 
 ### G. Compile And Static Verification Loop
 

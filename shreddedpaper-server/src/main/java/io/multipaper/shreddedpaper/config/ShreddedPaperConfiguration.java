@@ -60,6 +60,20 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public long chunkIoLoadDeferredRetryDelayTicks = 2L;
         @Comment("Lower admitted async chunk load/generation requests to LOW priority while the target region is degraded.")
         public boolean chunkIoLoadDowngradeDegradedPriority = true;
+        @Comment("Warning reserve for deferred internal chunk worker retries per region. Engine work remains non-dropping.")
+        public int chunkIoExecutorDeferredRetryReserve = 1024;
+        @Comment("Maximum in-flight internal chunk worker tasks per normal region owner before worker enqueue is deferred.")
+        public int chunkIoExecutorMaxInflightNormalPerRegion = 8;
+        @Comment("Maximum in-flight internal chunk worker tasks per degraded region owner before worker enqueue is deferred.")
+        public int chunkIoExecutorMaxInflightDegradedPerRegion = 2;
+        @Comment("Maximum permitless internal chunk worker overflow tasks per region after the deferred retry reserve is full.")
+        public int chunkIoExecutorMaxOverflowPerRegion = 64;
+        @Comment("Hard cap for accepted but not-yet-started internal chunk worker tasks per region. Producers above this cap wait instead of growing memory without bound.")
+        public int chunkIoExecutorMaxBacklogPerRegion = 8192;
+        @Comment("Warning reserve for internal chunk worker tasks waiting in the non-blocking backpressure retry coordinator per region. Engine work remains non-dropping.")
+        public int chunkIoExecutorBackpressureRetryReserve = 4096;
+        @Comment("Lower admitted internal chunk worker tasks to LOW priority while the target region is degraded.")
+        public boolean chunkIoExecutorDowngradeDegradedPriority = true;
         @Comment("Maximum queued background chunk save tasks per region before autosave/save-all backpressure begins.")
         public int chunkIoSaveRegionMailboxCapacity = 512;
         @Comment("Maximum background autosave tasks admitted for one region owner per autosave producer pass.")
