@@ -26,6 +26,8 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
+import java.util.function.ToLongFunction;
 
 public class ShreddedPaperChunkTicker {
 
@@ -150,12 +152,16 @@ public class ShreddedPaperChunkTicker {
             level.moonrise$getChunkTaskScheduler().chunkHolderManager.processUnloads(region);
 
             if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                region.forEachTickingEntity(entity -> {
+                region.setEntityTaskCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTaskCursor(), entity -> entity.getId(), entity -> {
+                    if (budget != null && !budget.canContinue(RegionWorkType.ENTITY_TICK)) {
+                        return false;
+                    }
                     CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
                     if (bukkitEntity != null && !entity.isRemoved()) { // Entity could have been removed by another entity's task
                         bukkitEntity.taskScheduler.executeTick();
                     }
-                });
+                    return true;
+                }));
             }
 
             region.tickTasks();
@@ -163,13 +169,16 @@ public class ShreddedPaperChunkTicker {
             if (level.tickRateManager().runsNormally()) {
                 level.handlingTickThreadLocal.set(true);
 
-                for (final RegionPos cell : region.getOwner().cellPositionsSnapshot()) {
-                    level.blockTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
-                    level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
-                }
+                processScheduledTicks(level, region, budget);
 
                 if (budget == null || budget.canContinue(RegionWorkType.CHUNK_TICK)) {
-                    region.forEach(chunk -> this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState));
+                    region.setChunkTickCursor(processRoundRobin(region.getChunksSnapshot(), region.getChunkTickCursor(), chunk -> chunk.getPos().toLong(), chunk -> {
+                        if (budget != null && !budget.canContinue(RegionWorkType.CHUNK_TICK)) {
+                            return false;
+                        }
+                        this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState);
+                        return true;
+                    }));
                 }
 
                 level.runBlockEvents(region);
@@ -178,12 +187,24 @@ public class ShreddedPaperChunkTicker {
             }
 
             if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                region.forEachTickingEntity(ShreddedPaperEntityTicker::tickEntity);
+                region.setEntityTickCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTickCursor(), entity -> entity.getId(), entity -> {
+                    if (budget != null && !budget.canContinue(RegionWorkType.ENTITY_TICK)) {
+                        return false;
+                    }
+                    ShreddedPaperEntityTicker.tickEntity(entity);
+                    return true;
+                }));
             }
 
             if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) {
                 if (budget == null || budget.canContinue(RegionWorkType.TRACKER)) {
-                    region.forEachTrackedEntity(ShreddedPaperEntityTicker::processTrackQueue);
+                    region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
+                        if (budget != null && !budget.canContinue(RegionWorkType.TRACKER)) {
+                            return false;
+                        }
+                        ShreddedPaperEntityTicker.processTrackQueue(entity);
+                        return true;
+                    }));
                 }
             }
 
@@ -192,7 +213,13 @@ public class ShreddedPaperChunkTicker {
             }
 
             if (budget == null || budget.canContinue(RegionWorkType.PLAYER)) {
-                region.getPlayers().forEach(ShreddedPaperPlayerTicker::tickPlayer);
+                region.setPlayerTickCursor(processRoundRobin(region.getPlayers(), region.getPlayerTickCursor(), player -> player.getId(), player -> {
+                    if (budget != null && !budget.canContinue(RegionWorkType.PLAYER)) {
+                        return false;
+                    }
+                    ShreddedPaperPlayerTicker.tickPlayer(player);
+                    return true;
+                }));
             }
 
             while (budget == null || budget.canContinue(RegionWorkType.INTERNAL_TASK)) {
@@ -243,6 +270,79 @@ public class ShreddedPaperChunkTicker {
         }
 
         world.chunkSource.tickSpawningChunk(levelChunk, timeInhabited, filteredSpawningCategories, spawnState);
+    }
+
+    private static void processScheduledTicks(final ServerLevel level, final LevelChunkRegion region, final RegionTickBudget budget) {
+        final List<RegionPos> ownerCells = region.getOwner().cellPositionsSnapshot();
+        final int size = ownerCells.size();
+        if (size == 0) {
+            region.clearScheduledTickCellCursor();
+            return;
+        }
+
+        final long scheduledTickCursor = region.getScheduledTickCellCursor();
+        int index = findContinuationIndex(ownerCells, scheduledTickCursor, RegionPos::toLong);
+        boolean fluidPhase = scheduledTickCursor != LevelChunkRegion.NO_CONTINUATION_CURSOR
+                && ownerCells.get(index).toLong() == scheduledTickCursor
+                && region.isScheduledTickFluidPhase();
+
+        for (int processed = 0; processed < size; processed++) {
+            final RegionPos cell = ownerCells.get(index);
+            if (!fluidPhase) {
+                if (budget != null && !budget.canContinue(RegionWorkType.BLOCK_TICK)) {
+                    region.setScheduledTickCellCursor(cell.toLong(), false);
+                    return;
+                }
+                level.blockTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
+            }
+
+            if (budget != null && !budget.canContinue(RegionWorkType.FLUID_TICK)) {
+                region.setScheduledTickCellCursor(cell.toLong(), true);
+                return;
+            }
+            level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
+            fluidPhase = false;
+
+            index++;
+            if (index == size) {
+                index = 0;
+            }
+        }
+
+        region.clearScheduledTickCellCursor();
+    }
+
+    private static <T> long processRoundRobin(final List<T> entries, final long cursor, final ToLongFunction<T> keyFunction, final Predicate<T> action) {
+        final int size = entries.size();
+        if (size == 0) {
+            return LevelChunkRegion.NO_CONTINUATION_CURSOR;
+        }
+
+        int index = findContinuationIndex(entries, cursor, keyFunction);
+        for (int processed = 0; processed < size; processed++) {
+            final T entry = entries.get(index);
+            if (!action.test(entry)) {
+                return keyFunction.applyAsLong(entry);
+            }
+            index++;
+            if (index == size) {
+                index = 0;
+            }
+        }
+        return LevelChunkRegion.NO_CONTINUATION_CURSOR;
+    }
+
+    private static <T> int findContinuationIndex(final List<T> entries, final long cursor, final ToLongFunction<T> keyFunction) {
+        if (cursor == LevelChunkRegion.NO_CONTINUATION_CURSOR) {
+            return 0;
+        }
+
+        for (int index = 0, size = entries.size(); index < size; index++) {
+            if (keyFunction.applyAsLong(entries.get(index)) == cursor) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     public static boolean willTrySpawnMobsThisTick(final ServerLevel level) {

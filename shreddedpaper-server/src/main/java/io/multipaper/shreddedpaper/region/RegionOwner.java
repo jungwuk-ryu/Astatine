@@ -118,6 +118,7 @@ public final class RegionOwner {
             for (final long cellKey : this.cells) {
                 positions.add(new RegionPos(cellKey));
             }
+            positions.sort((first, second) -> Long.compare(first.longKey, second.longKey));
             cached = List.copyOf(positions);
             this.cellPositionsSnapshot = cached;
             return cached;

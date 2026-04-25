@@ -690,7 +690,34 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   checks for chunk ticks, entity task ticks, entity ticks, tracker work, and
   player ticks; sub-agent review rejected cursorless partial iteration because
   it can starve tail entries.
-- [ ] Add owner-cell continuation cursor before allowing partial block/fluid
+- [x] Implement first-pass continuation cursor fields for entity task ticks,
+  entity ticks, chunk ticks, tracker work, player ticks, and scheduled-tick
+  owner cells.
+- [x] Add snapshot-based round-robin phase walker that resumes from the exact
+  rejected index when a budget check trips.
+- [x] Preserve full-pass behavior so phases that complete within budget restart
+  from the first item on the next tick.
+- [x] Reject raw index cursor after sub-agent review: hash/list churn can make
+  an index point at a different logical entity/player/chunk/cell on the next
+  tick.
+- [x] Replace raw index cursors with stable continuation-key cursors for
+  chunks, ticking entities, tracked entities, players, and owner cells.
+- [x] Sort owner-cell snapshots and switch player/tracker sets to insertion
+  ordered sets so continuation order is deterministic under normal churn.
+- [x] Add scheduled tick phase continuation so a budget trip between block and
+  fluid work resumes the fluid phase for the same owner cell.
+- [ ] Review continuation cursor snapshot allocation cost and replace with
+  lower-allocation indexed iteration if profiling or sub-agent review shows it
+  is too expensive.
+- [x] Review block/fluid scheduled-tick accounting and split block/fluid phase
+  continuation for one owner cell.
+- [x] Re-run `compileJava` after first continuation cursor patch.
+- [x] Receive sub-agent correctness/performance review for continuation cursor
+  patch.
+- [x] Patch every continuation cursor blocker before commit.
+- [x] Run `git diff --check` for continuation cursor patch.
+- [x] Commit continuation cursor patch.
+- [x] Add owner-cell continuation cursor before allowing partial block/fluid
   scheduled tick dispatch; sub-agent review rejected cursorless cell-loop
   breaks because merged owners can starve later cells.
 - [x] Add first-pass block-event cooperative budget checks and `BLOCK_EVENT`

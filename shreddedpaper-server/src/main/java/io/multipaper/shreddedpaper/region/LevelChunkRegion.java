@@ -39,6 +39,7 @@ import java.util.function.Predicate;
 public class LevelChunkRegion {
 
     private static final long NO_PREVIOUS_TICK = Long.MIN_VALUE;
+    public static final long NO_CONTINUATION_CURSOR = Long.MIN_VALUE;
     private static final long TICK_STATS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
     private final ServerLevel level;
@@ -47,10 +48,10 @@ public class LevelChunkRegion {
     private final List<LevelChunk> levelChunks = new ArrayList<>(RegionPos.REGION_SIZE * RegionPos.REGION_SIZE);
     private final LongOpenHashSet playerTickingChunkRequests = new LongOpenHashSet(); // ChunkPos.longKey
     private final IteratorSafeOrderedReferenceSet<Entity> tickingEntities = new IteratorSafeOrderedReferenceSet<>(); // Use IteratorSafeOrderedReferenceSet to maintain entity tick order
-    private final Set<Entity> trackedEntities = new ObjectOpenHashSet<>();
+    private final Set<Entity> trackedEntities = new ObjectLinkedOpenHashSet<>();
     private final RegionRuntimeState runtimeState;
     private final PrioritisedTaskQueue internalTasks = new PrioritisedTaskQueue(); // Read-only tasks
-    private final ObjectOpenHashSet<ServerPlayer> players = new ObjectOpenHashSet<>();
+    private final ObjectLinkedOpenHashSet<ServerPlayer> players = new ObjectLinkedOpenHashSet<>();
     public final LongLinkedOpenHashSet unloadQueue = new LongLinkedOpenHashSet();
     public final List<TickingBlockEntity> tickingBlockEntities = new ReferenceArrayList<>();
     public final List<TickingBlockEntity> pendingBlockEntityTickers = new ReferenceArrayList<>();
@@ -59,6 +60,13 @@ public class LevelChunkRegion {
     private final ArrayDeque<TickSample> tickSamples = new ArrayDeque<>();
     private long lastTickStatsStartNanos = NO_PREVIOUS_TICK;
     private volatile long lastAccessTick;
+    private long scheduledTickCellCursor = NO_CONTINUATION_CURSOR;
+    private boolean scheduledTickFluidPhase;
+    private long chunkTickCursor = NO_CONTINUATION_CURSOR;
+    private long entityTaskCursor = NO_CONTINUATION_CURSOR;
+    private long entityTickCursor = NO_CONTINUATION_CURSOR;
+    private long trackerCursor = NO_CONTINUATION_CURSOR;
+    private long playerTickCursor = NO_CONTINUATION_CURSOR;
     public ArrayDeque<RedstoneTorchBlock.Toggle> redstoneUpdateInfos;
 
     public LevelChunkRegion(ServerLevel level, RegionOwner owner) {
@@ -135,6 +143,19 @@ public class LevelChunkRegion {
         } finally {
             iterator.finishedIterating();
         }
+    }
+
+    public List<Entity> getTickingEntitiesSnapshot() {
+        final List<Entity> entities = new ArrayList<>(this.tickingEntities.size());
+        final IteratorSafeOrderedReferenceSet.Iterator<Entity> iterator = this.tickingEntities.iterator();
+        try {
+            while (iterator.hasNext()) {
+                entities.add(iterator.next());
+            }
+        } finally {
+            iterator.finishedIterating();
+        }
+        return entities;
     }
 
     public boolean forEachTickingEntityUntil(Predicate<Entity> action) {
@@ -218,6 +239,10 @@ public class LevelChunkRegion {
 
     public synchronized List<ServerPlayer> getPlayers() {
         return this.players.isEmpty() ? List.of() : new ObjectArrayList<>(this.players);
+    }
+
+    public synchronized List<Entity> getTrackedEntitiesSnapshot() {
+        return this.trackedEntities.isEmpty() ? List.of() : new ObjectArrayList<>(this.trackedEntities);
     }
 
     public synchronized void addNavigationMob(Mob mob) {
@@ -371,6 +396,68 @@ public class LevelChunkRegion {
             }
         }
         return true;
+    }
+
+    public synchronized List<LevelChunk> getChunksSnapshot() {
+        return this.levelChunks.isEmpty() ? List.of() : new ArrayList<>(this.levelChunks);
+    }
+
+    public synchronized long getScheduledTickCellCursor() {
+        return this.scheduledTickCellCursor;
+    }
+
+    public synchronized boolean isScheduledTickFluidPhase() {
+        return this.scheduledTickFluidPhase;
+    }
+
+    public synchronized void setScheduledTickCellCursor(final long cursor, final boolean fluidPhase) {
+        this.scheduledTickCellCursor = cursor;
+        this.scheduledTickFluidPhase = fluidPhase;
+    }
+
+    public synchronized void clearScheduledTickCellCursor() {
+        this.scheduledTickCellCursor = NO_CONTINUATION_CURSOR;
+        this.scheduledTickFluidPhase = false;
+    }
+
+    public synchronized long getChunkTickCursor() {
+        return this.chunkTickCursor;
+    }
+
+    public synchronized void setChunkTickCursor(final long cursor) {
+        this.chunkTickCursor = cursor;
+    }
+
+    public synchronized long getEntityTaskCursor() {
+        return this.entityTaskCursor;
+    }
+
+    public synchronized void setEntityTaskCursor(final long cursor) {
+        this.entityTaskCursor = cursor;
+    }
+
+    public synchronized long getEntityTickCursor() {
+        return this.entityTickCursor;
+    }
+
+    public synchronized void setEntityTickCursor(final long cursor) {
+        this.entityTickCursor = cursor;
+    }
+
+    public synchronized long getTrackerCursor() {
+        return this.trackerCursor;
+    }
+
+    public synchronized void setTrackerCursor(final long cursor) {
+        this.trackerCursor = cursor;
+    }
+
+    public synchronized long getPlayerTickCursor() {
+        return this.playerTickCursor;
+    }
+
+    public synchronized void setPlayerTickCursor(final long cursor) {
+        this.playerTickCursor = cursor;
     }
 
     public void tickTasks() {
