@@ -14,9 +14,12 @@ import org.bukkit.entity.TNTPrimed;
 import org.bukkit.entity.Zombie;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -253,6 +256,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
     ) {
         int scheduled = 0;
         int skipped = 0;
+        final Map<Long, List<Location>> locationsByChunk = new HashMap<>();
         final double x0 = anchor.getX() - ((width - 1) * spacing) / 2.0D;
         final double z0 = anchor.getZ() - ((depth - 1) * spacing) / 2.0D;
         for (int x = 0; x < width; x++) {
@@ -267,21 +271,41 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
 
                 final Location spawnLocation = new Location(world, targetX, anchor.getY(), targetZ);
-                final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnLocation, scheduledTask -> {
-                    try {
-                        if (this.plugin.shouldAbortBatch(commandBatch)) {
-                            return;
-                        }
-                        this.spawnTnt(world, spawnLocation, fuseTicks);
-                    } finally {
-                        this.plugin.untrackTask(scheduledTask);
-                    }
-                });
-                this.plugin.trackTask(task);
+                locationsByChunk.computeIfAbsent(chunkKey(chunkX, chunkZ), ignored -> new ArrayList<>()).add(spawnLocation);
                 scheduled++;
             }
         }
+        for (final Map.Entry<Long, List<Location>> entry : locationsByChunk.entrySet()) {
+            final int chunkX = unpackChunkX(entry.getKey());
+            final int chunkZ = unpackChunkZ(entry.getKey());
+            final List<Location> chunkLocations = List.copyOf(entry.getValue());
+            final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, world, chunkX, chunkZ, scheduledTask -> {
+                try {
+                    if (this.plugin.shouldAbortBatch(commandBatch)) {
+                        return;
+                    }
+                    for (final Location spawnLocation : chunkLocations) {
+                        this.spawnTnt(world, spawnLocation, fuseTicks);
+                    }
+                } finally {
+                    this.plugin.untrackTask(scheduledTask);
+                }
+            });
+            this.plugin.trackTask(task);
+        }
         return new SpawnSummary(scheduled, skipped);
+    }
+
+    private static long chunkKey(final int chunkX, final int chunkZ) {
+        return ((long)chunkX << 32) ^ (chunkZ & 0xFFFF_FFFFL);
+    }
+
+    private static int unpackChunkX(final long key) {
+        return (int)(key >> 32);
+    }
+
+    private static int unpackChunkZ(final long key) {
+        return (int)key;
     }
 
     private void spawnTnt(final World world, final Location spawnLocation, final int fuseTicks) {
@@ -615,6 +639,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         final AtomicLong lastRunNanos = new AtomicLong(System.nanoTime());
         final AtomicLong maxLagNanos = new AtomicLong(Long.MIN_VALUE);
         final AtomicLong totalLagNanos = new AtomicLong();
+        final long[] lagSamples = new long[Math.max(1, samples - 1)];
 
         final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, probeLocation, task -> {
             if (this.plugin.shouldAbortBatch(commandBatch)) {
@@ -629,6 +654,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 final long lag = elapsed - expectedPeriodNanos;
                 totalLagNanos.addAndGet(lag);
                 maxLagNanos.accumulateAndGet(lag, Math::max);
+                lagSamples[Math.min(current - 1, lagSamples.length - 1)] = lag;
             } else {
                 lastRunNanos.set(now);
             }
@@ -637,16 +663,21 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 task.cancel();
                 this.plugin.untrackTask(task);
                 final int measuredSamples = Math.max(1, samples - 1);
+                final long[] measuredLags = Arrays.copyOf(lagSamples, measuredSamples);
+                Arrays.sort(measuredLags);
+                final int p95Index = Math.min(measuredSamples - 1, Math.max(0, (int)Math.ceil(measuredSamples * 0.95D) - 1));
                 final double avgLagMs = totalLagNanos.get() / (double) measuredSamples / 1_000_000.0D;
                 final double maxLagMs = maxLagNanos.get() == Long.MIN_VALUE ? 0.0D : maxLagNanos.get() / 1_000_000.0D;
+                final double p95LagMs = measuredLags[p95Index] / 1_000_000.0D;
                 this.replyLater(sender, String.format(
                     Locale.ROOT,
-                    "Probe finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f maxLagMs=%.3f",
+                    "Probe finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f p95LagMs=%.3f maxLagMs=%.3f",
                     probeLocation.getBlockX() >> 4,
                     probeLocation.getBlockZ() >> 4,
                     samples,
                     periodTicks,
                     avgLagMs,
+                    p95LagMs,
                     maxLagMs
                 ));
             }
@@ -683,6 +714,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
     }
 
     private void replyLater(final CommandSender sender, final String message) {
+        this.plugin.getLogger().info(message);
         if (sender instanceof Player player) {
             player.getScheduler().run(this.plugin, task -> player.sendMessage(message), () -> {});
             return;

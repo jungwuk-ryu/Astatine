@@ -106,8 +106,9 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
     }
 
     public long startBatch() {
+        // Cleanup is the only batch boundary; load and probe commands often run together.
         this.cleanupRequested.set(false);
-        return this.batchGeneration.incrementAndGet();
+        return this.batchGeneration.get();
     }
 
     public long currentBatch() {

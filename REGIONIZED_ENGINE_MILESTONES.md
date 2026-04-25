@@ -569,23 +569,86 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   `chunkgen`, `tntsingle`, `/region top`, and `/tps` all responded; the
   independent scheduler started with normal/degraded workers and reported
   active normal regions.
+- [x] Record load-test harness issue from first single-region TNT run: running
+  `probe` before a later load command cancelled the probe because every
+  subcommand started a new batch.
+- [x] Patch load-test batch semantics so `cleanup` is the only batch boundary:
+  `probe` and hostile-load commands can now run in either order without
+  cancelling each other, while explicit cleanup still aborts tracked work.
+- [x] Patch async probe completion visibility for RCON: `replyLater` now writes
+  completion messages to the plugin logger before scheduling player/console
+  delivery, so long-running probe results are recoverable from
+  `D:\worldgen\logs\latest.log`.
+- [x] Patch single-region TNT load generation after runtime mailbox evidence:
+  group TNT spawn locations by chunk and submit one region task per chunk
+  instead of one plugin task per TNT entity, so the plugin mailbox cap measures
+  engine behavior instead of the test harness flooding itself.
+- [x] Rebuild the load-test plugin after probe batch/logging and chunk-batched
+  TNT scheduling changes:
+  `./gradlew -p tools/region-load-test-plugin clean build` passed.
+- [x] Request sub-agent review for probe batch semantics and chunk-batched TNT
+  scheduling; Faraday and Aquinas reported no blockers.
+- [x] Patch probe latency reporting to include sorted P95 lag in addition to
+  average and max lag, because acceptance is P95 based and a single scheduling
+  spike should not fail an otherwise isolated region.
+- [x] Rebuild the load-test plugin after P95 probe reporting:
+  `./gradlew -p tools/region-load-test-plugin clean build` passed.
+- [x] Receive sub-agent review for P95 probe reporting and patch every blocker:
+  Aquinas found the first P95 index fix could underflow on the second tick and
+  that later load commands still cancelled an already-running probe; both were
+  patched and re-reviewed with no blockers. Faraday also reported no blockers.
+- [x] Deploy the P95-capable load-test plugin to
+  `D:\worldgen\plugins\region-load-test-plugin-0.1.0-SNAPSHOT.jar`.
+- [x] Restart `D:\worldgen` after the P95-capable plugin replacement.
+- [x] Rerun `/rlt at world ... probe` from RCON and confirm the final log line
+  includes `p95LagMs`.
 - [x] Capture plugin smoke JFR:
   `D:\worldgen\logs\codex-regionload-plugin-foliaflag-20260425-064052.jfr`.
 - [x] Restore `D:\worldgen\server.properties` after temporary RCON testing.
 
 ### J. Hostile-Load Acceptance Tests
 
-- [ ] Baseline idle server TPS/MSPT with current plugins.
-- [ ] Single TNT region: make the overloaded region exceed 1000ms MSPT.
-- [ ] Single TNT region: verify a far normal region P95 MSPT stays <= 50ms when
+- [x] Baseline idle server TPS/MSPT with current plugins: RCON `/tps` reported
+  20.0 before hostile-load runs.
+- [x] Single TNT region: make the overloaded region exceed 1000ms MSPT.
+- [x] Runtime evidence: `tntsingle 128 128 1 40 8` in a fresh isolated region
+  produced a degraded heavy region with `/region top` reporting approximately
+  `mspt=1093.89` while `/tps` still reported 20.0.
+- [x] Single TNT region: verify a far normal region P95 MSPT stays <= 50ms when
   CPU headroom exists.
+- [x] Runtime evidence before P95 reporting patch: during the 16384 TNT run,
+  the far normal probe logged `avgLagMs=0.050` and `maxLagMs=53.953`; this
+  shows isolation, but P95 must be rerun with the patched probe output.
+- [x] Rerun single TNT region acceptance with P95 probe output and record
+  `avgLagMs`, `p95LagMs`, `maxLagMs`, `/region top`, and `/tps`.
+- [x] Runtime evidence after P95 reporting patch: start probe first, then run
+  `tntsingle 128 128 1 40 8` at a fresh region. Heavy region
+  `world RegionPos[384, 0]` reached `DEGRADED mspt=2448.36`, `/tps` stayed
+  20.0, and the far normal probe logged `avgLagMs=0.107`,
+  `p95LagMs=1.421`, `maxLagMs=108.297`.
+- [x] Threshold investigation gate for this run: no scheduler lane or mailbox
+  threshold change needed because P95 was below 50ms; keep the max-lag spike
+  visible for later multi-heavy regression comparison.
 - [ ] Multi-heavy-region test: heavy regions >= tick worker count.
+- [ ] Multi-heavy-region setup: choose at least `tickWorkers` disjoint region
+  centers, aligned to 8x8 chunk region boundaries, and clear prior TNT/backlog
+  with `rlt cleanup` before the run.
+- [ ] Multi-heavy-region evidence: record degraded lane worker occupancy,
+  normal lane active count, per-region schedule lag, and CPU utilization.
 - [ ] Multi-heavy-region test: verify degraded worker cap protects normal
   regions.
 - [ ] Plugin flood test: verify bounded mailbox rejects/delays without OOM.
+- [ ] Plugin flood evidence: capture `RegionQueue` JFR events and rejected task
+  counters for `PLUGIN`, `PLAYER_ACTION`, `TRACKER_BROADCAST`, and
+  `EXPLOSION_PHYSICS` classes.
 - [ ] Tracker flood test: verify broadcaster/tracker work does not become a
   global barrier.
+- [ ] Tracker flood evidence: run normal-region probe concurrently and record
+  `RegionOverBudget` events for tracker/broadcast work.
 - [ ] Chunk generation DoS test: verify normal regions keep chunk priority.
+- [ ] Chunk generation DoS evidence: run attacker-region `chunkgen` and a far
+  normal region chunk request/probe concurrently; record chunk wait lag and
+  `/region top`.
 - [ ] Record logs, `/region top`, JFR, spark output, and CPU utilization for each
   test.
 - [ ] For every failed acceptance, add a root-cause note and a new patch TODO.
