@@ -672,10 +672,25 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   `tntspread 12 64 64 1 40 8 2` logged no duplicate UUID warning, kept `/tps`
   at 20.0, and the far normal probe logged `avgLagMs=0.052`,
   `p95LagMs=1.249`, `maxLagMs=99.441`.
-- [ ] Plugin flood test: verify bounded mailbox rejects/delays without OOM.
+- [x] Plugin flood test: verify bounded mailbox rejects/delays without OOM for
+  the plugin task class.
 - [ ] Plugin flood evidence: capture `RegionQueue` JFR events and rejected task
   counters for `PLUGIN`, `PLAYER_ACTION`, `TRACKER_BROADCAST`, and
   `EXPLOSION_PHYSICS` classes.
+- [x] Plugin flood `PLUGIN` evidence: `scheduler regionlocal 5000 250000`
+  queued `1024`, rejected `3976`, logged `RegionMailbox` capacity-full warnings
+  with `queued=1024/1024`, kept `/tps` at 20.0, and a far normal probe logged
+  `avgLagMs=-0.008`, `p95LagMs=1.206`, `maxLagMs=1.882`.
+- [ ] Plugin flood JFR file evidence: current server recording is
+  `dumponexit`; dump or stop the server after the next test window and archive
+  the resulting `RegionQueue` events.
+- [x] Add load-test harness mode for per-region plugin mailbox saturation:
+  `scheduler regionlocal` should queue all tasks into one target region and
+  report queued/rejected counts instead of throwing out of the command.
+- [x] Build, review, deploy, and smoke-test `scheduler regionlocal`.
+- [x] Run `scheduler regionlocal` above `pluginRegionMailboxCapacity` and
+  confirm rejected count increases while `/tps` and a far normal probe stay
+  healthy.
 - [ ] Tracker flood test: verify broadcaster/tracker work does not become a
   global barrier.
 - [ ] Tracker flood evidence: run normal-region probe concurrently and record

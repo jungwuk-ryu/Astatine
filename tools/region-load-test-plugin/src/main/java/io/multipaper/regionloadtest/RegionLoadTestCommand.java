@@ -22,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -487,7 +488,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
     private boolean handleSchedulerFlood(final CommandSender sender, final Location anchorOverride, final String[] args, final long commandBatch) {
         if (args.length < 3) {
-            sender.sendMessage("Usage: /rlt scheduler <region|global|async> <tasks> [payloadIterations=0]");
+            sender.sendMessage("Usage: /rlt scheduler <region|regionlocal|global|async> <tasks> [payloadIterations=0]");
             return true;
         }
 
@@ -515,7 +516,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
                         task -> this.burnScheduled(task, payloadIterations, commandBatch)));
                 }
             }
-            case "region" -> {
+            case "region", "regionlocal" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
                 if (anchor == null) {
                     return true;
@@ -524,17 +525,35 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 final int baseChunkX = anchor.getBlockX() >> 4;
                 final int baseChunkZ = anchor.getBlockZ() >> 4;
                 final int width = (int)Math.ceil(Math.sqrt(tasks));
+                int queued = 0;
+                int rejected = 0;
                 for (int i = 0; i < tasks; i++) {
-                    final int dx = i % width;
-                    final int dz = i / width;
-                    final int chunkX = baseChunkX + dx;
-                    final int chunkZ = baseChunkZ + dz;
-                    this.plugin.trackTask(Bukkit.getRegionScheduler().run(this.plugin, world, chunkX, chunkZ,
-                        task -> this.burnScheduled(task, payloadIterations, commandBatch)));
+                    final int chunkX;
+                    final int chunkZ;
+                    if ("regionlocal".equals(mode)) {
+                        chunkX = baseChunkX;
+                        chunkZ = baseChunkZ;
+                    } else {
+                        final int dx = i % width;
+                        final int dz = i / width;
+                        chunkX = baseChunkX + dx;
+                        chunkZ = baseChunkZ + dz;
+                    }
+                    try {
+                        this.plugin.trackTask(Bukkit.getRegionScheduler().run(this.plugin, world, chunkX, chunkZ,
+                            task -> this.burnScheduled(task, payloadIterations, commandBatch)));
+                        queued++;
+                    } catch (final RejectedExecutionException rejectedExecutionException) {
+                        rejected++;
+                    }
                 }
+                sender.sendMessage("Queued scheduler flood: mode=" + mode + ", tasks=" + tasks
+                    + ", queued=" + queued + ", rejected=" + rejected
+                    + ", payloadIterations=" + payloadIterations);
+                return true;
             }
             default -> {
-                sender.sendMessage("Unknown scheduler mode. Use region, global, or async.");
+                sender.sendMessage("Unknown scheduler mode. Use region, regionlocal, global, or async.");
                 return true;
             }
         }
@@ -692,7 +711,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " tntspread <grids> <width> <depth> [spacing] [fuse] [regionChunks] [regionStride]");
         sender.sendMessage("/" + label + " path <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
-        sender.sendMessage("/" + label + " scheduler <region|global|async> <tasks> [payloadIterations]");
+        sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");
         sender.sendMessage("/" + label + " at <world> <x> <y> <z> <subcommand> [args...]");
