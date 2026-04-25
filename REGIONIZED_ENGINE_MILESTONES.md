@@ -729,7 +729,7 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Patch or defer every first budget hardening blocker before commit.
 - [x] Run `git diff --check` for first budget hardening patch.
 - [x] Commit first budget hardening patch.
-- [ ] Add TNT/explosion backlog hooks or a deferred processing queue.
+- [x] Add TNT/explosion backlog hooks or a deferred processing queue.
 - [x] Add first TNT explosion budget gate: when a region is already over
   `EXPLOSION` budget, keep the primed TNT alive with fuse 1 instead of
   discarding it, so pending explosions remain region-local backlog.
@@ -800,8 +800,31 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Patch every TNT explosion budget blocker before commit.
 - [x] Run `git diff --check` for TNT explosion budget gate.
 - [x] Commit TNT explosion budget gate.
-- [ ] Add broadcast/tracker coalescing where repeated updates can be merged.
-- [ ] Add `/region top`, `/region inspect`, and `/region dump`.
+- [x] Identify the tracker/broadcast flush path:
+  `ShreddedPaperChangesBroadcaster.broadcastChanges()` drains a thread-local
+  `ReferenceOpenHashSet<ChunkHolder>` after each region tick.
+- [x] Preserve existing repeated-update coalescing by keeping
+  `ReferenceOpenHashSet` as the holder backlog instead of introducing a
+  per-update queue.
+- [x] Add broadcast/tracker budget gating: when `BROADCAST` budget is
+  exhausted, requeue the current and remaining holders into the same
+  thread-local holder set for the next owner tick.
+- [x] Preserve wrong-thread skip behavior so changes are still picked up by
+  the correct owner thread, matching the pre-budget path.
+- [x] Verify `RegionTickBudget.current()` is bound by `RegionTickScheduler`
+  during region ticks and falls back to full draining when called outside a
+  budgeted region tick.
+- [x] Re-run `compileJava` after broadcast/tracker budget gating.
+- [x] Receive sub-agent correctness/performance review for broadcast/tracker
+  budget gating.
+- [x] Patch every broadcast/tracker budget blocker before commit: Faraday and
+  Aquinas found no blockers; both recommended filtering wrong-thread holders
+  before budget requeue and explicitly passing the tick budget from
+  `ShreddedPaperChunkTicker`, which was patched and re-reviewed with no
+  release blocker.
+- [x] Run `git diff --check` for broadcast/tracker budget gating.
+- [x] Commit broadcast/tracker budget gating.
+- [x] Add `/region top`, `/region inspect`, and `/region dump`.
 - [ ] Commit hostile-load isolation.
 - [ ] Request sub-agent performance review.
 

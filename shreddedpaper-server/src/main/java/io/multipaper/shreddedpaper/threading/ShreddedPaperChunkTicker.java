@@ -228,7 +228,7 @@ public class ShreddedPaperChunkTicker {
                 }
             }
 
-            ShreddedPaperChangesBroadcaster.broadcastChanges();
+            ShreddedPaperChangesBroadcaster.broadcastChanges(budget);
 
             if (region.isEmpty()) {
                 level.chunkSource.tickingRegions.removeOwner(region.getOwner());

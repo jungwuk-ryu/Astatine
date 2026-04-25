@@ -1,6 +1,8 @@
 package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
+import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
+import io.multipaper.shreddedpaper.threading.region.RegionWorkType;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import net.minecraft.server.level.ChunkHolder;
 
@@ -29,16 +31,35 @@ public class ShreddedPaperChangesBroadcaster {
     }
 
     public static void broadcastChanges() {
-        broadcastChanges(needsChangeBroadcastingThreadLocal.get());
+        broadcastChanges(RegionTickBudget.current());
+    }
+
+    public static void broadcastChanges(RegionTickBudget budget) {
+        broadcastChanges(needsChangeBroadcastingThreadLocal.get(), budget);
     }
 
     public static void broadcastChanges(ReferenceOpenHashSet<ChunkHolder> needsChangeBroadcasting) {
+        broadcastChanges(needsChangeBroadcasting, RegionTickBudget.current());
+    }
+
+    public static void broadcastChanges(ReferenceOpenHashSet<ChunkHolder> needsChangeBroadcasting, RegionTickBudget budget) {
+        if (needsChangeBroadcasting == null) {
+            return;
+        }
+
         if (!needsChangeBroadcasting.isEmpty()) {
             ReferenceOpenHashSet<ChunkHolder> copy = needsChangeBroadcasting.clone();
             needsChangeBroadcasting.clear();
+            boolean deferred = false;
             for (ChunkHolder holder : copy) {
                 if (!TickThread.isTickThreadFor(holder.moonrise$getRealChunkHolder().world, holder.getPos())) {
                     // The changes will get picked up by the correct thread when it is ticked
+                    continue;
+                }
+
+                if (deferred || (budget != null && !budget.canContinue(RegionWorkType.BROADCAST))) {
+                    needsChangeBroadcasting.add(holder);
+                    deferred = true;
                     continue;
                 }
 
