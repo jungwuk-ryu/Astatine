@@ -429,6 +429,60 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Replace the reverted `saveAllChunks` retry loop's repeated
   `CompletableFuture.supplyAsync` allocation with direct lock retry plus short
   park to reduce CPU and GC pressure during full saves.
+- [x] Re-open autosave/save-all after sub-agent review identified the remaining
+  spin/park save barrier as a hostile-load isolation blocker for
+  `saveAllChunks(false,false,false,false)`.
+- [x] Add a dedicated bounded `CHUNK_IO_SAVE` mailbox class so background chunk
+  saves do not use the non-dropping `CRITICAL_SYSTEM` lane.
+- [x] Add `chunkIoSaveRegionMailboxCapacity`,
+  `chunkIoSaveMaxAutoSavesPerRegion`, and
+  `chunkIoSaveAutoSaveScanMultiplier` configuration knobs.
+- [x] Add low `CHUNK_IO_SAVE` drain quantum after critical/player work and
+  before plugin/tracker/physics work.
+- [x] Add `RegionTick` JFR queued count for `CHUNK_IO_SAVE`.
+- [x] Add `LevelChunkRegionMap.scheduleTaskIfSchedulerArmed` so background save
+  handoff cannot enqueue work into an unarmed owner mailbox that no scheduler
+  handle will service.
+- [x] Add `LevelChunkRegionMap.ownerIdForCellOr` so autosave can enforce a
+  per-owner admission cap instead of letting one hot region consume the full
+  autosave producer budget.
+- [x] Add per-holder background save coalescing fields in `NewChunkHolder` so
+  autosave/save-all bursts admit at most one outstanding background save per
+  holder.
+- [x] Change `ChunkHolderManager.autoSave` from fire-and-forget critical
+  scheduling to bounded `CHUNK_IO_SAVE` dispatch with scan cap, per-owner cap,
+  scheduler-armed admission, and short retry requeue.
+- [x] Self-review autosave retry behavior and fix same-pass queue churn by
+  requeueing skipped saves for the next manager tick instead of immediately
+  due again.
+- [x] Reject async `saveAllChunks(false,false,false,false)` after sub-agent
+  review showed default `/save-all` has caller-visible completion semantics;
+  keep explicit save-all, flush, shutdown, emergency, and progress saves as
+  synchronous durability paths.
+- [x] Upgrade `saveAllChunks` non-owner saves from read-lock waiting to write
+  lock waiting so `NewChunkHolder.save` satisfies independent-mode tick-thread
+  ownership checks.
+- [x] Add immediate non-waiting write-lock fallback for `CHUNK_IO_SAVE` when
+  owner lookup, scheduler arming, or mailbox admission cannot accept the task;
+  if the write lock is not immediately available, requeue for the next manager
+  pass instead of spinning.
+- [x] Add completion-aware retry for background chunk saves: if
+  `holder.save(false)` throws before completion, clear the in-flight flag,
+  requeue the holder, and log the immediate fallback failure.
+- [x] Preserve empty-server pause `MinecraftServer.autoSave()` as an intentional
+  strong save barrier because it protects old pause-before-save and scoreboard
+  persistence semantics when no online-player hostile-load isolation is at
+  stake.
+- [x] Receive sub-agent review for the autosave/save-all isolation patch and
+  patch every release blocker before commit: stale holder requeue, tree key
+  mutation, default save-all durability, unarmed scheduler retry, read-lock
+  ownership, and failed async save retry were all addressed; the empty-server
+  pause save barrier is explicitly retained with rationale.
+- [x] Runtime-test `save-all` and `save-all flush` in `D:\worldgen` after a jar
+  rebuild: final smoke on the rebuilt jar queued/executed 600/600
+  cross-region tasks, completed `save-all` and `save-all flush`, kept TPS at
+  20.0/20.1, and logged no new `ERROR`/`Exception`/immediate autosave fallback
+  failures in `D:\worldgen\logs\latest.log`.
 - [x] Upgrade internal-task rescue paths from read-only compatibility locks to
   write ownership because chunk internal tasks now include mutating work.
 - [x] Add contention backoff for independent region owner marker lock failures
@@ -510,6 +564,26 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   passed.
 - [x] Re-run `shreddedpaper-server:compileJava --stacktrace` after
   `LevelTicksRegionProxy` no-op removal: passed.
+- [x] Run `applyAllPatches` after `CHUNK_IO_SAVE` autosave/save-all isolation:
+  first two attempts failed on stale paperweight hunk counts in
+  `ChunkHolderManager.java.patch`; repaired the patch counts with a standard
+  `git apply --check` sanity pass against the paperweight setup source.
+- [x] Re-run `applyAllPatches` after autosave/save-all patch-count repair:
+  passed with 160 Minecraft source patches applied.
+- [x] Re-run `shreddedpaper-server:compileJava --stacktrace` after
+  autosave/save-all isolation and next-tick retry fix: passed with only
+  existing deprecation/removal warnings.
+- [x] Re-run `applyAllPatches` after final autosave/save-all review fixes
+  (`saveAllChunks` write-lock ownership and async save failure retry): passed.
+- [x] Re-run `shreddedpaper-server:compileJava --stacktrace` after final
+  autosave/save-all review fixes: passed with only existing
+  deprecation/removal warnings.
+- [x] Re-run `shreddedpaper-server:createMojmapPaperclipJar --stacktrace` after
+  final autosave/save-all review fixes: passed.
+- [x] Deploy the final rebuilt jar to `D:\worldgen`, restart through
+  `D:\worldgen\codex-server-launch.ps1`, and verify RCON smoke:
+  `rlt ... crossqueue 64 600 0`, `region top`, `save-all`,
+  `save-all flush`, and `tps` all completed successfully.
 - [x] Add focused `LevelTicksRegionProxyTest` coverage for cross-region count,
   clear, and copy sub-tick order semantics.
 - [x] Run `shreddedpaper-server:compileTestJava --stacktrace`: passed.

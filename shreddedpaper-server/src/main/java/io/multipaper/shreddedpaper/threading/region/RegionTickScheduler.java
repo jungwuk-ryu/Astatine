@@ -465,6 +465,7 @@ public final class RegionTickScheduler {
             event.mailboxDepth = this.state.mailbox().depth();
             event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
             event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
+            event.chunkIoSaveQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_SAVE);
             event.pluginQueued = this.state.mailbox().queued(RegionTaskClass.PLUGIN);
             event.trackerBroadcastQueued = this.state.mailbox().queued(RegionTaskClass.TRACKER_BROADCAST);
             event.explosionPhysicsQueued = this.state.mailbox().queued(RegionTaskClass.EXPLOSION_PHYSICS);

@@ -635,6 +635,20 @@ public class LevelChunkRegionMap {
         return this.applyRegionForCell(regionPos, region -> region.scheduleTask(taskClass, task, delayInTicks, regionPos));
     }
 
+    public boolean scheduleTaskIfSchedulerArmed(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
+        return this.regionsLock.read(() -> {
+            final LevelChunkRegion region = this.getExistingRegionLocked(regionPos);
+            return region != null && region.getOwner().isSchedulerArmed() && region.scheduleTask(taskClass, task, delayInTicks, regionPos);
+        });
+    }
+
+    public long ownerIdForCellOr(RegionPos regionPos, long missingValue) {
+        return this.regionsLock.read(() -> {
+            final RegionOwner owner = this.ownersByCell.get(regionPos.longKey);
+            return owner == null ? missingValue : owner.id();
+        });
+    }
+
     public boolean scheduleTransferredTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
         return this.applyRegionForCell(regionPos, region -> region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos));
     }

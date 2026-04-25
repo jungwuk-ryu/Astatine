@@ -16,13 +16,6 @@
  import net.minecraft.server.level.ChunkHolder;
  import net.minecraft.server.level.ChunkLevel;
  import net.minecraft.server.level.FullChunkStatus;
-@@ -53,6 +_,7 @@
- import java.util.List;
- import java.util.Map;
- import java.util.Objects;
- import java.util.concurrent.atomic.AtomicBoolean;
- import java.util.function.Consumer;
- 
 @@ -777,13 +_,13 @@
              // ensure in unload queue
              if (!this.inUnloadQueue) {
@@ -78,3 +71,9 @@
                          this.updateCurrentState(FullChunkStatus.ENTITY_TICKING);
                          this.changeEntityChunkStatus(FullChunkStatus.ENTITY_TICKING);
                          PlatformHooks.get().onChunkEntityTicking(chunk, this.vanillaChunkHolder);
+@@ -1641,1 +_,5 @@
+     public long lastAutoSave;
++    // ShreddedPaper start - coalesce background owner-thread chunk saves
++    public final AtomicBoolean shreddedPaperAutoSaveQueued = new AtomicBoolean();
++    public volatile boolean shreddedPaperAutoSaveRetry;
++    // ShreddedPaper end - coalesce background owner-thread chunk saves

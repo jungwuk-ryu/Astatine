@@ -50,6 +50,12 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
         public int playerActionRegionMailboxCapacity = 2048;
+        @Comment("Maximum queued background chunk save tasks per region before autosave/save-all backpressure begins.")
+        public int chunkIoSaveRegionMailboxCapacity = 512;
+        @Comment("Maximum background autosave tasks admitted for one region owner per autosave producer pass.")
+        public int chunkIoSaveMaxAutoSavesPerRegion = 2;
+        @Comment("Maximum autosave queue entries scanned per pass, as a multiplier of max-auto-save-chunks-per-tick.")
+        public int chunkIoSaveAutoSaveScanMultiplier = 4;
         @Comment("Maximum queued plugin tasks per region before RegionScheduler fail-fast rejection.")
         public int pluginRegionMailboxCapacity = 1024;
         @Comment("Maximum queued tracker/broadcast tasks per region. Repeated holder updates should be coalesced before reaching this queue.")
