@@ -16,5 +16,11 @@ public final class RegionTickEvent extends Event {
     public long wallNanos;
     public long scheduleLagNanos;
     public int mailboxDepth;
+    public int criticalSystemQueued;
+    public int playerActionQueued;
+    public int pluginQueued;
+    public int trackerBroadcastQueued;
+    public int explosionPhysicsQueued;
+    public double mailboxClassPressure;
     public long deferredWork;
 }

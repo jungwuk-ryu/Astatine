@@ -26,7 +26,7 @@ public final class RegionRuntimeState {
         this.level = level;
         this.ownerId = owner.id();
         this.regionPos = owner.primaryCell();
-        this.mailbox = new RegionMailbox(level, owner.primaryCell());
+        this.mailbox = new RegionMailbox(level, owner.primaryCell(), owner.id(), owner::layoutEpoch, cellKey -> owner.ownsCell(new RegionPos(cellKey)));
         this.overloadController = new RegionOverloadController(level, owner.primaryCell());
     }
 

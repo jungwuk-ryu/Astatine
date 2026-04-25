@@ -632,7 +632,11 @@ public class LevelChunkRegionMap {
     }
 
     public boolean scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
-        return this.applyRegionForCell(regionPos, region -> region.scheduleTask(taskClass, task, delayInTicks));
+        return this.applyRegionForCell(regionPos, region -> region.scheduleTask(taskClass, task, delayInTicks, regionPos));
+    }
+
+    public boolean scheduleTransferredTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
+        return this.applyRegionForCell(regionPos, region -> region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos));
     }
 
     public PrioritisedExecutor.PrioritisedTask createInternalTask(final RegionPos regionPos, final Runnable task, final Priority priority) {

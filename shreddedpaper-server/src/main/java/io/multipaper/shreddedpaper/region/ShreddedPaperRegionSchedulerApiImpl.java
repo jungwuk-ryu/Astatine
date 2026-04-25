@@ -134,11 +134,23 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
             } catch (Throwable throwable) {
                 this.plugin.getLogger().log(Level.WARNING, "Region task for " + this.plugin.getDescription().getFullName() + " generated an exception", throwable);
             } finally {
-                executionState.compareAndSet(ExecutionState.RUNNING, isRepeatingTask() ? ExecutionState.IDLE : ExecutionState.FINISHED);
+                final boolean shouldReschedule = isRepeatingTask() && executionState.compareAndSet(ExecutionState.RUNNING, ExecutionState.IDLE);
+                if (!shouldReschedule) {
+                    executionState.compareAndSet(ExecutionState.RUNNING, ExecutionState.FINISHED);
+                }
                 executionState.compareAndSet(ExecutionState.CANCELLED_RUNNING, ExecutionState.CANCELLED);
 
-                if (isRepeatingTask()) {
-                    schedule(periodTicks);
+                if (shouldReschedule) {
+                    try {
+                        schedule(periodTicks);
+                    } catch (final RejectedExecutionException rejectedExecutionException) {
+                        executionState.compareAndSet(ExecutionState.IDLE, ExecutionState.CANCELLED);
+                        this.plugin.getLogger().log(
+                                Level.WARNING,
+                                "Region task for " + this.plugin.getDescription().getFullName() + " was cancelled because the target region mailbox rejected the next run",
+                                rejectedExecutionException
+                        );
+                    }
                 }
             }
         }

@@ -206,7 +206,15 @@ public class LevelChunkRegion {
     }
 
     public boolean scheduleTask(RegionTaskClass taskClass, Runnable task, long delay) {
-        return this.runtimeState.mailbox().offer(taskClass, task, delay);
+        return this.runtimeState.mailbox().offer(taskClass, task, delay, this.owner.primaryCell());
+    }
+
+    public boolean scheduleTask(RegionTaskClass taskClass, Runnable task, long delay, RegionPos affinityRegionPos) {
+        return this.runtimeState.mailbox().offer(taskClass, task, delay, affinityRegionPos);
+    }
+
+    public boolean scheduleTransferredTask(RegionTaskClass taskClass, Runnable task, long delay, RegionPos affinityRegionPos) {
+        return this.runtimeState.mailbox().offerTransferred(taskClass, task, delay, affinityRegionPos);
     }
 
     public PrioritisedTaskQueue getInternalTaskQueue() {

@@ -40,6 +40,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tracker",
         "broadcast",
         "scheduler",
+        "crossqueue",
         "syncload",
         "chunkgen",
         "probe",
@@ -133,6 +134,13 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
             case "scheduler" -> {
                 return this.handleSchedulerFlood(sender, anchorOverride, effectiveArgs, commandBatch);
+            }
+            case "crossqueue" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleCrossRegionQueueProbe(sender, anchor, effectiveArgs, commandBatch);
             }
             case "syncload" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
@@ -691,6 +699,149 @@ public final class RegionLoadTestCommand implements TabExecutor {
         return true;
     }
 
+    private boolean handleCrossRegionQueueProbe(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 3) {
+            sender.sendMessage("Usage: /rlt crossqueue <chunkOffsetX> <tasks> [payloadIterations=0]");
+            return true;
+        }
+
+        final Integer chunkOffsetX = this.parseInt(sender, args[1], "chunkOffsetX");
+        final Integer tasks = this.parseInt(sender, args[2], "tasks");
+        final Integer payloadIterations = args.length >= 4 ? this.parseInt(sender, args[3], "payloadIterations") : 0;
+        if (chunkOffsetX == null || tasks == null || payloadIterations == null) {
+            return true;
+        }
+        if (tasks < 1 || payloadIterations < 0) {
+            sender.sendMessage("tasks must be positive and payloadIterations must be zero or greater.");
+            return true;
+        }
+
+        final World world = Objects.requireNonNull(base.getWorld());
+        final int sourceChunkX = base.getBlockX() >> 4;
+        final int sourceChunkZ = base.getBlockZ() >> 4;
+        final int targetChunkX = sourceChunkX + chunkOffsetX;
+        final int targetChunkZ = sourceChunkZ;
+        final AtomicInteger remaining = new AtomicInteger(tasks);
+        final AtomicInteger queued = new AtomicInteger();
+        final AtomicInteger rejected = new AtomicInteger();
+        final AtomicInteger executed = new AtomicInteger();
+        final AtomicInteger failed = new AtomicInteger();
+        final long startedAt = System.nanoTime();
+
+        try {
+            final ScheduledTask sourceTask = Bukkit.getRegionScheduler().run(this.plugin, base, task -> {
+                try {
+                    if (this.plugin.shouldAbortBatch(commandBatch)) {
+                        remaining.set(0);
+                        this.replyLater(sender, "Cross-region queue probe aborted before target scheduling.");
+                        return;
+                    }
+                    for (int i = 0; i < tasks; i++) {
+                        try {
+                            final ScheduledTask targetTask = Bukkit.getRegionScheduler().run(this.plugin, world, targetChunkX, targetChunkZ, target -> {
+                                try {
+                                    if (!this.plugin.shouldAbortBatch(commandBatch)) {
+                                        this.plugin.burnCpu(payloadIterations);
+                                        executed.incrementAndGet();
+                                    }
+                                } catch (final Throwable throwable) {
+                                    failed.incrementAndGet();
+                                    this.plugin.getLogger().warning("Cross-region target task failed: "
+                                        + throwable.getClass().getName() + ": " + throwable.getMessage());
+                                } finally {
+                                    this.plugin.untrackTask(target);
+                                    this.finishCrossRegionQueueProbeIfDone(
+                                        sender,
+                                        remaining,
+                                        sourceChunkX,
+                                        sourceChunkZ,
+                                        targetChunkX,
+                                        targetChunkZ,
+                                        tasks,
+                                        payloadIterations,
+                                        startedAt,
+                                        queued,
+                                        rejected,
+                                        executed,
+                                        failed
+                                    );
+                                }
+                            });
+                            this.plugin.trackTask(targetTask);
+                            queued.incrementAndGet();
+                        } catch (final RejectedExecutionException rejectedExecutionException) {
+                            rejected.incrementAndGet();
+                            this.finishCrossRegionQueueProbeIfDone(
+                                sender,
+                                remaining,
+                                sourceChunkX,
+                                sourceChunkZ,
+                                targetChunkX,
+                                targetChunkZ,
+                                tasks,
+                                payloadIterations,
+                                startedAt,
+                                queued,
+                                rejected,
+                                executed,
+                                failed
+                            );
+                        }
+                    }
+                } finally {
+                    this.plugin.untrackTask(task);
+                }
+            });
+            this.plugin.trackTask(sourceTask);
+        } catch (final RuntimeException schedulingFailure) {
+            sender.sendMessage("Could not schedule cross-region queue source task: "
+                + schedulingFailure.getClass().getSimpleName() + ": " + schedulingFailure.getMessage());
+            return true;
+        }
+
+        sender.sendMessage("Queued cross-region queue probe source: sourceChunk=" + sourceChunkX + "," + sourceChunkZ
+            + ", targetChunk=" + targetChunkX + "," + targetChunkZ
+            + ", tasks=" + tasks
+            + ", payloadIterations=" + payloadIterations);
+        return true;
+    }
+
+    private void finishCrossRegionQueueProbeIfDone(
+        final CommandSender sender,
+        final AtomicInteger remaining,
+        final int sourceChunkX,
+        final int sourceChunkZ,
+        final int targetChunkX,
+        final int targetChunkZ,
+        final int tasks,
+        final int payloadIterations,
+        final long startedAt,
+        final AtomicInteger queued,
+        final AtomicInteger rejected,
+        final AtomicInteger executed,
+        final AtomicInteger failed
+    ) {
+        if (remaining.decrementAndGet() != 0) {
+            return;
+        }
+        final double elapsedMs = (System.nanoTime() - startedAt) / 1_000_000.0D;
+        this.replyLater(sender, String.format(
+            Locale.ROOT,
+            "Cross-region queue probe finished: sourceChunk=%d,%d targetChunk=%d,%d tasks=%d queued=%d rejected=%d executed=%d failed=%d payloadIterations=%d elapsedMs=%.2f",
+            sourceChunkX,
+            sourceChunkZ,
+            targetChunkX,
+            targetChunkZ,
+            tasks,
+            queued.get(),
+            rejected.get(),
+            executed.get(),
+            failed.get(),
+            payloadIterations,
+            elapsedMs
+        ));
+    }
+
     private void burnScheduled(final ScheduledTask task, final int payloadIterations, final long commandBatch) {
         try {
             if (!this.plugin.shouldAbortBatch(commandBatch)) {
@@ -940,6 +1091,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
         sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");
         sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
+        sender.sendMessage("/" + label + " crossqueue <chunkOffsetX> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " syncload <chunkOffsetX> [attempts]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");

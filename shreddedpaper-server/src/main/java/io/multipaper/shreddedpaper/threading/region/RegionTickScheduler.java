@@ -371,7 +371,13 @@ public final class RegionTickScheduler {
 
             final long tickEnd = System.nanoTime();
             final long wallNanos = Math.max(0L, tickEnd - actualStart);
-            this.state.overloadController().recordTick(wallNanos, scheduleLag, this.state.mailbox().depth(), deferred);
+            this.state.overloadController().recordTick(
+                    wallNanos,
+                    scheduleLag,
+                    this.state.mailbox().depth(),
+                    this.state.mailbox().maxClassPressure(),
+                    deferred
+            );
             this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred);
 
             this.activatePendingSplitRegions(scheduledStart);
@@ -452,6 +458,12 @@ public final class RegionTickScheduler {
             event.wallNanos = wallNanos;
             event.scheduleLagNanos = scheduleLag;
             event.mailboxDepth = this.state.mailbox().depth();
+            event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
+            event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
+            event.pluginQueued = this.state.mailbox().queued(RegionTaskClass.PLUGIN);
+            event.trackerBroadcastQueued = this.state.mailbox().queued(RegionTaskClass.TRACKER_BROADCAST);
+            event.explosionPhysicsQueued = this.state.mailbox().queued(RegionTaskClass.EXPLOSION_PHYSICS);
+            event.mailboxClassPressure = this.state.mailbox().maxClassPressure();
             event.deferredWork = deferred;
             event.commit();
         }

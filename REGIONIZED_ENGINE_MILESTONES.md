@@ -464,8 +464,17 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Add sampled JFR `ChunkRequest` event for rejected region-worker sync chunk
   loads; runtime evidence file:
   `D:\worldgen\logs\codex-syncload-guard-20260425-1546.jfr`.
-- [ ] Add JFR `CrossRegionTask` events when the first-class cross-region task
-  protocol is wired.
+- [x] Add threshold-only JFR `CrossRegionTask` events for region-thread to
+  region-thread task hops, with source/target owner id, owner epoch,
+  affinity cell key, task class, queued-after/capacity, and explicit
+  `delayClock=region-local`.
+- [x] Add owner layout epoch tracking and execution-time stale-owner detection
+  for admitted region tasks; redirected admitted tasks are re-resolved through
+  the live `LevelChunkRegionMap` and moved through a non-dropping transfer lane
+  instead of being re-admitted through bounded plugin/player queues.
+- [x] Add per-class `RegionTick` mailbox counts and max class pressure so small
+  class caps, such as `PLUGIN`, can move a region into `DEGRADED` before total
+  mailbox depth looks dangerous.
 - [ ] Add per-region explosion backlog metric.
 - [ ] Add per-region chunk IO/generation debt metric.
 
@@ -748,6 +757,22 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Plugin flood JFR file evidence: `D:\worldgen\logs\codex-plugin-flood-queue-20260425-1440.jfr`
   contains `16` `RegionQueueEvent` entries for `taskClass=PLUGIN`, all at
   `capacity=1024`, with rejected samples from `1` through `3840`.
+- [x] Cross-region task observability harness: add `/rlt crossqueue
+  <chunkOffsetX> <tasks> [payloadIterations]`, which schedules from one region
+  worker into another region worker and reports queued/rejected/executed/failed
+  counts.
+- [x] Cross-region task runtime evidence after owner-epoch and transfer-lane
+  fixes: `D:\worldgen\logs\codex-crossregion-task-20260425-1706.jfr` contains
+  exactly two threshold `CrossRegionTask` events for 600 accepted cross-region
+  plugin tasks (`queuedAfter=1` and `512`, `capacity=1024`), includes
+  source/target owner epoch and `delayClock=region-local`, completed
+  `queued=600 rejected=0 executed=600 failed=0` in `164.22ms`, and `/tps`
+  stayed at `20.0`.
+- [x] Sub-agent review loop for `CrossRegionTask`/mailbox fairness:
+  Meitner and Rawls blocked the first heavy per-task metadata draft, then
+  blocked the unbounded drain loop and lossy redirect edge case; both blockers
+  were patched with threshold-only enqueue JFR, bounded repeated drain rounds,
+  primitive owner epoch binding, and a non-dropping transfer queue.
 - [x] Add load-test harness mode for per-region plugin mailbox saturation:
   `scheduler regionlocal` should queue all tasks into one target region and
   report queued/rejected counts instead of throwing out of the command.

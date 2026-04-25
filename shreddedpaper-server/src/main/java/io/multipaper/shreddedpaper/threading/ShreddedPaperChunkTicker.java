@@ -132,6 +132,10 @@ public class ShreddedPaperChunkTicker {
         return region != null && level.equals(region.getLevel()) && region.getOwner().ownsCell(regionPos);
     }
 
+    public static LevelChunkRegion currentlyTickingRegion() {
+        return currentlyTickingRegion.get();
+    }
+
     private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState, final RegionTickBudget budget) {
         final long tickStartNanos = System.nanoTime();
         try {

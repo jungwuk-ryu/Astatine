@@ -24,6 +24,7 @@ public final class RegionOwner {
     private volatile LevelChunkRegion region;
     private volatile long lastMergeNanos;
     private volatile long lastSplitNanos;
+    private volatile long layoutEpoch;
     private volatile boolean schedulerArmed = true;
 
     private RegionOwner(final long id, final RegionPos primaryCell) {
@@ -52,11 +53,13 @@ public final class RegionOwner {
 
     void attachRegion(final LevelChunkRegion region) {
         this.region = region;
+        this.bumpLayoutEpoch();
     }
 
     void detachRegion(final LevelChunkRegion region) {
         if (this.region == region) {
             this.region = null;
+            this.bumpLayoutEpoch();
         }
     }
 
@@ -66,6 +69,10 @@ public final class RegionOwner {
 
     public RegionPos primaryCell() {
         return this.primaryCell;
+    }
+
+    public long layoutEpoch() {
+        return this.layoutEpoch;
     }
 
     public LevelChunkRegion region() {
@@ -175,6 +182,7 @@ public final class RegionOwner {
                 this.cells.addAll(source.cells);
             }
             this.invalidateSnapshots();
+            this.bumpLayoutEpoch();
         }
         this.lastMergeNanos = System.nanoTime();
     }
@@ -183,6 +191,7 @@ public final class RegionOwner {
         synchronized (this.cells) {
             this.cells.clear();
             this.invalidateSnapshots();
+            this.bumpLayoutEpoch();
         }
     }
 
@@ -191,11 +200,16 @@ public final class RegionOwner {
         this.isolationRadiusOneSnapshot = null;
     }
 
+    private void bumpLayoutEpoch() {
+        this.layoutEpoch++;
+    }
+
     void removeCells(final LongOpenHashSet removedCells) {
         synchronized (this.cells) {
             this.cells.removeAll(removedCells);
             this.cells.add(this.primaryCell.longKey);
             this.invalidateSnapshots();
+            this.bumpLayoutEpoch();
         }
     }
 

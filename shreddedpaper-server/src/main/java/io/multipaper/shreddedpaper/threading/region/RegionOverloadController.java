@@ -14,6 +14,7 @@ public final class RegionOverloadController {
     private volatile double ewmaMspt;
     private volatile double ewmaScheduleLagMs;
     private volatile int lastMailboxDepth;
+    private volatile double lastMailboxClassPressure;
     private int quarantineStrikes;
 
     public RegionOverloadController(final ServerLevel level, final RegionPos regionPos) {
@@ -30,12 +31,19 @@ public final class RegionOverloadController {
         );
     }
 
-    public void recordTick(final long tickNanos, final long scheduleLagNanos, final int mailboxDepth, final long deferredWork) {
+    public void recordTick(
+            final long tickNanos,
+            final long scheduleLagNanos,
+            final int mailboxDepth,
+            final double mailboxClassPressure,
+            final long deferredWork
+    ) {
         final double mspt = tickNanos / 1.0E6D;
         final double lagMs = Math.max(0L, scheduleLagNanos) / 1.0E6D;
         this.ewmaMspt = this.ewmaMspt == 0.0D ? mspt : (this.ewmaMspt * (1.0D - EWMA_ALPHA)) + (mspt * EWMA_ALPHA);
         this.ewmaScheduleLagMs = this.ewmaScheduleLagMs == 0.0D ? lagMs : (this.ewmaScheduleLagMs * (1.0D - EWMA_ALPHA)) + (lagMs * EWMA_ALPHA);
         this.lastMailboxDepth = mailboxDepth;
+        this.lastMailboxClassPressure = mailboxClassPressure;
 
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         if (this.ewmaMspt >= config.quarantinedRegionMsptThreshold) {
@@ -47,7 +55,7 @@ public final class RegionOverloadController {
             this.quarantineStrikes = 0;
         }
 
-        if (this.ewmaMspt >= config.degradedRegionMsptThreshold || deferredWork > 0L || mailboxDepth >= config.regionMailboxCapacity / 2) {
+        if (this.ewmaMspt >= config.degradedRegionMsptThreshold || deferredWork > 0L || mailboxClassPressure >= 0.5D) {
             this.loadClass = RegionLoadClass.DEGRADED;
         } else {
             this.loadClass = RegionLoadClass.NORMAL;
@@ -68,5 +76,9 @@ public final class RegionOverloadController {
 
     public int lastMailboxDepth() {
         return this.lastMailboxDepth;
+    }
+
+    public double lastMailboxClassPressure() {
+        return this.lastMailboxClassPressure;
     }
 }
