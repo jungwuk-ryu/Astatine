@@ -110,6 +110,18 @@
              BlockPos blockPos = this.mainSupportingBlockPos.get();
              if (!(yOffset > 1.0E-5F)) {
                  return blockPos;
+@@ -2116,7 +_,10 @@
+         )) {
+             BlockPos blockPos = BlockPos.containing(this.getX(), eyeY, this.getZ());
+-            FluidState fluidState = this.level().getFluidState(blockPos);
++            FluidState fluidState = this.level().getFluidIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            if (fluidState == null) {
++                return;
++            }
+             double d = blockPos.getY() + fluidState.getHeight(this.level(), blockPos);
+             if (d > eyeY) {
+                 fluidState.getTags().forEach(this.fluidOnEyes::add);
+             }
 @@ -2377,7 +_,7 @@
                  }
                  delta = event.getKnockback();
@@ -119,6 +131,15 @@
              // Paper end - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
              this.needsSync = true;
          }
+@@ -2995,3 +_,7 @@
+         for (int currChunkZ = minChunkZ; currChunkZ <= maxChunkZ; ++currChunkZ) {
+             for (int currChunkX = minChunkX; currChunkX <= maxChunkX; ++currChunkX) {
+-                final net.minecraft.world.level.chunk.LevelChunkSection[] sections = chunkSource.getChunk(currChunkX, currChunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true).getSections();
++                final net.minecraft.world.level.chunk.ChunkAccess chunk = chunkSource.getChunk(currChunkX, currChunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                if (chunk == null) {
++                    continue;
++                }
++                final net.minecraft.world.level.chunk.LevelChunkSection[] sections = chunk.getSections();
 @@ -3546,7 +_,9 @@
          }
      }

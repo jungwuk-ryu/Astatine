@@ -24,6 +24,17 @@
              this.chatSpamThrottler.tick();
              this.dropSpamThrottler.tick();
              this.tabSpamThrottler.tick(); // Paper - configurable tab spam limits
+@@ -391,3 +_,10 @@
+     private boolean tickPlayer() {
++        // ShreddedPaper start - defer player world ticking until the current chunk is full
++        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++            && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++            && this.player.level().getChunkIfLoadedImmediately(this.player.chunkPosition().x, this.player.chunkPosition().z) == null) {
++            return false;
++        }
++        // ShreddedPaper end - defer player world ticking until the current chunk is full
+         this.resetPosition();
+         this.player.xo = this.player.getX();
 @@ -627,6 +_,12 @@
                      return;
                  }

@@ -9,3 +9,9 @@
                              return;
                          }
                          // Purpur end - Add option to teleport to spawn if outside world border
+@@ -3105,3 +_,4 @@
+     public void travel(Vec3 travelVector) {
+-        if (this.shouldTravelInFluid(this.level().getFluidState(this.blockPosition()))) {
++        FluidState fluidState = this.level().getFluidIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        if (fluidState != null && this.shouldTravelInFluid(fluidState)) {
+             this.travelInFluid(travelVector);
