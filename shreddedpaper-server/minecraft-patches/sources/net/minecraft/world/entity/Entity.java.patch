@@ -48,6 +48,24 @@
      public final io.papermc.paper.entity.activation.ActivationType activationType = io.papermc.paper.entity.activation.ActivationType.activationTypeFor(this); // Paper - EAR 2/tracking ranges
      // Paper start - EAR 2
      public final boolean defaultActivationState;
+@@ -565,9 +_,16 @@
++    private static UUID createRegionThreadSafeUUID() { // ShreddedPaper - avoid shared entity RNG under parallel region spawn
++        final java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
++        final long most = random.nextLong() & -61441L | 16384L;
++        final long least = random.nextLong() & 4611686018427387903L | Long.MIN_VALUE;
++        return new UUID(most, least);
++    }
++
+     public Entity(EntityType<?> type, Level level) {
+         this.type = type;
+         this.level = level;
+         this.dimensions = type.getDimensions();
+         this.maxAirTicks = level == null || this.getDefaultMaxAirSupply() != Entity.TOTAL_AIR_SUPPLY ? this.getDefaultMaxAirSupply() : this.level.purpurConfig.drowningAirTicks; // Purpur - Drowning Settings
+         // Purpur start - Add toggle for RNG manipulation
+         this.random = level == null || level.purpurConfig.entitySharedRandom ? SHARED_RANDOM : RandomSource.create();
+-        this.uuid = Mth.createInsecureUUID(this.random);
++        this.uuid = createRegionThreadSafeUUID(); // ShreddedPaper - avoid shared entity RNG under parallel region spawn
+         this.stringUUID = this.uuid.toString();
 @@ -709,7 +_,7 @@
      public void resendPossiblyDesyncedEntityData(net.minecraft.server.level.ServerPlayer player) {
          if (player.getBukkitEntity().canSee(this.getBukkitEntity())) {

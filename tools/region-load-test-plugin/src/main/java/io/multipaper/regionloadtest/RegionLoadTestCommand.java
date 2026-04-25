@@ -310,7 +310,6 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
     private void spawnTnt(final World world, final Location spawnLocation, final int fuseTicks) {
         final Location safeLocation = spawnLocation.clone();
-        safeLocation.setY(world.getHighestBlockYAt(safeLocation.getBlockX(), safeLocation.getBlockZ()) + 1.0D);
         world.spawn(safeLocation, TNTPrimed.class, tnt -> {
             tnt.setFuseTicks(fuseTicks);
             tnt.setYield(4.0F);
@@ -364,7 +363,6 @@ public final class RegionLoadTestCommand implements TabExecutor {
         final int lifeTicks
     ) {
         final Location spawnLocation = spawnHint.clone();
-        spawnLocation.setY(base.getWorld().getHighestBlockYAt(spawnLocation.getBlockX(), spawnLocation.getBlockZ()) + 1.0D);
         final Zombie zombie = base.getWorld().spawn(spawnLocation, Zombie.class, mob -> {
             mob.setCanPickupItems(false);
             mob.setRemoveWhenFarAway(false);
@@ -444,7 +442,6 @@ public final class RegionLoadTestCommand implements TabExecutor {
         final int ticks
     ) {
         final Location resting = spawnHint.clone();
-        resting.setY(base.getWorld().getHighestBlockYAt(resting.getBlockX(), resting.getBlockZ()) + 1.0D);
         final Location shifted = resting.clone().add(Math.cos(angle) * distance, 0.0D, Math.sin(angle) * distance);
         final ArmorStand stand = base.getWorld().spawn(resting, ArmorStand.class, entity -> {
             entity.setMarker(true);

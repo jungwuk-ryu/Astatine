@@ -629,14 +629,49 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Threshold investigation gate for this run: no scheduler lane or mailbox
   threshold change needed because P95 was below 50ms; keep the max-lag spike
   visible for later multi-heavy regression comparison.
-- [ ] Multi-heavy-region test: heavy regions >= tick worker count.
-- [ ] Multi-heavy-region setup: choose at least `tickWorkers` disjoint region
+- [x] Multi-heavy-region test: heavy regions >= tick worker count.
+- [x] Multi-heavy-region setup: choose at least `tickWorkers` disjoint region
   centers, aligned to 8x8 chunk region boundaries, and clear prior TNT/backlog
   with `rlt cleanup` before the run.
-- [ ] Multi-heavy-region evidence: record degraded lane worker occupancy,
+- [x] Multi-heavy-region evidence: record degraded lane worker occupancy,
   normal lane active count, per-region schedule lag, and CPU utilization.
-- [ ] Multi-heavy-region test: verify degraded worker cap protects normal
+- [x] Multi-heavy-region test: verify degraded worker cap protects normal
   regions.
+- [x] Multi-heavy-region first attempt: `tntspread 12 64 64 1 40 8 2`
+  produced many degraded regions above 1000ms MSPT while the far normal probe
+  region stayed near sub-ms MSPT and `/tps` stayed around 20 before the run hit
+  a separate chunk-load crash.
+- [x] Record crash from first multi-heavy attempt:
+  `D:\worldgen\crash-reports\crash-2026-04-25_13.31.31-server.txt` failed in
+  `CraftWorld.getHighestBlockYAt()` from the load-test plugin, which triggered
+  sync chunk/POI loading on `ShreddedPaperRegionDegraded-14`.
+- [x] Patch load-test plugin to stop using `getHighestBlockYAt()` in hostile
+  spawn paths; TNT, pathfinding mobs, and tracker stands now use the caller's
+  explicit Y coordinate so the harness measures hostile entity work instead of
+  accidental sync terrain lookup.
+- [x] Rebuild and sub-agent review the fixed-y hostile spawn patch before
+  redeploying.
+- [x] Rerun the 12-region TNT spread after fixed-y spawn deployment.
+- [ ] Add engine-side guard/TODO for region tick worker sync chunk/POI loads:
+  this should become async continuation/QoS or controlled plugin failure, not a
+  fatal chunk-system crash.
+- [x] Rerun after fixed-y spawn deployment: no chunk-load crash; far normal
+  probe logged `avgLagMs=0.052`, `p95LagMs=1.150`, `maxLagMs=91.308`, and
+  `/tps` stayed 20.0 during the run.
+- [x] Record new multi-heavy warning: parallel TNT entity spawn logged
+  `Entity uuid already exists`. Static review noted the exact root cause is not
+  proven because `Mth.createInsecureUUID(RandomSource)` is synchronized, but
+  entity UUID generation should still not depend on an entity RNG object under
+  region-parallel creation.
+- [x] Patch entity UUID initialization to use a thread-local UUID generator
+  instead of `Mth.createInsecureUUID(this.random)`.
+- [x] Run `applyAllPatches` and `compileJava` after the entity UUID patch.
+- [x] Request sub-agent review for the entity UUID patch and rerun the
+  multi-heavy TNT spread to confirm duplicate UUID warnings disappear.
+- [x] Runtime evidence after entity UUID patch: fresh 12-region
+  `tntspread 12 64 64 1 40 8 2` logged no duplicate UUID warning, kept `/tps`
+  at 20.0, and the far normal probe logged `avgLagMs=0.052`,
+  `p95LagMs=1.249`, `maxLagMs=99.441`.
 - [ ] Plugin flood test: verify bounded mailbox rejects/delays without OOM.
 - [ ] Plugin flood evidence: capture `RegionQueue` JFR events and rejected task
   counters for `PLUGIN`, `PLAYER_ACTION`, `TRACKER_BROADCAST`, and
