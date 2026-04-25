@@ -2,7 +2,6 @@ package io.multipaper.regionloadtest;
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
-import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
@@ -36,7 +35,8 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tracker",
         "scheduler",
         "chunkgen",
-        "probe"
+        "probe",
+        "at"
     );
 
     private final RegionLoadTestPlugin plugin;
@@ -57,7 +57,31 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return true;
         }
 
-        final String subcommand = args[0].toLowerCase(Locale.ROOT);
+        Location anchorOverride = null;
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+        String[] effectiveArgs = args;
+        if ("at".equals(subcommand)) {
+            if (args.length < 6) {
+                sender.sendMessage("Usage: /" + label + " at <world> <x> <y> <z> <subcommand> [args...]");
+                return true;
+            }
+            final World world = Bukkit.getWorld(args[1]);
+            final Double x = this.parseDouble(sender, args[2], "x");
+            final Double y = this.parseDouble(sender, args[3], "y");
+            final Double z = this.parseDouble(sender, args[4], "z");
+            if (world == null) {
+                sender.sendMessage("Unknown world: " + args[1]);
+                return true;
+            }
+            if (x == null || y == null || z == null) {
+                return true;
+            }
+            anchorOverride = new Location(world, x, y, z);
+            subcommand = args[5].toLowerCase(Locale.ROOT);
+            effectiveArgs = new String[args.length - 5];
+            effectiveArgs[0] = subcommand;
+            System.arraycopy(args, 6, effectiveArgs, 1, args.length - 6);
+        }
         final long commandBatch = "cleanup".equals(subcommand) ? this.plugin.currentBatch() : this.plugin.startBatch();
 
         switch (subcommand) {
@@ -66,49 +90,49 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 return true;
             }
             case "tntsingle" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handleSingleRegionTnt(player, args, commandBatch);
+                return this.handleSingleRegionTnt(sender, anchor, effectiveArgs, commandBatch);
             }
             case "tntspread" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handleDistributedTnt(player, args, commandBatch);
+                return this.handleDistributedTnt(sender, anchor, effectiveArgs, commandBatch);
             }
             case "path" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handlePathfindingLoad(player, args, commandBatch);
+                return this.handlePathfindingLoad(sender, anchor, effectiveArgs, commandBatch);
             }
             case "tracker" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handleTrackerFlood(player, args, commandBatch);
+                return this.handleTrackerFlood(sender, anchor, effectiveArgs, commandBatch);
             }
             case "scheduler" -> {
-                return this.handleSchedulerFlood(sender, args, commandBatch);
+                return this.handleSchedulerFlood(sender, anchorOverride, effectiveArgs, commandBatch);
             }
             case "chunkgen" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handleChunkGenerationLoad(player, args, commandBatch);
+                return this.handleChunkGenerationLoad(sender, anchor, effectiveArgs, commandBatch);
             }
             case "probe" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                return this.handleProbe(player, args, commandBatch);
+                return this.handleProbe(sender, anchor, effectiveArgs, commandBatch);
             }
             default -> {
                 sender.sendMessage("Unknown subcommand. Use /" + label + " help");
@@ -133,58 +157,56 @@ public final class RegionLoadTestCommand implements TabExecutor {
         return Collections.emptyList();
     }
 
-    private boolean handleSingleRegionTnt(final Player player, final String[] args, final long commandBatch) {
+    private boolean handleSingleRegionTnt(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 3) {
-            player.sendMessage("Usage: /rlt tntsingle <width> <depth> [spacing=4] [fuse=80] [regionChunks=8]");
+            sender.sendMessage("Usage: /rlt tntsingle <width> <depth> [spacing=4] [fuse=80] [regionChunks=8]");
             return true;
         }
 
-        final Integer width = this.parseInt(player, args[1], "width");
-        final Integer depth = this.parseInt(player, args[2], "depth");
-        final Integer spacing = args.length >= 4 ? this.parseInt(player, args[3], "spacing") : 4;
-        final Integer fuseTicks = args.length >= 5 ? this.parseInt(player, args[4], "fuse") : 80;
-        final Integer regionChunks = args.length >= 6 ? this.parseInt(player, args[5], "regionChunks") : 8;
+        final Integer width = this.parseInt(sender, args[1], "width");
+        final Integer depth = this.parseInt(sender, args[2], "depth");
+        final Integer spacing = args.length >= 4 ? this.parseInt(sender, args[3], "spacing") : 4;
+        final Integer fuseTicks = args.length >= 5 ? this.parseInt(sender, args[4], "fuse") : 80;
+        final Integer regionChunks = args.length >= 6 ? this.parseInt(sender, args[5], "regionChunks") : 8;
         if (width == null || depth == null || spacing == null || fuseTicks == null || regionChunks == null) {
             return true;
         }
         if (width < 1 || depth < 1 || spacing < 1 || fuseTicks < 1 || regionChunks < 1) {
-            player.sendMessage("All numeric arguments must be positive.");
+            sender.sendMessage("All numeric arguments must be positive.");
             return true;
         }
 
-        final Location base = player.getLocation().clone();
         final LogicalRegion logicalRegion = LogicalRegion.fromChunk(base.getBlockX() >> 4, base.getBlockZ() >> 4, regionChunks);
         final SpawnSummary summary = this.spawnTntGrid(base.getWorld(), base, width, depth, spacing, fuseTicks, logicalRegion, commandBatch);
 
-        player.sendMessage("Queued single-region TNT grid: scheduled=" + summary.scheduled()
+        sender.sendMessage("Queued single-region TNT grid: scheduled=" + summary.scheduled()
             + ", skippedOutsideRegion=" + summary.skipped());
         return true;
     }
 
-    private boolean handleDistributedTnt(final Player player, final String[] args, final long commandBatch) {
+    private boolean handleDistributedTnt(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 4) {
-            player.sendMessage("Usage: /rlt tntspread <grids> <width> <depth> [spacing=4] [fuse=80] [regionChunks=8] [regionStride=2]");
+            sender.sendMessage("Usage: /rlt tntspread <grids> <width> <depth> [spacing=4] [fuse=80] [regionChunks=8] [regionStride=2]");
             return true;
         }
 
-        final Integer grids = this.parseInt(player, args[1], "grids");
-        final Integer width = this.parseInt(player, args[2], "width");
-        final Integer depth = this.parseInt(player, args[3], "depth");
-        final Integer spacing = args.length >= 5 ? this.parseInt(player, args[4], "spacing") : 4;
-        final Integer fuseTicks = args.length >= 6 ? this.parseInt(player, args[5], "fuse") : 80;
-        final Integer regionChunks = args.length >= 7 ? this.parseInt(player, args[6], "regionChunks") : 8;
-        final Integer regionStride = args.length >= 8 ? this.parseInt(player, args[7], "regionStride") : 2;
+        final Integer grids = this.parseInt(sender, args[1], "grids");
+        final Integer width = this.parseInt(sender, args[2], "width");
+        final Integer depth = this.parseInt(sender, args[3], "depth");
+        final Integer spacing = args.length >= 5 ? this.parseInt(sender, args[4], "spacing") : 4;
+        final Integer fuseTicks = args.length >= 6 ? this.parseInt(sender, args[5], "fuse") : 80;
+        final Integer regionChunks = args.length >= 7 ? this.parseInt(sender, args[6], "regionChunks") : 8;
+        final Integer regionStride = args.length >= 8 ? this.parseInt(sender, args[7], "regionStride") : 2;
         if (grids == null || width == null || depth == null || spacing == null || fuseTicks == null
             || regionChunks == null || regionStride == null) {
             return true;
         }
         if (grids < 1 || width < 1 || depth < 1 || spacing < 1 || fuseTicks < 1 || regionChunks < 1 || regionStride < 1) {
-            player.sendMessage("All numeric arguments must be positive.");
+            sender.sendMessage("All numeric arguments must be positive.");
             return true;
         }
 
-        final Location playerLocation = player.getLocation().clone();
-        final LogicalRegion baseRegion = LogicalRegion.fromChunk(playerLocation.getBlockX() >> 4, playerLocation.getBlockZ() >> 4, regionChunks);
+        final LogicalRegion baseRegion = LogicalRegion.fromChunk(base.getBlockX() >> 4, base.getBlockZ() >> 4, regionChunks);
         int totalScheduled = 0;
         int totalSkipped = 0;
         for (int i = 0; i < grids; i++) {
@@ -192,12 +214,12 @@ public final class RegionLoadTestCommand implements TabExecutor {
             final int centerChunkX = startChunkX + regionChunks / 2;
             final int centerChunkZ = baseRegion.startChunkZ() + regionChunks / 2;
             final Location anchor = new Location(
-                playerLocation.getWorld(),
+                base.getWorld(),
                 centerChunkX * 16.0 + 8.0,
-                playerLocation.getY(),
+                base.getY(),
                 centerChunkZ * 16.0 + 8.0,
-                playerLocation.getYaw(),
-                playerLocation.getPitch()
+                base.getYaw(),
+                base.getPitch()
             );
 
             final SpawnSummary summary = this.spawnTntGrid(
@@ -214,7 +236,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             totalSkipped += summary.skipped();
         }
 
-        player.sendMessage("Queued distributed TNT grids: grids=" + grids + ", scheduled=" + totalScheduled
+        sender.sendMessage("Queued distributed TNT grids: grids=" + grids + ", scheduled=" + totalScheduled
             + ", skippedOutsideRegion=" + totalSkipped);
         return true;
     }
@@ -272,24 +294,23 @@ public final class RegionLoadTestCommand implements TabExecutor {
         });
     }
 
-    private boolean handlePathfindingLoad(final Player player, final String[] args, final long commandBatch) {
+    private boolean handlePathfindingLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 2) {
-            player.sendMessage("Usage: /rlt path <count> [spread=24] [lifeTicks=600]");
+            sender.sendMessage("Usage: /rlt path <count> [spread=24] [lifeTicks=600]");
             return true;
         }
 
-        final Integer count = this.parseInt(player, args[1], "count");
-        final Integer spread = args.length >= 3 ? this.parseInt(player, args[2], "spread") : 24;
-        final Integer lifeTicks = args.length >= 4 ? this.parseInt(player, args[3], "lifeTicks") : 600;
+        final Integer count = this.parseInt(sender, args[1], "count");
+        final Integer spread = args.length >= 3 ? this.parseInt(sender, args[2], "spread") : 24;
+        final Integer lifeTicks = args.length >= 4 ? this.parseInt(sender, args[3], "lifeTicks") : 600;
         if (count == null || spread == null || lifeTicks == null) {
             return true;
         }
         if (count < 1 || spread < 1 || lifeTicks < 1) {
-            player.sendMessage("All numeric arguments must be positive.");
+            sender.sendMessage("All numeric arguments must be positive.");
             return true;
         }
 
-        final Location base = player.getLocation().clone();
         for (int i = 0; i < count; i++) {
             final double dx = this.offset(i, spread);
             final double dz = this.offset(i * 17, spread);
@@ -307,7 +328,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             this.plugin.trackTask(task);
         }
 
-        player.sendMessage("Queued pathfinding load: spawned=" + count + ", spread=" + spread + ", lifeTicks=" + lifeTicks);
+        sender.sendMessage("Queued pathfinding load: spawned=" + count + ", spread=" + spread + ", lifeTicks=" + lifeTicks);
         return true;
     }
 
@@ -354,24 +375,23 @@ public final class RegionLoadTestCommand implements TabExecutor {
         this.plugin.trackTask(removalTask);
     }
 
-    private boolean handleTrackerFlood(final Player player, final String[] args, final long commandBatch) {
+    private boolean handleTrackerFlood(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 2) {
-            player.sendMessage("Usage: /rlt tracker <count> [ticks=200] [distance=3]");
+            sender.sendMessage("Usage: /rlt tracker <count> [ticks=200] [distance=3]");
             return true;
         }
 
-        final Integer count = this.parseInt(player, args[1], "count");
-        final Integer ticks = args.length >= 3 ? this.parseInt(player, args[2], "ticks") : 200;
-        final Double distance = args.length >= 4 ? this.parseDouble(player, args[3], "distance") : 3.0D;
+        final Integer count = this.parseInt(sender, args[1], "count");
+        final Integer ticks = args.length >= 3 ? this.parseInt(sender, args[2], "ticks") : 200;
+        final Double distance = args.length >= 4 ? this.parseDouble(sender, args[3], "distance") : 3.0D;
         if (count == null || ticks == null || distance == null) {
             return true;
         }
         if (count < 1 || ticks < 1 || distance <= 0.0D) {
-            player.sendMessage("Count and ticks must be positive, distance must be greater than zero.");
+            sender.sendMessage("Count and ticks must be positive, distance must be greater than zero.");
             return true;
         }
 
-        final Location base = player.getLocation().clone();
         for (int i = 0; i < count; i++) {
             final double angle = (Math.PI * 2.0D * i) / Math.max(1, count);
             final Location spawnHint = base.clone().add(Math.cos(angle) * 4.0D, 0.0D, Math.sin(angle) * 4.0D);
@@ -388,7 +408,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             this.plugin.trackTask(task);
         }
 
-        player.sendMessage("Queued tracker flood: stands=" + count + ", ticks=" + ticks + ", distance=" + distance);
+        sender.sendMessage("Queued tracker flood: stands=" + count + ", ticks=" + ticks + ", distance=" + distance);
         return true;
     }
 
@@ -444,7 +464,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         this.plugin.trackTask(scheduledTask);
     }
 
-    private boolean handleSchedulerFlood(final CommandSender sender, final String[] args, final long commandBatch) {
+    private boolean handleSchedulerFlood(final CommandSender sender, final Location anchorOverride, final String[] args, final long commandBatch) {
         if (args.length < 3) {
             sender.sendMessage("Usage: /rlt scheduler <region|global|async> <tasks> [payloadIterations=0]");
             return true;
@@ -475,18 +495,20 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
             }
             case "region" -> {
-                final Player player = this.requirePlayer(sender);
-                if (player == null) {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
                     return true;
                 }
-                final Chunk baseChunk = player.getLocation().getChunk();
+                final World world = anchor.getWorld();
+                final int baseChunkX = anchor.getBlockX() >> 4;
+                final int baseChunkZ = anchor.getBlockZ() >> 4;
                 final int width = (int)Math.ceil(Math.sqrt(tasks));
                 for (int i = 0; i < tasks; i++) {
                     final int dx = i % width;
                     final int dz = i / width;
-                    final int chunkX = baseChunk.getX() + dx;
-                    final int chunkZ = baseChunk.getZ() + dz;
-                    this.plugin.trackTask(Bukkit.getRegionScheduler().run(this.plugin, player.getWorld(), chunkX, chunkZ,
+                    final int chunkX = baseChunkX + dx;
+                    final int chunkZ = baseChunkZ + dz;
+                    this.plugin.trackTask(Bukkit.getRegionScheduler().run(this.plugin, world, chunkX, chunkZ,
                         task -> this.burnScheduled(task, payloadIterations, commandBatch)));
                 }
             }
@@ -511,24 +533,25 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }
     }
 
-    private boolean handleChunkGenerationLoad(final Player player, final String[] args, final long commandBatch) {
+    private boolean handleChunkGenerationLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 2) {
-            player.sendMessage("Usage: /rlt chunkgen <radiusChunks> [urgent=false]");
+            sender.sendMessage("Usage: /rlt chunkgen <radiusChunks> [urgent=false]");
             return true;
         }
 
-        final Integer radius = this.parseInt(player, args[1], "radiusChunks");
-        final Boolean urgent = args.length >= 3 ? this.parseBoolean(player, args[2], "urgent") : Boolean.FALSE;
+        final Integer radius = this.parseInt(sender, args[1], "radiusChunks");
+        final Boolean urgent = args.length >= 3 ? this.parseBoolean(sender, args[2], "urgent") : Boolean.FALSE;
         if (radius == null || urgent == null) {
             return true;
         }
         if (radius < 0) {
-            player.sendMessage("radiusChunks must be zero or greater.");
+            sender.sendMessage("radiusChunks must be zero or greater.");
             return true;
         }
 
-        final World world = player.getWorld();
-        final Chunk center = player.getLocation().getChunk();
+        final World world = base.getWorld();
+        final int centerChunkX = base.getBlockX() >> 4;
+        final int centerChunkZ = base.getBlockZ() >> 4;
         final int total = (radius * 2 + 1) * (radius * 2 + 1);
         final AtomicInteger remaining = new AtomicInteger(total);
         final AtomicInteger success = new AtomicInteger();
@@ -537,8 +560,8 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                final int chunkX = center.getX() + dx;
-                final int chunkZ = center.getZ() + dz;
+                final int chunkX = centerChunkX + dx;
+                final int chunkZ = centerChunkZ + dz;
                 world.getChunkAtAsync(chunkX, chunkZ, true, urgent).whenComplete((chunk, throwable) -> {
                     if (this.plugin.shouldAbortBatch(commandBatch)) {
                         return;
@@ -553,7 +576,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
                     if (remaining.decrementAndGet() == 0) {
                         final double elapsedMs = (System.nanoTime() - startedAt) / 1_000_000.0D;
-                        this.replyLater(player, String.format(
+                        this.replyLater(sender, String.format(
                             Locale.ROOT,
                             "Chunk generation batch finished: total=%d success=%d failure=%d urgent=%s elapsedMs=%.2f",
                             total,
@@ -567,27 +590,26 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
         }
 
-        player.sendMessage("Queued chunk generation load: totalChunks=" + total + ", urgent=" + urgent);
+        sender.sendMessage("Queued chunk generation load: totalChunks=" + total + ", urgent=" + urgent);
         return true;
     }
 
-    private boolean handleProbe(final Player player, final String[] args, final long commandBatch) {
+    private boolean handleProbe(final CommandSender sender, final Location probeLocation, final String[] args, final long commandBatch) {
         if (args.length < 2) {
-            player.sendMessage("Usage: /rlt probe <samples> [periodTicks=1]");
+            sender.sendMessage("Usage: /rlt probe <samples> [periodTicks=1]");
             return true;
         }
 
-        final Integer samples = this.parseInt(player, args[1], "samples");
-        final Integer periodTicks = args.length >= 3 ? this.parseInt(player, args[2], "periodTicks") : 1;
+        final Integer samples = this.parseInt(sender, args[1], "samples");
+        final Integer periodTicks = args.length >= 3 ? this.parseInt(sender, args[2], "periodTicks") : 1;
         if (samples == null || periodTicks == null) {
             return true;
         }
         if (samples < 2 || periodTicks < 1) {
-            player.sendMessage("samples must be at least 2 and periodTicks must be positive.");
+            sender.sendMessage("samples must be at least 2 and periodTicks must be positive.");
             return true;
         }
 
-        final Location probeLocation = player.getLocation().clone();
         final long expectedPeriodNanos = TimeUnit.MILLISECONDS.toNanos(periodTicks * 50L);
         final AtomicInteger remaining = new AtomicInteger(samples);
         final AtomicLong lastRunNanos = new AtomicLong(System.nanoTime());
@@ -617,7 +639,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 final int measuredSamples = Math.max(1, samples - 1);
                 final double avgLagMs = totalLagNanos.get() / (double) measuredSamples / 1_000_000.0D;
                 final double maxLagMs = maxLagNanos.get() == Long.MIN_VALUE ? 0.0D : maxLagNanos.get() / 1_000_000.0D;
-                this.replyLater(player, String.format(
+                this.replyLater(sender, String.format(
                     Locale.ROOT,
                     "Probe finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f maxLagMs=%.3f",
                     probeLocation.getBlockX() >> 4,
@@ -631,7 +653,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }, 1L, periodTicks);
 
         this.plugin.trackTask(scheduledTask);
-        player.sendMessage("Started normal-region probe at chunk=" + (probeLocation.getBlockX() >> 4)
+        sender.sendMessage("Started normal-region probe at chunk=" + (probeLocation.getBlockX() >> 4)
             + "," + (probeLocation.getBlockZ() >> 4) + " for samples=" + samples + ", periodTicks=" + periodTicks);
         return true;
     }
@@ -645,14 +667,18 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " scheduler <region|global|async> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");
+        sender.sendMessage("/" + label + " at <world> <x> <y> <z> <subcommand> [args...]");
         sender.sendMessage("/" + label + " cleanup");
     }
 
-    private Player requirePlayer(final CommandSender sender) {
-        if (sender instanceof Player player) {
-            return player;
+    private Location anchorFor(final CommandSender sender, final Location override) {
+        if (override != null) {
+            return override.clone();
         }
-        sender.sendMessage("This subcommand must be run by a player.");
+        if (sender instanceof Player player) {
+            return player.getLocation().clone();
+        }
+        sender.sendMessage("This subcommand must be run by a player or with /rlt at <world> <x> <y> <z> <subcommand> [args...]");
         return null;
     }
 

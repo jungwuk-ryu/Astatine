@@ -513,8 +513,9 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Re-test `forceload add 0 0`: command completed in about 0.62s, `/region top`
   reported normal regions at sub-1ms EWMA MSPT, `/tps` stayed near 20 TPS, and
   RCON `stop` shut down cleanly.
-- [ ] Remove the temporary forced chunk `[0, 0]` from the `D:\worldgen` test
-  world during the next controlled runtime run.
+- [x] Remove the temporary forced chunk `[0, 0]` from the `D:\worldgen` test
+  world during the next controlled runtime run: RCON reported no chunks were
+  currently force-loaded.
 
 ### I. Load-Test Plugin
 
@@ -549,6 +550,25 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Re-run plugin smoke after `folia-supported: true`; `RegionLoadTest`
   enabled without a synchronous-execution warning. Existing third-party plugins
   still reported Folia support warnings and are tracked in compatibility TODOs.
+- [x] Add RCON/console anchor support to the load-test plugin:
+  `/rlt at <world> <x> <y> <z> <subcommand> [args...]`.
+- [x] Reject implicit console world-spawn fallback after sub-agent review:
+  RCON/console load commands now require explicit `/rlt at <world> <x> <y>
+  <z> ...` coordinates unless run by a player.
+- [x] Rebuild the load-test plugin after RCON anchor support:
+  `./gradlew -p tools/region-load-test-plugin clean build` passed.
+- [x] Receive sub-agent review for RCON anchor support.
+- [x] Patch every RCON anchor support blocker before runtime deployment:
+  implicit console world-spawn fallback was removed and re-reviewed with no
+  blocker.
+- [x] Copy rebuilt RCON-capable plugin jar into `D:\worldgen\plugins`.
+- [x] Restart `D:\worldgen` after plugin replacement.
+- [x] Verify `/rlt at world ... probe`, `tntsingle`, `scheduler region`, and
+  `chunkgen` from RCON before hostile-load acceptance tests.
+- [x] RCON smoke result after anchor support: `probe`, `scheduler region`,
+  `chunkgen`, `tntsingle`, `/region top`, and `/tps` all responded; the
+  independent scheduler started with normal/degraded workers and reported
+  active normal regions.
 - [x] Capture plugin smoke JFR:
   `D:\worldgen\logs\codex-regionload-plugin-foliaflag-20260425-064052.jfr`.
 - [x] Restore `D:\worldgen\server.properties` after temporary RCON testing.
