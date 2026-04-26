@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.CraftWorld;
 import io.multipaper.shreddedpaper.region.RegionPos;
@@ -100,6 +101,12 @@ public class ShreddedPaper {
         return serverLevel.chunkScheduler.getRegionLocker().hasWriteLock(regionPos)
                 || ShreddedPaperChunkTicker.isCurrentlyTickingRegion(serverLevel, regionPos)
                 || TickThread.isShutdownThread();
+    }
+
+    public static void postProcessGeneration(ServerLevel serverLevel, LevelChunk chunk) {
+        try (var ignored = serverLevel.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
+            chunk.postProcessGeneration(serverLevel);
+        }
     }
 
 }

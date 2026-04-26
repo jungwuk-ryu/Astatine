@@ -57,6 +57,55 @@ public class ShreddedPaperRegionLocker {
     }
 
     /**
+     * Temporarily treats every region already locked by this thread as writable.
+     * This is only for vanilla boundary-mutation phases, such as chunk post-processing,
+     * where a chunk in the owner region may legitimately update a neighboring chunk
+     * that is held as an isolation lock.
+     */
+    public ScopedWriteAccess promoteCurrentThreadLocksToWrite() {
+        return this.promoteLocalLocksToWrite(new ArrayList<>(this.localLocks.get()));
+    }
+
+    public ScopedWriteAccess promoteLocalLocksToWrite(final Collection<RegionPos> regionPositions) {
+        if (regionPositions.isEmpty()) {
+            return () -> {};
+        }
+
+        final Thread owner = Thread.currentThread();
+        final Set<RegionPos> local = this.localLocks.get();
+        final Set<RegionPos> writes = this.writeLocks.get();
+        final Set<RegionPos> readOnly = this.readOnlyLocks.get();
+        final List<RegionPos> promoted = new ArrayList<>(regionPositions.size());
+
+        for (final RegionPos regionPos : regionPositions) {
+            if (!local.contains(regionPos)) {
+                throw new IllegalStateException("Cannot promote unheld region lock to write access: " + regionPos);
+            }
+            if (!writes.contains(regionPos)) {
+                writes.add(regionPos);
+                readOnly.remove(regionPos);
+                promoted.add(regionPos);
+            }
+        }
+
+        if (promoted.isEmpty()) {
+            return () -> {};
+        }
+
+        return () -> {
+            if (owner != Thread.currentThread()) {
+                throw new IllegalStateException("Cannot close write promotion from a different thread [expected=%s,got=%s]".formatted(owner, Thread.currentThread()));
+            }
+            writes.removeAll(promoted);
+            for (final RegionPos regionPos : promoted) {
+                if (local.contains(regionPos)) {
+                    readOnly.add(regionPos);
+                }
+            }
+        };
+    }
+
+    /**
      * Returns an unmodifiable view of the locked regions for the current thread.
      */
     public Set<RegionPos> getLockedRegions() {
@@ -313,6 +362,11 @@ public class ShreddedPaperRegionLocker {
         Collection<RegionPos> lockedRegions();
         Thread owner();
         void unlock();
+    }
+
+    public interface ScopedWriteAccess extends AutoCloseable {
+        @Override
+        void close();
     }
 
     public class ReadOnlyRegionLock implements RegionLock {

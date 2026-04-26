@@ -173,7 +173,7 @@
 +                        ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
 +                            final LevelChunk chunk2 = this.world.chunkSource.getChunkAtIfLoadedImmediately(pendingSendX, pendingSendZ);
 +                            if (chunk2 != null && this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
-+                                chunk2.postProcessGeneration(this.world);
++                                ShreddedPaper.postProcessGeneration(this.world, chunk2);
 +                            }
 +                        });
 +                        if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
@@ -181,7 +181,8 @@
 +                    }
 +                    // ShreddedPaper end - run post-processing on the tick thread
                      // not yet post-processed, need to do this so that tile entities can properly be sent to clients
-                     chunk.postProcessGeneration(this.world);
+-                    chunk.postProcessGeneration(this.world);
++                    ShreddedPaper.postProcessGeneration(this.world, chunk);
                      // check if there was any recursive action
 @@ -841,7 +_,17 @@
                  }

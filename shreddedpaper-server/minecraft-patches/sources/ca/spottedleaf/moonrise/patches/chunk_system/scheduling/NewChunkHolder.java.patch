@@ -40,7 +40,7 @@
 +    public boolean ensureFullStatusChangeWithWriteLock() {
 +        // Upgrading to a full loaded chunk is just a chunk load task, which does not require the write lock
 +        // However, upgrading to block ticking or entity ticking is more than just loading a chunk, and requires us to have the write lock
-+        if (!MinecraftServer.getServer().forceTicks && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, RegionPos.forChunk(this.vanillaChunkHolder.getPos()))) {
++        if (!TickThread.isTickThreadFor(this.world, this.chunkX, this.chunkZ)) {
 +            ShreddedPaper.runSync(world, vanillaChunkHolder.getPos(), () -> {
 +                List<NewChunkHolder> changedFullStatus2 = new ArrayList<>();
 +                handleFullStatusChange(changedFullStatus2);
