@@ -34,15 +34,24 @@
 +        int ping = player.getPing();
 +        bossbar.progress(getBossBarProgress(metrics, ping));
 +        bossbar.color(getBossBarColor(metrics, ping));
-         bossbar.name(MiniMessage.miniMessage().deserialize(PurpurConfig.commandTPSBarTitle,
+-        bossbar.name(MiniMessage.miniMessage().deserialize(PurpurConfig.commandTPSBarTitle,
 -                Placeholder.component("tps", getTPSColor()),
 -                Placeholder.component("mspt", getMSPTColor()),
 -                Placeholder.component("ping", getPingColor(player.getPing()))
++        bossbar.name(MiniMessage.miniMessage().deserialize(getTitleFormat(),
 +                Placeholder.component("tps", getTPSColor(metrics)),
 +                Placeholder.component("mspt", getMSPTColor(metrics)),
-+                Placeholder.component("ping", getPingColor(ping))
++                Placeholder.component("ping", getPingColor(ping)),
++                Placeholder.component("region", Component.text(metrics.regionName()))
          ));
      }
++
++    private String getTitleFormat() {
++        if (PurpurConfig.commandTPSBarTitle.contains("<region>")) {
++            return PurpurConfig.commandTPSBarTitle;
++        }
++        return PurpurConfig.commandTPSBarTitle + " <dark_gray>(<gray><region></gray>)</dark_gray>";
++    }
  
 @@ -44,39 +46,53 @@
          }
@@ -61,9 +70,9 @@
 +            if (region != null) {
 +                LevelChunkRegion.TickStats stats = region.getTickStats();
 +                if (stats == null) {
-+                    return new Metrics(20.0D, 0.0D);
++                    return new Metrics(20.0D, 0.0D, getRegionName(player, region));
 +                }
-+                return new Metrics(clamp(stats.tps(), 0.0D, 20.0D), Math.max(stats.mspt(), 0.0D));
++                return new Metrics(clamp(stats.tps(), 0.0D, 20.0D), Math.max(stats.mspt(), 0.0D), getRegionName(player, region));
 +            }
 +        }
 +
@@ -71,7 +80,17 @@
 +    }
 +
 +    private Metrics getServerMetrics() {
-+        return new Metrics(clamp(Bukkit.getTPS()[0], 0.0D, 20.0D), Bukkit.getAverageTickTime());
++        return new Metrics(clamp(Bukkit.getTPS()[0], 0.0D, 20.0D), Bukkit.getAverageTickTime(), "server");
++    }
++
++    private String getRegionName(Player player, LevelChunkRegion region) {
++        int cellCount = region.getOwner().cellCount();
++        return "%s [%d, %d]%s".formatted(
++                player.getWorld().getName(),
++                region.getPrimaryRegionPos().x,
++                region.getPrimaryRegionPos().z,
++                cellCount > 1 ? " +" + (cellCount - 1) : ""
++        );
 +    }
 +
 +    private float getBossBarProgress(Metrics metrics, int ping) {
@@ -196,6 +215,6 @@
 +        return Math.max(Math.min(value, max), min);
 +    }
 +
-+    private record Metrics(double tps, double mspt) {
++    private record Metrics(double tps, double mspt, String regionName) {
 +    }
  }
