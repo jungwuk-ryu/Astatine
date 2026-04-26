@@ -12,6 +12,7 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.entity.Villager;
 import org.bukkit.entity.Zombie;
 
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "cleanup",
         "tntsingle",
         "tntspread",
+        "villagers",
         "path",
         "tracker",
         "broadcast",
@@ -114,6 +116,13 @@ public final class RegionLoadTestCommand implements TabExecutor {
                     return true;
                 }
                 return this.handleDistributedTnt(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "villagers" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleVillagerLoad(sender, anchor, effectiveArgs, commandBatch);
             }
             case "path" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
@@ -364,6 +373,70 @@ public final class RegionLoadTestCommand implements TabExecutor {
         });
     }
 
+    private boolean handleVillagerLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt villagers <count> [spread=24] [lifeTicks=1200]");
+            return true;
+        }
+
+        final Integer count = this.parseInt(sender, args[1], "count");
+        final Integer spread = args.length >= 3 ? this.parseInt(sender, args[2], "spread") : 24;
+        final Integer lifeTicks = args.length >= 4 ? this.parseInt(sender, args[3], "lifeTicks") : 1200;
+        if (count == null || spread == null || lifeTicks == null) {
+            return true;
+        }
+        if (count < 1 || spread < 1 || lifeTicks < 1) {
+            sender.sendMessage("All numeric arguments must be positive.");
+            return true;
+        }
+
+        for (int i = 0; i < count; i++) {
+            final double dx = this.offset(i, spread);
+            final double dz = this.offset(i * 17, spread);
+            final Location spawnHint = base.clone().add(dx, 0.0D, dz);
+            final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
+                try {
+                    if (this.plugin.shouldAbortBatch(commandBatch)) {
+                        return;
+                    }
+                    this.spawnVillager(spawnHint, lifeTicks);
+                } finally {
+                    this.plugin.untrackTask(scheduledTask);
+                }
+            });
+            this.plugin.trackTask(task);
+        }
+
+        sender.sendMessage("Queued villager load: spawned=" + count + ", spread=" + spread + ", lifeTicks=" + lifeTicks);
+        return true;
+    }
+
+    private void spawnVillager(final Location spawnHint, final int lifeTicks) {
+        final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
+        final Villager villager = spawnLocation.getWorld().spawn(spawnLocation, Villager.class, entity -> {
+            entity.setRemoveWhenFarAway(false);
+            entity.setAdult();
+            entity.setProfession(Villager.Profession.FARMER);
+        });
+
+        this.plugin.trackEntity(villager);
+        final UUID entityId = villager.getUniqueId();
+        final AtomicReference<ScheduledTask> taskRef = new AtomicReference<>();
+        final ScheduledTask removalTask = villager.getScheduler().runDelayed(this.plugin, task -> {
+            try {
+                villager.remove();
+            } finally {
+                this.plugin.untrackTask(task);
+                this.plugin.untrackEntity(entityId);
+            }
+        }, () -> {
+            this.plugin.untrackTask(taskRef.get());
+            this.plugin.untrackEntity(entityId);
+        }, lifeTicks);
+        taskRef.set(removalTask);
+        this.plugin.trackTask(removalTask);
+    }
+
     private boolean handlePathfindingLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
         if (args.length < 2) {
             sender.sendMessage("Usage: /rlt path <count> [spread=24] [lifeTicks=600]");
@@ -409,7 +482,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         final double dz,
         final int lifeTicks
     ) {
-        final Location spawnLocation = spawnHint.clone();
+        final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
         final Zombie zombie = base.getWorld().spawn(spawnLocation, Zombie.class, mob -> {
             mob.setCanPickupItems(false);
             mob.setRemoveWhenFarAway(false);
@@ -442,6 +515,14 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }, lifeTicks);
         taskRef.set(removalTask);
         this.plugin.trackTask(removalTask);
+    }
+
+    private Location surfaceSpawnLocation(final Location hint) {
+        final World world = Objects.requireNonNull(hint.getWorld());
+        final int blockX = hint.getBlockX();
+        final int blockZ = hint.getBlockZ();
+        final int y = Math.min(world.getMaxHeight() - 1, Math.max(world.getMinHeight() + 1, world.getHighestBlockYAt(blockX, blockZ) + 1));
+        return new Location(world, blockX + 0.5D, y, blockZ + 0.5D, hint.getYaw(), hint.getPitch());
     }
 
     private boolean handleTrackerFlood(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
@@ -1258,6 +1339,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("RegionLoadTest commands:");
         sender.sendMessage("/" + label + " tntsingle <width> <depth> [spacing] [fuse] [regionChunks]");
         sender.sendMessage("/" + label + " tntspread <grids> <width> <depth> [spacing] [fuse] [regionChunks] [regionStride]");
+        sender.sendMessage("/" + label + " villagers <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " path <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
         sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");

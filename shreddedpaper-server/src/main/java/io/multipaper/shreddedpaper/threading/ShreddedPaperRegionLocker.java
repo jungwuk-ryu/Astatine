@@ -395,7 +395,8 @@ public class ShreddedPaperRegionLocker {
             final Collection<RegionPos> newlyLockedRegions = superLock.lockedRegions();
             this.writeLocks = new ArrayList<>(writeRegions.size());
             for (final RegionPos writeRegion : writeRegions) {
-                if (newlyLockedRegions.contains(writeRegion)) {
+                if (newlyLockedRegions.contains(writeRegion)
+                    || ShreddedPaperRegionLocker.this.localLocks.get().contains(writeRegion)) {
                     this.writeLocks.add(writeRegion);
                 }
             }

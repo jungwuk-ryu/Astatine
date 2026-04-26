@@ -292,6 +292,15 @@ public class ShreddedPaperChunkTicker {
 
         for (int processed = 0; processed < size; processed++) {
             final RegionPos cell = ownerCells.get(index);
+            // Dynamic split/merge can leave stale scheduled tick cursors behind; never tick a cell through a read-only isolation lock.
+            if (!region.getOwner().ownsCell(cell) || !level.chunkScheduler.getRegionLocker().hasWriteLock(cell)) {
+                fluidPhase = false;
+                index++;
+                if (index == size) {
+                    index = 0;
+                }
+                continue;
+            }
             if (!fluidPhase) {
                 if (budget != null && !budget.canContinue(RegionWorkType.BLOCK_TICK)) {
                     region.setScheduledTickCellCursor(cell.toLong(), false);
