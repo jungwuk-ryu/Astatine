@@ -35,12 +35,19 @@
 +        // ShreddedPaper end - defer player world ticking until the current chunk is full
          this.resetPosition();
          this.player.xo = this.player.getX();
-@@ -627,6 +_,12 @@
+@@ -627,6 +_,19 @@
                      return;
                  }
                  // Paper end - Prevent moving into unloaded chunks
 +                // ShreddedPaper start - Check we own the destination location
 +                if (!TickThread.isTickThreadFor(this.player.level(), new Vec3(toX, toY, toZ))) {
++                    this.connection.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
++                    return;
++                }
++                if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                    && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                    && (!serverLevel.areChunksLoadedForMove(this.player.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(this.player.position())))
++                        || !serverLevel.areChunksLoadedForMove(rootVehicle.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(rootVehicle.position()))))) {
 +                    this.connection.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
 +                    return;
 +                }
@@ -57,12 +64,18 @@
          }
      }
  
-@@ -1574,6 +_,12 @@
+@@ -1574,6 +_,18 @@
                                          // Paper end - Add fail move event
                                      }
                                      // Paper end - Prevent moving into unloaded chunks
 +                                    // ShreddedPaper start - Check we own the destination location
 +                                    if (!TickThread.isTickThreadFor(this.player.level(), new Vec3(toX, toY, toZ))) {
++                                        this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
++                                        return;
++                                    }
++                                    if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                                        && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                                        && !serverLevel.areChunksLoadedForMove(this.player.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(this.player.position())))) {
 +                                        this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
 +                                        return;
 +                                    }

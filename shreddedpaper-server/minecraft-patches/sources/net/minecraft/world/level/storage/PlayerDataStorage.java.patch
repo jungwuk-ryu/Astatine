@@ -17,28 +17,54 @@
  import net.minecraft.nbt.CompoundTag;
  import net.minecraft.nbt.NbtAccounter;
  import net.minecraft.nbt.NbtIo;
-@@ -24,6 +_,8 @@
+@@ -24,6 +_,9 @@
      private final File playerDir;
      protected final DataFixer fixerUpper;
  
 +    private static final Executor IO_WORKER = Util.ioPool(); // ShreddedPaper
++    private static final Object[] SHREDDEDPAPER_PLAYER_SAVE_LOCKS = java.util.stream.IntStream.range(0, 256).mapToObj(i -> new Object()).toArray(Object[]::new); // ShreddedPaper
 +
      public PlayerDataStorage(LevelStorageSource.LevelStorageAccess levelStorageAccess, DataFixer fixerUpper) {
          this.fixerUpper = fixerUpper;
          this.playerDir = levelStorageAccess.getLevelPath(LevelResource.PLAYER_DATA_DIR).toFile();
-@@ -35,6 +_,7 @@
+@@ -35,13 +_,38 @@
          try (ProblemReporter.ScopedCollector scopedCollector = new ProblemReporter.ScopedCollector(player.problemPath(), LOGGER)) {
              TagValueOutput tagValueOutput = TagValueOutput.createWithContext(scopedCollector, player.registryAccess());
              player.saveWithoutId(tagValueOutput);
-+            Runnable r = () -> { try { // ShreddedPaper - write async
-             Path path = this.playerDir.toPath();
-             Path path1 = Files.createTempFile(path, player.getStringUUID() + "-", ".dat");
-             CompoundTag compoundTag = tagValueOutput.buildResult();
-@@ -42,6 +_,8 @@
-             Path path2 = path.resolve(player.getStringUUID() + ".dat");
-             Path path3 = path.resolve(player.getStringUUID() + ".dat_old");
-             Util.safeReplaceFile(path2, path1, path3);
-+            } catch (Exception e) { LOGGER.warn("Failed to save player data for {}", player.getPlainTextName(), e); throw new RuntimeException(e); }}; // ShreddedPaper - write async
+-            Path path = this.playerDir.toPath();
+-            Path path1 = Files.createTempFile(path, player.getStringUUID() + "-", ".dat");
+-            CompoundTag compoundTag = tagValueOutput.buildResult();
+-            NbtIo.writeCompressed(compoundTag, path1);
+-            Path path2 = path.resolve(player.getStringUUID() + ".dat");
+-            Path path3 = path.resolve(player.getStringUUID() + ".dat_old");
+-            Util.safeReplaceFile(path2, path1, path3);
++            String playerUuid = player.getStringUUID(); // ShreddedPaper - write async
++            String playerName = player.getPlainTextName(); // ShreddedPaper - write async
++            CompoundTag compoundTag = tagValueOutput.buildResult(); // ShreddedPaper - write async
++            Runnable r = () -> { // ShreddedPaper - write async
++                Path path1 = null;
++                synchronized (SHREDDEDPAPER_PLAYER_SAVE_LOCKS[Math.floorMod(playerUuid.hashCode(), SHREDDEDPAPER_PLAYER_SAVE_LOCKS.length)]) {
++                    try {
++                        Path path = this.playerDir.toPath();
++                        path1 = Files.createTempFile(path, playerUuid + "-", ".dat");
++                        NbtIo.writeCompressed(compoundTag, path1);
++                        Path path2 = path.resolve(playerUuid + ".dat");
++                        Path path3 = path.resolve(playerUuid + ".dat_old");
++                        Util.safeReplaceFile(path2, path1, path3);
++                    } catch (Exception e) {
++                        LOGGER.warn("Failed to save player data for {}", playerName, e);
++                        throw new RuntimeException(e);
++                    } finally {
++                        if (path1 != null) {
++                            try {
++                                Files.deleteIfExists(path1);
++                            } catch (Exception e) {
++                                LOGGER.warn("Failed to delete temporary player data save for {}", playerName, e);
++                            }
++                        }
++                    }
++                }
++            }; // ShreddedPaper - write async
 +            if (ShreddedPaperConfiguration.get().optimizations.writePlayerSavesAsync && !TickThread.isShutdownThread()) IO_WORKER.execute(r); else r.run(); // ShreddedPaper - write async
          } catch (Exception var11) {
              LOGGER.warn("Failed to save player data for {}", player.getPlainTextName(), var11); // Paper - Print exception
