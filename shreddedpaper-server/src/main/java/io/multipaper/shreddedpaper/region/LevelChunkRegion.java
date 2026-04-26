@@ -245,6 +245,10 @@ public class LevelChunkRegion {
         }
     }
 
+    public synchronized boolean removePlayerIfPresent(ServerPlayer player) {
+        return this.players.remove(player);
+    }
+
     public synchronized List<ServerPlayer> getPlayers() {
         return this.players.isEmpty() ? List.of() : new ObjectArrayList<>(this.players);
     }

@@ -711,8 +711,12 @@ public class LevelChunkRegionMap {
     }
 
     public void removePlayer(ServerPlayer player) {
-        this.acceptRegionForCell(RegionPos.forChunk(player.chunkPosition()), region -> region.removePlayer(player));
-        player.currentRegion = null;
+        final ChunkPos previousChunk = player.previousChunkPosRegion != null ? player.previousChunkPosRegion : player.chunkPosition();
+        this.acceptExistingRegionForCell(RegionPos.forChunk(previousChunk), region -> region.removePlayerIfPresent(player));
+        if (player.currentRegion != null && player.currentRegion.getLevel() == this.level) {
+            player.currentRegion = null;
+        }
+        player.previousChunkPosRegion = null;
     }
 
     public void movePlayer(ServerPlayer player) {
