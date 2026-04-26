@@ -1,11 +1,15 @@
 package io.multipaper.shreddedpaper.commands;
 
 import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
+import java.util.Locale;
 
 public final class RegionCommand extends Command {
 
@@ -47,28 +51,47 @@ public final class RegionCommand extends Command {
     private void sendTop(final CommandSender sender) {
         final RegionTickScheduler scheduler = RegionTickScheduler.getIfStarted();
         if (scheduler == null) {
-            sender.sendMessage("Independent region scheduler has not started yet.");
+            sender.sendMessage(Component.text("Independent region scheduler has not started yet.", NamedTextColor.RED));
             return;
         }
 
         final List<RegionTickScheduler.RegionTickSnapshot> snapshots = scheduler.snapshots();
-        sender.sendMessage("Top ShreddedPaper regions by EWMA MSPT or mailbox class pressure:");
-        snapshots.stream().limit(10L).forEach(snapshot -> sender.sendMessage(this.format(snapshot)));
+        this.sendHeader(sender, "ShreddedPaper Regions", "top by MSPT, lag, mailbox pressure, and chunk IO pressure");
+        if (snapshots.isEmpty()) {
+            sender.sendMessage(Component.text("No active region snapshots.", NamedTextColor.GRAY));
+            return;
+        }
+        int index = 1;
+        for (final RegionTickScheduler.RegionTickSnapshot snapshot : snapshots.stream().limit(10L).toList()) {
+            sender.sendMessage(this.summaryLine(index++, snapshot));
+            sender.sendMessage(this.compactDetailLine(snapshot));
+        }
+        sender.sendMessage(Component.text("Use /region inspect <world> <regionX> <regionZ> for full counters.", NamedTextColor.DARK_GRAY));
     }
 
     private void sendDump(final CommandSender sender) {
         final RegionTickScheduler scheduler = RegionTickScheduler.getIfStarted();
         if (scheduler == null) {
-            sender.sendMessage("Independent region scheduler has not started yet.");
+            sender.sendMessage(Component.text("Independent region scheduler has not started yet.", NamedTextColor.RED));
             return;
         }
 
-        scheduler.snapshots().forEach(snapshot -> sender.sendMessage(this.format(snapshot)));
+        final List<RegionTickScheduler.RegionTickSnapshot> snapshots = scheduler.snapshots();
+        this.sendHeader(sender, "ShreddedPaper Region Dump", "all active independent tick regions");
+        if (snapshots.isEmpty()) {
+            sender.sendMessage(Component.text("No active region snapshots.", NamedTextColor.GRAY));
+            return;
+        }
+        int index = 1;
+        for (final RegionTickScheduler.RegionTickSnapshot snapshot : snapshots) {
+            sender.sendMessage(this.summaryLine(index++, snapshot));
+            sender.sendMessage(this.compactDetailLine(snapshot));
+        }
     }
 
     private void sendInspect(final CommandSender sender, final String[] args) {
         if (args.length != 4) {
-            sender.sendMessage(this.getUsage());
+            sender.sendMessage(Component.text(this.getUsage(), NamedTextColor.YELLOW));
             return;
         }
 
@@ -78,13 +101,13 @@ public final class RegionCommand extends Command {
             regionX = Integer.parseInt(args[2]);
             regionZ = Integer.parseInt(args[3]);
         } catch (final NumberFormatException ignored) {
-            sender.sendMessage("Region coordinates must be integers.");
+            sender.sendMessage(Component.text("Region coordinates must be integers.", NamedTextColor.RED));
             return;
         }
 
         final RegionTickScheduler scheduler = RegionTickScheduler.getIfStarted();
         if (scheduler == null) {
-            sender.sendMessage("Independent region scheduler has not started yet.");
+            sender.sendMessage(Component.text("Independent region scheduler has not started yet.", NamedTextColor.RED));
             return;
         }
 
@@ -93,51 +116,197 @@ public final class RegionCommand extends Command {
                 .filter(snapshot -> snapshot.regionPos().x == regionX && snapshot.regionPos().z == regionZ)
                 .findFirst()
                 .ifPresentOrElse(
-                        snapshot -> sender.sendMessage(this.format(snapshot)),
-                        () -> sender.sendMessage("No active region snapshot found for %s %d %d.".formatted(args[1], regionX, regionZ))
+                        snapshot -> this.sendInspectSnapshot(sender, snapshot),
+                        () -> sender.sendMessage(Component.text("No active region snapshot found for %s %d %d.".formatted(args[1], regionX, regionZ), NamedTextColor.RED))
                 );
     }
 
-    private String format(final RegionTickScheduler.RegionTickSnapshot snapshot) {
-        return "%s %s %s mspt=%.2f lag=%.2fms mailbox=%d classPressure=%.0f%% chunkIO=%d/%d deferred=%d %.0f%% exec=%d/%d waiting=%d backlogQueued=%d backlogEmergencyInFlight=%d backlogEmergencyRetries=%d backlog=%d/%d backlogPressure=%.0f%% deferred=%d overflow=%d/%d overflowPressure=%.0f%% backpressure=%d/%d backpressurePressure=%.0f%% execPressure=%.0f%% rejected=%d chunkRejected=%d chunkDowngraded=%d execFallback=%d execBackpressure=%d execBacklogBackpressure=%d execBacklogDeferred=%d execBacklogEmergency=%d execBacklogEmergencyRejected=%d execDowngraded=%d".formatted(
-                snapshot.world(),
-                snapshot.regionPos(),
-                snapshot.loadClass(),
-                snapshot.ewmaMspt(),
-                snapshot.ewmaScheduleLagMs(),
-                snapshot.mailboxDepth(),
-                snapshot.mailboxClassPressure() * 100.0D,
-                snapshot.chunkIoInFlight(),
-                snapshot.chunkIoCapacity(),
-                snapshot.chunkIoDeferred(),
-                snapshot.chunkIoPressure() * 100.0D,
-                snapshot.chunkIoExecutorInFlight(),
-                snapshot.chunkIoExecutorCapacity(),
-                snapshot.chunkIoExecutorWaiting(),
-                snapshot.chunkIoExecutorBacklogQueued(),
-                snapshot.chunkIoExecutorBacklogEmergencyInFlight(),
-                snapshot.chunkIoExecutorBacklogEmergencyRetries(),
-                snapshot.chunkIoExecutorWaiting() + snapshot.chunkIoExecutorBacklogQueued(),
-                snapshot.chunkIoExecutorBacklogCapacity(),
-                snapshot.chunkIoExecutorBacklogPressure() * 100.0D,
-                snapshot.chunkIoExecutorDeferred(),
-                snapshot.chunkIoExecutorOverflowInFlight(),
-                snapshot.chunkIoExecutorOverflowCapacity(),
-                snapshot.chunkIoExecutorOverflowPressure() * 100.0D,
-                snapshot.chunkIoExecutorBackpressureWaiters(),
-                snapshot.chunkIoExecutorBackpressureCapacity(),
-                snapshot.chunkIoExecutorBackpressurePressure() * 100.0D,
-                snapshot.chunkIoExecutorPressure() * 100.0D,
-                snapshot.rejectedTasks(),
-                snapshot.chunkIoRejected(),
-                snapshot.chunkIoDowngraded(),
-                snapshot.chunkIoExecutorRejected(),
-                snapshot.chunkIoExecutorOverflowBackpressure(),
-                snapshot.chunkIoExecutorBacklogBackpressure(),
-                snapshot.chunkIoExecutorBacklogDeferred(),
-                snapshot.chunkIoExecutorBacklogEmergency(),
-                snapshot.chunkIoExecutorBacklogEmergencyRejected(),
-                snapshot.chunkIoExecutorDowngraded()
-        );
+    private void sendInspectSnapshot(final CommandSender sender, final RegionTickScheduler.RegionTickSnapshot snapshot) {
+        this.sendHeader(sender, "ShreddedPaper Region Inspect", "%s [%d, %d]".formatted(snapshot.world(), snapshot.regionPos().x, snapshot.regionPos().z));
+        sender.sendMessage(this.summaryLine(1, snapshot));
+        sender.sendMessage(this.metricLine(
+                "mailbox",
+                this.metric("depth", Integer.toString(snapshot.mailboxDepth()), this.pressureColor(snapshot.mailboxClassPressure())),
+                this.metric("class", this.percent(snapshot.mailboxClassPressure()), this.pressureColor(snapshot.mailboxClassPressure())),
+                this.metric("rejected", Long.toString(snapshot.rejectedTasks()), this.countColor(snapshot.rejectedTasks()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "chunk requests",
+                this.metric("inFlight", this.ratio(snapshot.chunkIoInFlight(), snapshot.chunkIoCapacity()), this.pressureColor(snapshot.chunkIoPressure())),
+                this.metric("pressure", this.percent(snapshot.chunkIoPressure()), this.pressureColor(snapshot.chunkIoPressure())),
+                this.metric("deferred", Integer.toString(snapshot.chunkIoDeferred()), this.countColor(snapshot.chunkIoDeferred())),
+                this.metric("downgraded", Long.toString(snapshot.chunkIoDowngraded()), this.countColor(snapshot.chunkIoDowngraded())),
+                this.metric("rejected", Long.toString(snapshot.chunkIoRejected()), this.countColor(snapshot.chunkIoRejected()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "executor",
+                this.metric("exec", this.ratio(snapshot.chunkIoExecutorInFlight(), snapshot.chunkIoExecutorCapacity()), this.pressureColor(snapshot.chunkIoExecutorPressure())),
+                this.metric("waiting", Integer.toString(snapshot.chunkIoExecutorWaiting()), this.countColor(snapshot.chunkIoExecutorWaiting())),
+                this.metric("pressure", this.percent(snapshot.chunkIoExecutorPressure()), this.pressureColor(snapshot.chunkIoExecutorPressure())),
+                this.metric("deferred", Integer.toString(snapshot.chunkIoExecutorDeferred()), this.countColor(snapshot.chunkIoExecutorDeferred())),
+                this.metric("fallback", Long.toString(snapshot.chunkIoExecutorRejected()), this.countColor(snapshot.chunkIoExecutorRejected()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "backlog",
+                this.metric("queued", this.ratio(snapshot.chunkIoExecutorBacklogQueued(), snapshot.chunkIoExecutorBacklogCapacity()), this.pressureColor(snapshot.chunkIoExecutorBacklogPressure())),
+                this.metric("pressure", this.percent(snapshot.chunkIoExecutorBacklogPressure()), this.pressureColor(snapshot.chunkIoExecutorBacklogPressure())),
+                this.metric("backpressure", Long.toString(snapshot.chunkIoExecutorBacklogBackpressure()), this.countColor(snapshot.chunkIoExecutorBacklogBackpressure())),
+                this.metric("deferred", Long.toString(snapshot.chunkIoExecutorBacklogDeferred()), this.countColor(snapshot.chunkIoExecutorBacklogDeferred()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "emergency",
+                this.metric("inFlight", Integer.toString(snapshot.chunkIoExecutorBacklogEmergencyInFlight()), this.countColor(snapshot.chunkIoExecutorBacklogEmergencyInFlight())),
+                this.metric("admitted", Long.toString(snapshot.chunkIoExecutorBacklogEmergency()), this.countColor(snapshot.chunkIoExecutorBacklogEmergency())),
+                this.metric("retries", Integer.toString(snapshot.chunkIoExecutorBacklogEmergencyRetries()), this.countColor(snapshot.chunkIoExecutorBacklogEmergencyRetries())),
+                this.metric("rejected", Long.toString(snapshot.chunkIoExecutorBacklogEmergencyRejected()), this.countColor(snapshot.chunkIoExecutorBacklogEmergencyRejected()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "overflow",
+                this.metric("inFlight", this.ratio(snapshot.chunkIoExecutorOverflowInFlight(), snapshot.chunkIoExecutorOverflowCapacity()), this.pressureColor(snapshot.chunkIoExecutorOverflowPressure())),
+                this.metric("pressure", this.percent(snapshot.chunkIoExecutorOverflowPressure()), this.pressureColor(snapshot.chunkIoExecutorOverflowPressure())),
+                this.metric("admitted", Long.toString(snapshot.chunkIoExecutorOverflowAdmitted()), this.countColor(snapshot.chunkIoExecutorOverflowAdmitted())),
+                this.metric("backpressure", Long.toString(snapshot.chunkIoExecutorOverflowBackpressure()), this.countColor(snapshot.chunkIoExecutorOverflowBackpressure()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "waiters",
+                this.metric("backpressure", this.ratio(snapshot.chunkIoExecutorBackpressureWaiters(), snapshot.chunkIoExecutorBackpressureCapacity()), this.pressureColor(snapshot.chunkIoExecutorBackpressurePressure())),
+                this.metric("pressure", this.percent(snapshot.chunkIoExecutorBackpressurePressure()), this.pressureColor(snapshot.chunkIoExecutorBackpressurePressure())),
+                this.metric("execDowngraded", Long.toString(snapshot.chunkIoExecutorDowngraded()), this.countColor(snapshot.chunkIoExecutorDowngraded()))
+        ));
+    }
+
+    private void sendHeader(final CommandSender sender, final String title, final String subtitle) {
+        sender.sendMessage(Component.empty()
+                .append(Component.text("== ", NamedTextColor.DARK_GRAY))
+                .append(this.gradient(title, 0x55FFFF, 0xFF55FF))
+                .append(Component.text(" ==", NamedTextColor.DARK_GRAY)));
+        sender.sendMessage(Component.text(subtitle, NamedTextColor.GRAY));
+    }
+
+    private Component summaryLine(final int index, final RegionTickScheduler.RegionTickSnapshot snapshot) {
+        return Component.empty()
+                .append(Component.text("#%02d ".formatted(index), NamedTextColor.DARK_GRAY))
+                .append(Component.text(snapshot.world(), NamedTextColor.AQUA))
+                .append(Component.text(" [%d, %d] ".formatted(snapshot.regionPos().x, snapshot.regionPos().z), NamedTextColor.GRAY))
+                .append(Component.text(snapshot.loadClass().name(), this.loadClassColor(snapshot)))
+                .append(Component.text("  "))
+                .append(this.metric("MSPT", this.decimal(snapshot.ewmaMspt()), this.msptColor(snapshot.ewmaMspt())))
+                .append(Component.text("  "))
+                .append(this.metric("lag", this.decimal(snapshot.ewmaScheduleLagMs()) + "ms", this.lagColor(snapshot.ewmaScheduleLagMs())))
+                .append(Component.text("  "))
+                .append(this.metric("mail", "%d/%s".formatted(snapshot.mailboxDepth(), this.percent(snapshot.mailboxClassPressure())), this.pressureColor(snapshot.mailboxClassPressure())))
+                .append(Component.text("  "))
+                .append(this.metric("IO", this.ratio(snapshot.chunkIoInFlight(), snapshot.chunkIoCapacity()), this.pressureColor(snapshot.chunkIoPressure())));
+    }
+
+    private Component compactDetailLine(final RegionTickScheduler.RegionTickSnapshot snapshot) {
+        return Component.empty()
+                .append(Component.text("     "))
+                .append(this.metric("exec", this.ratio(snapshot.chunkIoExecutorInFlight(), snapshot.chunkIoExecutorCapacity()), this.pressureColor(snapshot.chunkIoExecutorPressure())))
+                .append(Component.text("  "))
+                .append(this.metric("wait", Integer.toString(snapshot.chunkIoExecutorWaiting()), this.countColor(snapshot.chunkIoExecutorWaiting())))
+                .append(Component.text("  "))
+                .append(this.metric("backlog", this.ratio(snapshot.chunkIoExecutorWaiting() + snapshot.chunkIoExecutorBacklogQueued(), snapshot.chunkIoExecutorBacklogCapacity()), this.pressureColor(snapshot.chunkIoExecutorBacklogPressure())))
+                .append(Component.text("  "))
+                .append(this.metric("overflow", this.ratio(snapshot.chunkIoExecutorOverflowInFlight(), snapshot.chunkIoExecutorOverflowCapacity()), this.pressureColor(snapshot.chunkIoExecutorOverflowPressure())))
+                .append(Component.text("  "))
+                .append(this.metric("bp", this.ratio(snapshot.chunkIoExecutorBackpressureWaiters(), snapshot.chunkIoExecutorBackpressureCapacity()), this.pressureColor(snapshot.chunkIoExecutorBackpressurePressure())))
+                .append(Component.text("  "))
+                .append(this.metric("rej", Long.toString(snapshot.rejectedTasks() + snapshot.chunkIoRejected() + snapshot.chunkIoExecutorRejected()), this.countColor(snapshot.rejectedTasks() + snapshot.chunkIoRejected() + snapshot.chunkIoExecutorRejected())))
+                .append(Component.text("  "))
+                .append(this.metric("downgrade", Long.toString(snapshot.chunkIoDowngraded() + snapshot.chunkIoExecutorDowngraded()), this.countColor(snapshot.chunkIoDowngraded() + snapshot.chunkIoExecutorDowngraded())));
+    }
+
+    private Component metricLine(final String label, final Component... metrics) {
+        Component component = Component.empty()
+                .append(Component.text("  " + label, NamedTextColor.DARK_AQUA))
+                .append(Component.text(" | ", NamedTextColor.DARK_GRAY));
+        for (int i = 0; i < metrics.length; i++) {
+            if (i > 0) {
+                component = component.append(Component.text("  "));
+            }
+            component = component.append(metrics[i]);
+        }
+        return component;
+    }
+
+    private Component metric(final String label, final String value, final TextColor valueColor) {
+        return Component.empty()
+                .append(Component.text(label + "=", NamedTextColor.GRAY))
+                .append(Component.text(value, valueColor));
+    }
+
+    private Component gradient(final String text, final int startRgb, final int endRgb) {
+        Component component = Component.empty();
+        final int length = Math.max(1, text.length() - 1);
+        final int startRed = (startRgb >> 16) & 0xFF;
+        final int startGreen = (startRgb >> 8) & 0xFF;
+        final int startBlue = startRgb & 0xFF;
+        final int endRed = (endRgb >> 16) & 0xFF;
+        final int endGreen = (endRgb >> 8) & 0xFF;
+        final int endBlue = endRgb & 0xFF;
+        for (int i = 0; i < text.length(); i++) {
+            final double ratio = (double) i / (double) length;
+            final int red = (int) Math.round(startRed + (endRed - startRed) * ratio);
+            final int green = (int) Math.round(startGreen + (endGreen - startGreen) * ratio);
+            final int blue = (int) Math.round(startBlue + (endBlue - startBlue) * ratio);
+            component = component.append(Component.text(String.valueOf(text.charAt(i)), TextColor.color((red << 16) | (green << 8) | blue)));
+        }
+        return component;
+    }
+
+    private TextColor loadClassColor(final RegionTickScheduler.RegionTickSnapshot snapshot) {
+        return switch (snapshot.loadClass()) {
+            case GLOBAL -> NamedTextColor.AQUA;
+            case NORMAL -> NamedTextColor.GREEN;
+            case DEGRADED -> NamedTextColor.YELLOW;
+            case QUARANTINED -> NamedTextColor.RED;
+        };
+    }
+
+    private TextColor msptColor(final double mspt) {
+        if (mspt <= 10.0D) {
+            return NamedTextColor.GREEN;
+        }
+        if (mspt <= 35.0D) {
+            return NamedTextColor.YELLOW;
+        }
+        return NamedTextColor.RED;
+    }
+
+    private TextColor lagColor(final double lagMs) {
+        if (lagMs <= 5.0D) {
+            return NamedTextColor.GREEN;
+        }
+        if (lagMs <= 50.0D) {
+            return NamedTextColor.YELLOW;
+        }
+        return NamedTextColor.RED;
+    }
+
+    private TextColor pressureColor(final double pressure) {
+        if (pressure <= 0.35D) {
+            return NamedTextColor.GREEN;
+        }
+        if (pressure <= 0.75D) {
+            return NamedTextColor.YELLOW;
+        }
+        return NamedTextColor.RED;
+    }
+
+    private TextColor countColor(final long count) {
+        return count == 0L ? NamedTextColor.GREEN : NamedTextColor.YELLOW;
+    }
+
+    private String ratio(final long value, final long capacity) {
+        return value + "/" + capacity;
+    }
+
+    private String decimal(final double value) {
+        return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private String percent(final double value) {
+        return String.format(Locale.ROOT, "%.0f%%", value * 100.0D);
     }
 }
