@@ -264,7 +264,11 @@ public class ShreddedPaperChunkTicker {
             this._tickSpawningChunk(world, levelChunk, timeInhabited, filteredSpawningCategories, spawnState);
         }
 
-        final int randomTickSpeed = world.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED);
+        final int randomTickSpeed = io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedRandomTickSpeed(
+                world,
+                levelChunk.getPos().getWorldPosition(),
+                world.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED)
+        );
         world.tickChunk(levelChunk, randomTickSpeed);
     }
 

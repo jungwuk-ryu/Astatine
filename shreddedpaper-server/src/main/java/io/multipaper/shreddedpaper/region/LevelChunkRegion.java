@@ -288,12 +288,12 @@ public class LevelChunkRegion {
                 && this.internalTasks.getTotalTasksExecuted() >= this.internalTasks.getTotalTasksScheduled();
     }
 
-    public void absorbFrom(final LevelChunkRegion source) {
+    public boolean absorbFrom(final LevelChunkRegion source) {
         if (this.level != source.level) {
             throw new IllegalArgumentException("Cannot merge regions from different worlds");
         }
         if (!source.isMergeQuiescent()) {
-            throw new IllegalStateException("Cannot merge non-quiescent region owner " + source.getOwner());
+            return false;
         }
 
         final List<Entity> sourceTickingEntities = new ArrayList<>();
@@ -342,6 +342,7 @@ public class LevelChunkRegion {
         for (final ServerPlayer player : sourcePlayers) {
             player.currentRegion = this;
         }
+        return true;
     }
 
     public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos) {

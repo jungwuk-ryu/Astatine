@@ -219,7 +219,9 @@ public class LevelChunkRegionMap {
             }
 
             try {
-                targetRegion.absorbFrom(sourceRegion);
+                if (!sourceRegion.isMergeQuiescent() || !targetRegion.absorbFrom(sourceRegion)) {
+                    return false;
+                }
                 targetOwner.absorbCellsFrom(sourceOwner);
                 for (final long cellKey : sourceOwner.cellsSnapshot()) {
                     this.ownersByCell.put(cellKey, targetOwner);

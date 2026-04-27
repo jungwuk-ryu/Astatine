@@ -97,6 +97,66 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     }
 
+    @Setting("lag-compensation")
+    public LagCompensation lagCompensation = new LagCompensation();
+
+    public class LagCompensation extends ConfigurationPart {
+
+        @Comment("Improves gameplay timing while a world or independent region is running below 20 TPS.")
+        public boolean enabled = true;
+
+        @Setting("block-entity-acceleration")
+        public boolean blockEntityAcceleration = true;
+
+        @Setting("block-breaking-acceleration")
+        public boolean blockBreakingAcceleration = true;
+
+        @Setting("eating-acceleration")
+        public boolean eatingAcceleration = true;
+
+        @Setting("potion-effect-acceleration")
+        public boolean potionEffectAcceleration = true;
+
+        @Setting("fluid-acceleration")
+        public boolean fluidAcceleration = true;
+
+        @Setting("pickup-acceleration")
+        public boolean pickupAcceleration = true;
+
+        @Setting("portal-acceleration")
+        public boolean portalAcceleration = true;
+
+        @Setting("time-acceleration")
+        public boolean timeAcceleration = true;
+
+        @Setting("random-tick-speed-acceleration")
+        public boolean randomTickSpeedAcceleration = true;
+
+        @Setting("ignore-moved-too-quickly-when-lagging")
+        @Comment("Suppresses moved-too-quickly setbacks while the player's own independent region is measurably behind.")
+        public boolean ignoreMovedTooQuicklyWhenLagging = true;
+
+        @Setting("ignore-moved-wrongly-when-lagging")
+        @Comment("Suppresses moved-wrongly setbacks while the player's own independent region is measurably behind.")
+        public boolean ignoreMovedWronglyWhenLagging = true;
+
+        @Setting("always-allow-weird-movement")
+        @Comment("Disables moved-too-quickly and moved-wrongly enforcement entirely. This is intentionally off by default.")
+        public boolean alwaysAllowWeirdMovement = false;
+
+        @Setting("max-compensated-missed-ticks")
+        @Comment("Upper bound for extra low-TPS compensation ticks applied in one server tick.")
+        public int maxCompensatedMissedTicks = 20;
+
+        @Setting("region-lag-mspt-threshold")
+        @Comment("Region EWMA MSPT threshold used by movement lag compensation.")
+        public double regionLagMsptThreshold = 55.0D;
+
+        @Setting("region-lag-schedule-lag-threshold-ms")
+        @Comment("Region scheduler lag threshold used by movement lag compensation.")
+        public double regionLagScheduleLagThresholdMs = 100.0D;
+    }
+
     public Optimizations optimizations = new Optimizations();
 
     public class Optimizations extends ConfigurationPart {

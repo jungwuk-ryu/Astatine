@@ -25,6 +25,7 @@ public final class DivineConfig {
 
     public static void syncFromShreddedPaper(final ShreddedPaperConfiguration configuration) {
         MiscCategory.sync(configuration);
+        FixesCategory.sync(configuration);
         PerformanceCategory.sync(configuration);
         VirtualThreadsCategory.sync(configuration);
         AsyncCategory.sync(configuration);
@@ -451,6 +452,19 @@ public final class DivineConfig {
         public static int linearIoThreadCount = 6;
         public static int linearIoFlushDelayMs = 100;
         public static boolean linearUseVirtualThreads = true;
+        public static boolean lagCompensationEnabled = true;
+        public static boolean blockEntityAcceleration = true;
+        public static boolean blockBreakingAcceleration = true;
+        public static boolean eatingAcceleration = true;
+        public static boolean potionEffectAcceleration = true;
+        public static boolean fluidAcceleration = true;
+        public static boolean pickupAcceleration = true;
+        public static boolean portalAcceleration = true;
+        public static boolean timeAcceleration = true;
+        public static boolean randomTickSpeedAcceleration = true;
+        public static int maxCompensatedMissedTicks = 20;
+        public static double regionLagMsptThreshold = 55.0D;
+        public static double regionLagScheduleLagThresholdMs = 100.0D;
 
         private MiscCategory() {
         }
@@ -495,6 +509,30 @@ public final class DivineConfig {
             LinearRegionFile.SAVE_DELAY_MS = linearIoFlushDelayMs;
             LinearRegionFile.SAVE_THREAD_MAX_COUNT = linearIoThreadCount;
             LinearRegionFile.USE_VIRTUAL_THREAD = linearUseVirtualThreads;
+
+            ShreddedPaperConfiguration.LagCompensation lagCompensation = configuration.lagCompensation;
+            if (lagCompensation == null) {
+                lagCompensation = configuration.new LagCompensation();
+                configuration.lagCompensation = lagCompensation;
+            }
+
+            lagCompensationEnabled = lagCompensation.enabled;
+            blockEntityAcceleration = lagCompensation.blockEntityAcceleration;
+            blockBreakingAcceleration = lagCompensation.blockBreakingAcceleration;
+            eatingAcceleration = lagCompensation.eatingAcceleration;
+            potionEffectAcceleration = lagCompensation.potionEffectAcceleration;
+            fluidAcceleration = lagCompensation.fluidAcceleration;
+            pickupAcceleration = lagCompensation.pickupAcceleration;
+            portalAcceleration = lagCompensation.portalAcceleration;
+            timeAcceleration = lagCompensation.timeAcceleration;
+            randomTickSpeedAcceleration = lagCompensation.randomTickSpeedAcceleration;
+            maxCompensatedMissedTicks = Math.max(0, lagCompensation.maxCompensatedMissedTicks);
+            regionLagMsptThreshold = Math.max(50.0D, lagCompensation.regionLagMsptThreshold);
+            regionLagScheduleLagThresholdMs = Math.max(0.0D, lagCompensation.regionLagScheduleLagThresholdMs);
+
+            lagCompensation.maxCompensatedMissedTicks = maxCompensatedMissedTicks;
+            lagCompensation.regionLagMsptThreshold = regionLagMsptThreshold;
+            lagCompensation.regionLagScheduleLagThresholdMs = regionLagScheduleLagThresholdMs;
         }
         private static void applyDefaults() {
             regionFileType = EnumRegionFileExtension.MCA;
@@ -502,6 +540,19 @@ public final class DivineConfig {
             linearIoThreadCount = 6;
             linearIoFlushDelayMs = 100;
             linearUseVirtualThreads = true;
+            lagCompensationEnabled = true;
+            blockEntityAcceleration = true;
+            blockBreakingAcceleration = true;
+            eatingAcceleration = true;
+            potionEffectAcceleration = true;
+            fluidAcceleration = true;
+            pickupAcceleration = true;
+            portalAcceleration = true;
+            timeAcceleration = true;
+            randomTickSpeedAcceleration = true;
+            maxCompensatedMissedTicks = 20;
+            regionLagMsptThreshold = 55.0D;
+            regionLagScheduleLagThresholdMs = 100.0D;
             LinearRegionFile.SAVE_DELAY_MS = linearIoFlushDelayMs;
             LinearRegionFile.SAVE_THREAD_MAX_COUNT = linearIoThreadCount;
             LinearRegionFile.USE_VIRTUAL_THREAD = linearUseVirtualThreads;
@@ -513,6 +564,38 @@ public final class DivineConfig {
                 return fallback;
             }
             return value;
+        }
+    }
+
+    public static final class FixesCategory {
+        public static boolean ignoreMovedTooQuicklyWhenLagging = true;
+        public static boolean ignoreMovedWronglyWhenLagging = true;
+        public static boolean alwaysAllowWeirdMovement = false;
+
+        private FixesCategory() {
+        }
+
+        public static void sync(final ShreddedPaperConfiguration configuration) {
+            if (configuration == null) {
+                applyDefaults();
+                return;
+            }
+
+            ShreddedPaperConfiguration.LagCompensation lagCompensation = configuration.lagCompensation;
+            if (lagCompensation == null) {
+                lagCompensation = configuration.new LagCompensation();
+                configuration.lagCompensation = lagCompensation;
+            }
+
+            ignoreMovedTooQuicklyWhenLagging = lagCompensation.ignoreMovedTooQuicklyWhenLagging;
+            ignoreMovedWronglyWhenLagging = lagCompensation.ignoreMovedWronglyWhenLagging;
+            alwaysAllowWeirdMovement = lagCompensation.alwaysAllowWeirdMovement;
+        }
+
+        private static void applyDefaults() {
+            ignoreMovedTooQuicklyWhenLagging = true;
+            ignoreMovedWronglyWhenLagging = true;
+            alwaysAllowWeirdMovement = false;
         }
     }
 }

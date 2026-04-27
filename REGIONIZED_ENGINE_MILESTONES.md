@@ -1575,6 +1575,63 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [ ] Document plugin-specific patches and upstream URLs.
 - [ ] Keep plugin compatibility fixes separate from engine commits when possible.
 
+## Milestone 9 - Region-Aware Low TPS Lag Compensation
+
+- [x] Reproduce the reported class of failure from logs: strict
+  `moved-wrongly-threshold` and `moved-too-quickly-multiplier` still emit
+  movement warnings when the player is in a lagging independent region.
+- [x] Inspect DivineMC's low-TPS lag-compensation patches and separate the
+  useful behavior from direct code identity.
+- [x] Add ShreddedPaper-owned `lag-compensation` config defaults for block
+  entity, block breaking, eating, potion, fluid, pickup, portal, time, random
+  tick speed, and movement-warning suppression.
+- [x] Add compatibility wiring in `DivineConfig` so existing DivineMC-derived
+  hooks resolve to ShreddedPaper config values.
+- [x] Add TPS accounting helpers for server/world fallback compensation.
+- [x] Add region-aware compensation helper that prefers the current or target
+  `LevelChunkRegion` overload controller before falling back to world/server
+  TPS.
+- [x] Patch movement validation for both vehicle movement and normal player
+  movement: scale allowed move ticks and suppress moved-too-quickly /
+  moved-wrongly only while the player's own region or server is lagging.
+- [x] Patch low-TPS gameplay acceleration for block entities, block breaking,
+  eating, potion effects, fluid tick delay, item pickup delay, portal time,
+  daylight time, and random tick speed.
+- [x] Keep `always-allow-weird-movement` available but disabled by default, so
+  the default path fixes low-TPS false positives without fully disabling
+  movement enforcement.
+- [x] Preserve feature patch regeneration by placing Minecraft-source edits in
+  `shreddedpaper-server/minecraft-patches/features/0035-Region-aware-lag-compensation.patch`.
+- [x] Run `applyAllPatches` after introducing the feature patch.
+- [x] Run `:shreddedpaper-server:compileJava --rerun-tasks`; build passed.
+- [x] Build `:shreddedpaper-server:createMojmapPaperclipJar`; build passed.
+- [x] Deploy the rebuilt paperclip jar to `D:\worldgen`.
+- [x] Boot `D:\worldgen` with `start.bat` and verify clean startup on the new
+  jar.
+- [x] Verify `D:\worldgen\shreddedpaper.yml` generated the new
+  `lag-compensation` section with all default options enabled except
+  `always-allow-weird-movement`.
+- [x] Verify player auto-login succeeds on the new jar.
+- [x] Run RCON smoke checks: `version`, `list`, `tps`, `mspt`, `region`, and
+  `rlt status`.
+- [x] Run a short `RegionLoadTest` region-local scheduler flood and cleanup.
+- [x] Scan runtime logs after the smoke test for `moved too quickly`,
+  `moved wrongly`, packet handling errors, wrong-thread errors, sync chunk
+  load guard failures, and crash reports; no new matches were found.
+- [x] Catch final-jar boot regression: independent scheduler worker could crash
+  while merging a source owner that became non-quiescent between candidate
+  selection and merge execution.
+- [x] Patch quiescent owner merge to abort and retry later instead of throwing
+  from `LevelChunkRegion.absorbFrom`.
+- [x] Self-review movement compensation for vehicle and non-vehicle paths.
+- [x] Self-review acceleration hooks for bounded caps and feature toggles.
+- [ ] Request a focused sub-agent review for movement semantics and low-TPS
+  acceleration side effects before the next release candidate.
+- [ ] Add a stronger interactive reproduction where the client moves through a
+  deliberately lagging player region, then confirm no false positive movement
+  warnings are logged.
+- [x] Commit region-aware low-TPS lag compensation.
+
 ## Current Blockers
 
 - [ ] Dynamic merge/split regionizer is not yet implemented.
