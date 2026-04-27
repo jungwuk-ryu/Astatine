@@ -1632,6 +1632,48 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   warnings are logged.
 - [x] Commit region-aware low-TPS lag compensation.
 
+## Milestone 10 - Chunk Ticking Stability And Hidden Bug Sweep
+
+- [x] Triage `/tp 0 ~ 0` crash from `D:\worldgen`: deferred region broadcast
+  called `ChunkHolder.broadcastChanges(null)` after teleport/unload churn
+  downgraded the full chunk.
+- [x] Verify `ChunkHolder.getFullChunkNowUnchecked()` is allowed to return
+  `null` under the Paper/Moonrise chunk system even when the holder still has
+  dirty block/light flags.
+- [x] Patch `ShreddedPaperChangesBroadcaster` so stale queued holders with no
+  current full chunk are skipped instead of crashing the region worker.
+- [x] Compile after the stale broadcast-holder guard.
+- [x] Build `:shreddedpaper-server:createMojmapPaperclipJar` after the stale
+  broadcast-holder guard.
+- [x] Deploy the rebuilt paperclip jar to `D:\worldgen`.
+- [ ] Reproduce the reported teleport path with player auto-login and
+  `execute as Hancho1577 at @s run tp @s 0 ~ 0`.
+- [ ] Confirm no new `cachedChunkPacket`, packet handling, wrong-thread,
+  sync-load, merge, or movement-warning signatures appear after teleport churn.
+- [x] Add `tools/runtime/Invoke-WorldgenSmoke.ps1` to start `D:\worldgen`,
+  run RCON smoke commands, exercise teleport/chunk-load/sync-load probes, and
+  scan only new log content plus new crash reports.
+- [x] Make the smoke script fail instead of silently passing when the configured
+  test player does not join; `-SkipPlayerTeleport` is now required for
+  non-interactive runs.
+- [x] Run non-interactive smoke with `-SkipPlayerTeleport`: startup, chunk-load
+  probe, sync-load guard probe, log-signature scan, and clean shutdown passed.
+- [x] Attempt player-required smoke; it correctly failed because no Minecraft
+  client was online within the wait window, so the reported player `/tp` churn
+  still needs an interactive rerun.
+- [ ] Extend the smoke script with `/world` and `/back` command loops once the
+  exact installed command semantics are stable.
+- [ ] Add a repeated churn mode for login, teleport, world change, chunk send,
+  unload, light update, and region merge interactions.
+- [ ] Add a crash-signature corpus from `D:\worldgen\logs\latest.log` and
+  `D:\worldgen\crash-reports` covering:
+  `Thread failed main thread check`, `Synchronous chunk load`, `cachedChunkPacket`,
+  `Cannot merge non-quiescent`, `Failed to handle packet`, `moved too quickly`,
+  and chunk-system propagated crashes.
+- [ ] Add a CI/local task that runs compile plus the smoke script against a
+  disposable runtime world before release-candidate jars are accepted.
+- [ ] Commit chunk ticking stability guard and smoke tooling.
+
 ## Current Blockers
 
 - [ ] Dynamic merge/split regionizer is not yet implemented.

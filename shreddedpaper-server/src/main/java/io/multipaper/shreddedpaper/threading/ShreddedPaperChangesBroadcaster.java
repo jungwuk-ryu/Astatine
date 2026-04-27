@@ -5,6 +5,7 @@ import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
 import io.multipaper.shreddedpaper.threading.region.RegionWorkType;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 public class ShreddedPaperChangesBroadcaster {
 
@@ -63,7 +64,14 @@ public class ShreddedPaperChangesBroadcaster {
                     continue;
                 }
 
-                holder.broadcastChanges(holder.getFullChunkNowUnchecked()); // LevelChunks are NEVER unloaded
+                final LevelChunk chunk = holder.getFullChunkNowUnchecked();
+                if (chunk == null) {
+                    // A holder can remain queued after teleport/unload churn downgrades the full chunk.
+                    // The holder keeps its dirty flags, and it will be queued again when the chunk is ready to send.
+                    continue;
+                }
+
+                holder.broadcastChanges(chunk);
                 if (holder.hasChangesToBroadcast()) {
                     // I DON'T want to KNOW what DUMB plugins might be doing.
                     needsChangeBroadcasting.add(holder);
