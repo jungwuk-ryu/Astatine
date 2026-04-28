@@ -19,17 +19,38 @@
  import net.minecraft.SharedConstants;
  import net.minecraft.network.chat.Component;
  import net.minecraft.network.protocol.BundlerInfo;
-@@ -45,8 +_,10 @@
+@@ -38,6 +_,8 @@
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
++import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
++import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+ import net.minecraft.network.protocol.handshake.HandshakeProtocols;
+@@ -45,8 +_,11 @@
  import net.minecraft.network.protocol.login.LoginProtocols;
  import net.minecraft.network.protocol.status.ClientStatusPacketListener;
  import net.minecraft.network.protocol.status.StatusProtocols;
 +import net.minecraft.server.MinecraftServer;
  import net.minecraft.server.RunningOnDifferentThreadException;
  import net.minecraft.server.network.EventLoopGroupHolder;
++import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 +import net.minecraft.server.network.ServerGamePacketListenerImpl;
  import net.minecraft.util.Mth;
  import net.minecraft.util.Util;
  import net.minecraft.util.debugchart.LocalSampleLogger;
+@@ -218,6 +_,10 @@
+                 throw new IllegalStateException("Received a packet before the packet listener was initialized");
+             } else {
+                 // Paper start - packet limiter
++                if (packet instanceof ServerboundKeepAlivePacket keepAlivePacket && packetListener instanceof ServerCommonPacketListenerImpl commonPacketListener) {
++                    commonPacketListener.recordNetworkKeepAliveReceived(keepAlivePacket.getId(), System.nanoTime());
++                }
++
+                 if (this.stopReadingPackets) {
+                     return;
+                 }
 @@ -303,6 +_,7 @@
  
      private static void syncAfterConfigurationChange(ChannelFuture future) {
@@ -62,6 +83,16 @@
              this.channel.eventLoop().execute(() -> this.doSendPacket(packet, sendListener, flush));
          }
      }
+@@ -462,6 +_,9 @@
+         try {
+         final ChannelFuture channelFuture;
+         // Paper end - Optimize network
++        if (packet instanceof ClientboundKeepAlivePacket keepAlivePacket && this.packetListener instanceof ServerCommonPacketListenerImpl commonPacketListener) {
++            commonPacketListener.recordNetworkKeepAliveSent(keepAlivePacket.getId(), System.nanoTime());
++        }
+         if (sendListener != null) {
+             channelFuture = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet); // Paper - Optimize network
+             channelFuture.addListener(sendListener);
 @@ -500,7 +_,7 @@
      }
  

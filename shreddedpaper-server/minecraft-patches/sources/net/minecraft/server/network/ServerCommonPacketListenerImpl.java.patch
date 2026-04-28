@@ -51,3 +51,22 @@
                  waitable.get();
              } catch (InterruptedException e) {
                  Thread.currentThread().interrupt();
+@@ -499,6 +_,18 @@
+         return this.latency;
+     }
+ 
++    public void recordNetworkKeepAliveSent(long challengeId, long txTimeNS) {
++        this.keepAlive.trackNetworkKeepAliveSent(challengeId, txTimeNS);
++    }
++
++    public void recordNetworkKeepAliveReceived(long challengeId, long rxTimeNS) {
++        this.keepAlive.trackNetworkKeepAliveReceived(challengeId, rxTimeNS);
++    }
++
++    public int networkLatency() {
++        return this.keepAlive.getNetworkLatencyMS();
++    }
++
+     protected CommonListenerCookie createCookie(ClientInformation clientInformation) {
+         return new CommonListenerCookie(this.playerProfile(), this.latency, clientInformation, this.transferred, this.playerBrand, this.pluginMessagerChannels, this.keepAlive); // Paper
+     }

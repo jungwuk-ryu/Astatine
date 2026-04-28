@@ -68,6 +68,21 @@
          org.bukkit.entity.Entity entity = this.getServer().getPlayer(uuid);
  
          return (entity != null) ? this.canSee(entity) : false; // If we can't find it, we can't see it
+@@ -2814,6 +_,14 @@
+         return this.getHandle().connection.latency();
+     }
+ 
++    // ShreddedPaper start - add network ping API
++    @Override
++    public int getNetworkPing() {
++        if (this.getHandle().connection == null) throw new UnsupportedOperationException("Too early to call this method at this stage");
++        return this.getHandle().connection.networkLatency();
++    }
++    // ShreddedPaper end - add network ping API
++
+     @Override
+     public String getLocale() {
+         // Paper start - Locale change event
 @@ -3130,8 +_,9 @@
          @Override
          public void respawn() {

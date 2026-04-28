@@ -18,7 +18,7 @@
      private int tick = 0;
  
      public static TPSBarTask instance() {
-@@ -23,17 +23,19 @@
+@@ -23,17 +23,32 @@
  
      @Override
      BossBar createBossBar() {
@@ -32,6 +32,7 @@
 -        bossbar.color(getBossBarColor());
 +        Metrics metrics = getMetrics(player);
 +        int ping = player.getPing();
++        int networkPing = player.getNetworkPing();
 +        bossbar.progress(getBossBarProgress(metrics, ping));
 +        bossbar.color(getBossBarColor(metrics, ping));
 -        bossbar.name(MiniMessage.miniMessage().deserialize(PurpurConfig.commandTPSBarTitle,
@@ -42,18 +43,23 @@
 +                Placeholder.component("tps", getTPSColor(metrics)),
 +                Placeholder.component("mspt", getMSPTColor(metrics)),
 +                Placeholder.component("ping", getPingColor(ping)),
++                Placeholder.component("network_ping", getPingColor(networkPing)),
 +                Placeholder.component("region", Component.text(metrics.regionName()))
          ));
      }
 +
 +    private String getTitleFormat() {
-+        if (PurpurConfig.commandTPSBarTitle.contains("<region>")) {
-+            return PurpurConfig.commandTPSBarTitle;
++        String title = PurpurConfig.commandTPSBarTitle;
++        if (!title.contains("<network_ping>")) {
++            title += " Net<yellow>:</yellow> <network_ping>ms";
 +        }
-+        return PurpurConfig.commandTPSBarTitle + " <dark_gray>(<gray><region></gray>)</dark_gray>";
++        if (!title.contains("<region>")) {
++            title += " <dark_gray>(<gray><region></gray>)</dark_gray>";
++        }
++        return title;
 +    }
  
-@@ -44,39 +46,53 @@
+@@ -44,39 +52,53 @@
          }
          tick = 0;
  
