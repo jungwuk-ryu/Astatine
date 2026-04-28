@@ -4,16 +4,38 @@
  import com.google.common.base.Preconditions;
  import com.google.common.base.Predicates;
  import com.mojang.serialization.Codec;
-+import ca.spottedleaf.moonrise.common.util.TickThread;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
  import io.papermc.paper.FeatureHooks;
  import java.util.ArrayList;
  import java.util.Arrays;
-@@ -74,6 +_,7 @@
+@@ -74,6 +_,9 @@
      }
  
      public ChunkAccess getHandle(ChunkStatus chunkStatus) {
-+        if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !TickThread.isTickThreadFor(this.level, this.x, this.z)) throw new IllegalStateException("Cannot get chunk from a region that is not ours! world=" + this.level.serverLevelData.getLevelName() + ", chunkpos=[" + this.x + "," + this.z + "]"); // ShreddedPaper - regions
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - regions
++            ShreddedPaperAccess.assertNoRegionWorkerSyncLoad(this.level, new ChunkPos(this.x, this.z), "CraftChunk#getHandle");
++        }
          // Paper start - chunk system
          net.minecraft.world.level.chunk.LevelChunk full = this.level.getChunkIfLoaded(this.x, this.z);
          if (full != null) {
+@@ -130,6 +_,9 @@
+     @Override
+     public BlockState[] getTileEntities(boolean useSnapshot) {
+         if (!this.isLoaded()) {
++            if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - do not sync-load tile entity snapshots from region workers
++                return new BlockState[0];
++            }
+             this.getWorld().getChunkAt(this.x, this.z); // Transient load for this tick
+         }
+ 
+@@ -149,6 +_,9 @@
+         Preconditions.checkArgument(blockPredicate != null, "blockPredicate cannot be null");
+ 
+         if (!this.isLoaded()) {
++            if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - do not sync-load tile entity snapshots from region workers
++                return List.of();
++            }
+             this.getWorld().getChunkAt(this.x, this.z); // Transient load for this tick
+         }
+         ChunkAccess chunk = this.getHandle(ChunkStatus.FULL);

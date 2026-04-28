@@ -9,6 +9,14 @@
  import net.minecraft.advancements.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleOptions;
+@@ -38,6 +_,7 @@
+         TamableAnimal.class, EntityDataSerializers.OPTIONAL_LIVING_ENTITY_REFERENCE
+     );
+     private boolean orderedToSit = false;
++    private volatile boolean shreddedpaper$pendingOwnerTeleport; // ShreddedPaper - avoid duplicate deferred owner-follow teleports
+ 
+     protected TamableAnimal(EntityType<? extends TamableAnimal> type, Level level) {
+         super(type, level);
 @@ -242,7 +_,9 @@
      public void tryToTeleportToOwner() {
          LivingEntity owner = this.getOwner();
@@ -19,3 +27,27 @@
          }
      }
  
+@@ -265,7 +_,22 @@
+     }
+ 
+     private boolean maybeTeleportTo(int x, int y, int z) {
+-        if (!this.canTeleportTo(new BlockPos(x, y, z))) {
++        BlockPos targetPos = new BlockPos(x, y, z);
++        if (this.level() instanceof ServerLevel serverLevel
++            && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this)
++                || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, targetPos))) {
++            if (!this.shreddedpaper$pendingOwnerTeleport) {
++                this.shreddedpaper$pendingOwnerTeleport = true;
++                ShreddedPaper.ensureSync(this, serverLevel, net.minecraft.world.level.ChunkPos.of(targetPos), () -> {
++                    this.shreddedpaper$pendingOwnerTeleport = false;
++                    if (this.isAlive() && this.level() == serverLevel) {
++                        this.maybeTeleportTo(x, y, z);
++                    }
++                });
++            }
++            return false;
++        }
++        if (!this.canTeleportTo(targetPos)) {
+             return false;
+         } else {
+             // CraftBukkit start

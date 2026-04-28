@@ -1,5 +1,33 @@
 --- a/io/papermc/paper/redstone/RedstoneWireTurbo.java
 +++ b/io/papermc/paper/redstone/RedstoneWireTurbo.java
+@@ -3,6 +_,8 @@
+ import java.util.List;
+ import java.util.Map;
+ import java.util.concurrent.ThreadLocalRandom;
++import io.multipaper.shreddedpaper.threading.ownership.OwnershipIntent;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.item.ItemStack;
+@@ -288,7 +_,7 @@
+      */
+     private void identifyNode(final Level worldIn, final UpdateNode upd1) {
+         final BlockPos pos = upd1.self;
+-        final BlockState oldState = worldIn.getBlockState(pos);
++        final BlockState oldState = ShreddedPaperAccess.getBlockStateIfSafe(worldIn, pos, OwnershipIntent.LOADED_READ_CONSERVATIVE); // ShreddedPaper - avoid sync-loading or foreign-owner redstone reads
+         upd1.currentState = oldState;
+ 
+         // Some neighbors of redstone wire are other kinds of blocks.
+@@ -657,7 +_,8 @@
+                     // The Orientation parameter is (for now) only used by redstone wire
+                     // while these updates are dispatched to non-wires only, so we can
+                     // pass null.
+-                    worldIn.getBlockState(upd.self).handleNeighborChanged(worldIn, upd.self, wire, null, false);
++                    ShreddedPaperAccess.getBlockStateIfSafe(worldIn, upd.self, OwnershipIntent.LOADED_READ_CONSERVATIVE) // ShreddedPaper - avoid sync-loading or foreign-owner redstone reads
++                        .handleNeighborChanged(worldIn, upd.self, wire, null, false);
+                 }
+             }
+ 
 @@ -829,14 +_,14 @@
          j = getMaxCurrentStrength(upd, j);
          int l = 0;
@@ -17,3 +45,12 @@
  
          // The variable 'k' holds the maximum redstone power value of any adjacent blocks.
          // If 'k' has the highest level of all neighbors, then the power level of this
+@@ -935,7 +_,7 @@
+ 
+         for (Direction dir : UPDATE_SHAPE_ORDER) {
+             BlockPos neighborPos = pos.relative(dir);
+-            BlockState neighborState = level.getBlockState(neighborPos);
++            BlockState neighborState = ShreddedPaperAccess.getBlockStateIfSafe(level, neighborPos, OwnershipIntent.LOADED_READ_CONSERVATIVE); // ShreddedPaper - avoid sync-loading or foreign-owner redstone reads
+ 
+             BlockState newState = neighborState.updateShape(level, level, neighborPos, dir.getOpposite(), pos, state, level.getRandom());
+             Block.updateOrDestroy(neighborState, newState, level, neighborPos, Block.UPDATE_CLIENTS);

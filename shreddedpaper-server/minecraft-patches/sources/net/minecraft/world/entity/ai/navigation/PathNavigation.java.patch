@@ -86,7 +86,18 @@
  
          if (!this.isDone()) {
              if (this.canUpdatePath()) {
-@@ -294,6 +_,7 @@
+@@ -290,10 +_,17 @@
+ 
+     protected double getGroundY(Vec3 pos) {
+         BlockPos blockPos = BlockPos.containing(pos);
+-        return this.level.getBlockState(blockPos.below()).isAir() ? pos.y : WalkNodeEvaluator.getFloorLevel(this.level, blockPos);
++        BlockPos belowPos = blockPos.below();
++        BlockState belowState = this.level.getBlockStateIfLoaded(belowPos);
++        if (belowState == null || belowState.isAir()) {
++            return pos.y;
++        }
++        net.minecraft.world.phys.shapes.VoxelShape collisionShape = belowState.getCollisionShape(this.level, belowPos);
++        return belowPos.getY() + (collisionShape.isEmpty() ? 0.0 : collisionShape.max(net.minecraft.core.Direction.Axis.Y));
      }
  
      protected void followThePath() {

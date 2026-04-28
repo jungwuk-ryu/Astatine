@@ -1,0 +1,31 @@
+--- a/net/minecraft/world/entity/monster/Shulker.java
++++ b/net/minecraft/world/entity/monster/Shulker.java
+@@ -86,6 +_,7 @@
+     private @Nullable BlockPos clientOldAttachPosition;
+     private int clientSideTeleportInterpolation;
+     private static final float MAX_LID_OPEN = 1.0F;
++    private volatile boolean shreddedpaper$pendingRegionTeleport; // ShreddedPaper - avoid duplicate deferred random teleports
+ 
+     public Shulker(EntityType<? extends Shulker> type, Level level) {
+         super(type, level);
+@@ -441,6 +_,20 @@
+                     Mth.randomBetweenInclusive(this.random, -8, 8),
+                     Mth.randomBetweenInclusive(this.random, -8, 8)
+                 );
++                if (this.level() instanceof ServerLevel serverLevel
++                    && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this)
++                        || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos1))) {
++                    if (!this.shreddedpaper$pendingRegionTeleport) {
++                        this.shreddedpaper$pendingRegionTeleport = true;
++                        io.multipaper.shreddedpaper.ShreddedPaper.ensureSync(this, serverLevel, net.minecraft.world.level.ChunkPos.of(blockPos1), () -> {
++                            this.shreddedpaper$pendingRegionTeleport = false;
++                            if (this.isAlive() && this.level() == serverLevel) {
++                                this.teleportSomewhere();
++                            }
++                        });
++                    }
++                    return false;
++                }
+                 if (blockPos1.getY() > this.level().getMinY()
+                     && this.level().isEmptyBlock(blockPos1)
+                     && this.level().getWorldBorder().isWithinBounds(blockPos1)

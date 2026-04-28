@@ -7,14 +7,24 @@
  import com.google.common.collect.Lists;
  import com.google.common.primitives.Floats;
  import com.mojang.authlib.GameProfile;
-@@ -8,6 +_,7 @@
+@@ -8,6 +_,9 @@
  import com.mojang.brigadier.StringReader;
  import com.mojang.brigadier.suggestion.Suggestions;
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
++import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
  import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+@@ -200,6 +_,7 @@
+ import net.minecraft.world.level.block.state.BlockBehaviour;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.level.storage.TagValueOutput;
+ import net.minecraft.world.phys.AABB;
 @@ -369,7 +_,7 @@
          }
  
@@ -24,7 +34,9 @@
              this.chatSpamThrottler.tick();
              this.dropSpamThrottler.tick();
              this.tabSpamThrottler.tick(); // Paper - configurable tab spam limits
-@@ -391,3 +_,10 @@
+@@ -390,6 +_,13 @@
+     }
+ 
      private boolean tickPlayer() {
 +        // ShreddedPaper start - defer player world ticking until the current chunk is full
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
@@ -35,6 +47,7 @@
 +        // ShreddedPaper end - defer player world ticking until the current chunk is full
          this.resetPosition();
          this.player.xo = this.player.getX();
+         this.player.yo = this.player.getY();
 @@ -627,6 +_,19 @@
                      return;
                  }
@@ -55,6 +68,15 @@
                  if (d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed)) && !this.isSingleplayerOwner()) {
                      // CraftBukkit end
                      LOGGER.warn("{} (vehicle of {}) moved too quickly! {},{},{}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), d3, d4, d5);
+@@ -985,7 +_,7 @@
+                 if (blockState2 != blockState) {
+                     this.player.level().setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
+                     blockEntity.setBlockState(blockState2);
+-                    this.player.level().getChunkAt(pos).setBlockEntity(blockEntity);
++                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(this.player.level(), blockEntity, RegionTaskClass.OWNER_HANDOFF);
+                 }
+ 
+                 baseCommandBlock.setCommand(command);
 @@ -1380,7 +_,7 @@
              Consumer<List<FilteredText>> consumer = optional.isPresent()
                  ? texts -> this.signBook(texts.get(0), texts.subList(1, texts.size()), slot, hasSignPerm) // Purpur - Allow color codes in books
@@ -83,6 +105,73 @@
  
                                      if (this.shouldCheckPlayerMovement(isFallFlying)) {
                                          float f2 = isFallFlying ? 300.0F : 100.0F;
+@@ -2208,4 +_,14 @@
+                     if (Math.abs(vec3.x()) < 1.0000001 && Math.abs(vec3.y()) < 1.0000001 && Math.abs(vec3.z()) < 1.0000001) {
+                         Direction direction = hitResult.getDirection();
++                        BlockPos relativeBlockPos = blockPos.relative(direction); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
++                        BoundingBox interactionBox = BoundingBox.fromCorners(blockPos, relativeBlockPos); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
++                        if (!TickThread.isTickThreadFor(this.player) || !ShreddedPaper.isSync(serverLevel, interactionBox)) { // ShreddedPaper - run block interaction on all touched owner regions
++                            ShreddedPaper.ensureSync(this.player, serverLevel, interactionBox, () -> this.handleUseItemOn(packet)); // ShreddedPaper - run block interaction on all touched owner regions
++                            return; // ShreddedPaper - run block interaction on all touched owner regions
++                        }
++                        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - do not sync-load the clicked block
++                        if (blockState == null) { // ShreddedPaper - do not sync-load the clicked block
++                            return; // ShreddedPaper - do not sync-load the clicked block
++                        }
+                         this.player.resetLastActionTime();
+                         int maxY = this.player.level().getMaxY();
+@@ -2212,5 +_,5 @@
+                         if (blockPos.getY() <= maxY) {
+-                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && serverLevel.getBlockState(blockPos).getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection
++                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && blockState.getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection // ShreddedPaper - do not sync-load the clicked block
+                                 this.player.stopUsingItem(); // CraftBukkit - SPIGOT-4706
+                                 InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, serverLevel, itemInHand, hand, hitResult);
+                                 if (interactionResult.consumesAction()) {
+@@ -2232,7 +_,7 @@
+                             // Paper start - Fix inventory desync; MC-99075
+                             // From serverLevel.mayInteract(this.player, blockPos)
+                             } else if (this.server.isUnderSpawnProtection(serverLevel, blockPos, player)) {
+-                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, serverLevel.getBlockState(blockPos), itemInHand)) {
++                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, blockState, itemInHand)) { // ShreddedPaper - do not sync-load the clicked block
+                                     this.player.containerMenu.sendAllDataToRemote();
+                                 } else {
+                                     this.player.containerMenu.forceHeldSlot(hand);
+@@ -2244,15 +_,22 @@
+                             this.player.sendSystemMessage(component1, true);
+                         }
+ 
+-                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos));
+-                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos.relative(direction)));
++                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, blockPos); // ShreddedPaper - do not sync-load for interaction resync packets
++                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, relativeBlockPos); // ShreddedPaper - do not sync-load for interaction resync packets
+                         if (io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.updateEquipmentOnPlayerActions) this.player.detectEquipmentUpdates(); // Paper - Force update attributes.
+                         // Paper - Remove unused warning
+                     }
+                 }
+             }
+         }
+     }
++
++    private void shreddedpaper$sendBlockUpdateIfLoaded(ServerLevel serverLevel, BlockPos blockPos) { // ShreddedPaper - do not sync-load for interaction resync packets
++        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos);
++        if (blockState != null) {
++            this.send(new ClientboundBlockUpdatePacket(blockPos, blockState));
++        }
++    }
+ 
+     @Override
+     public void handleUseItem(ServerboundUseItemPacket packet) {
+@@ -2286,5 +_,10 @@
+                 double d3 = this.player.blockInteractionRange();
+                 Vec3 to = from.add((double) f7 * d3, (double) f6 * d3, (double) f8 * d3);
++                BoundingBox interactionBox = BoundingBox.fromCorners(BlockPos.containing(from), BlockPos.containing(to)); // ShreddedPaper - avoid sync ray-trace loads across region boundaries
++                if (!TickThread.isTickThreadFor(this.player) || !ShreddedPaper.isSync(serverLevel, interactionBox)) { // ShreddedPaper - run ray trace on all touched owner regions
++                    ShreddedPaper.ensureSync(this.player, serverLevel, interactionBox, () -> this.handleUseItem(packet)); // ShreddedPaper - run ray trace on all touched owner regions
++                    return; // ShreddedPaper - run ray trace on all touched owner regions
++                }
+                 BlockHitResult hitResult = this.player.level().clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, this.player));
+ 
+                 boolean cancelled;
 @@ -2294,7 +_,9 @@
              for (ServerLevel serverLevel : this.server.getAllLevels()) {
                  Entity entity = packet.getEntity(serverLevel);

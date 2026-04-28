@@ -145,6 +145,19 @@ public final class RegionTickScheduler {
                 .toList();
     }
 
+    public List<LongRunningRegionTick> longRunningTicks(final long thresholdNanos) {
+        final long now = System.nanoTime();
+        final List<LongRunningRegionTick> stuck = new ArrayList<>();
+        for (final RegionHandle handle : this.regions.values()) {
+            final LongRunningRegionTick tick = handle.longRunningTick(now, thresholdNanos);
+            if (tick != null) {
+                stuck.add(tick);
+            }
+        }
+        stuck.sort(Comparator.comparingLong(LongRunningRegionTick::elapsedNanos).reversed());
+        return stuck;
+    }
+
     private void startWorker(final boolean degradedOnly, final int id) {
         final Thread worker = new ShreddedPaperTickThread(() -> this.workerLoop(degradedOnly), degradedOnly
                 ? "ShreddedPaperRegionDegraded-%d"
@@ -273,6 +286,15 @@ public final class RegionTickScheduler {
         }
     }
 
+    public record LongRunningRegionTick(
+            String world,
+            RegionPos regionPos,
+            long elapsedNanos,
+            String threadName,
+            long threadId
+    ) {
+    }
+
     private final class RegionHandle implements Delayed {
 
         private final long id = HANDLE_IDS.getAndIncrement();
@@ -288,6 +310,8 @@ public final class RegionTickScheduler {
         private volatile long scheduledStartNanos;
         private volatile long idealStartNanos;
         private volatile long nextMergeProbeNanos;
+        private volatile Thread runningThread;
+        private volatile long runningTickStartNanos;
         private List<LevelChunkRegion> pendingSplitRegions = List.of();
         private long lockContentionBackoffNanos = TimeUnit.MILLISECONDS.toNanos(1L);
 
@@ -353,8 +377,13 @@ public final class RegionTickScheduler {
                     return;
                 }
                 final List<RegionPos> isolationCells = region.getOwner().isolationCellPositionsSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
-                ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(ownerCells, isolationCells);
-                if (ownerLock != null) {
+                if (isolationCells.isEmpty()) {
+                    if (this.retireIfDetached(region) || region.getOwner().cellPositionsSnapshot().isEmpty()) {
+                        this.retire();
+                    } else {
+                        requeueAfterLayoutChange = true;
+                    }
+                } else if ((ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(ownerCells, isolationCells)) != null) {
                     if (this.retireIfDetached(region)) {
                         return;
                     }
@@ -367,6 +396,8 @@ public final class RegionTickScheduler {
                         requeueAfterLayoutChange = true;
                     } else {
                         RegionTickBudget.setCurrent(budget);
+                        this.runningThread = Thread.currentThread();
+                        this.runningTickStartNanos = System.nanoTime();
                         this.ticker.tickRegionFromIndependentScheduler(
                                 this.level,
                                 region,
@@ -386,6 +417,8 @@ public final class RegionTickScheduler {
             } finally {
                 deferred = budget.totalDeferred();
                 RegionTickBudget.clearCurrent();
+                this.runningTickStartNanos = 0L;
+                this.runningThread = null;
                 if (ownerLock != null) {
                     ownerLock.unlock();
                 }
@@ -513,6 +546,27 @@ public final class RegionTickScheduler {
             );
         }
 
+        private LongRunningRegionTick longRunningTick(final long nowNanos, final long thresholdNanos) {
+            final long started = this.runningTickStartNanos;
+            final Thread thread = this.runningThread;
+            if (started <= 0L || thread == null || this.retired.get()) {
+                return null;
+            }
+
+            final long elapsed = Math.max(0L, nowNanos - started);
+            if (elapsed < thresholdNanos) {
+                return null;
+            }
+
+            return new LongRunningRegionTick(
+                    this.level.getWorld().getName(),
+                    this.state.regionPos(),
+                    elapsed,
+                    thread.getName(),
+                    thread.threadId()
+            );
+        }
+
         private void commitTickEvent(
                 final long scheduledStart,
                 final long actualStart,
@@ -533,6 +587,7 @@ public final class RegionTickScheduler {
             event.mailboxDepth = this.state.mailbox().depth();
             event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
             event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
+            event.ownerHandoffQueued = this.state.mailbox().queued(RegionTaskClass.OWNER_HANDOFF);
             event.chunkIoLoadQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_LOAD);
             event.chunkIoSaveQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_SAVE);
             event.chunkIoInFlight = chunkIo.inFlight();

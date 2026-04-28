@@ -91,7 +91,7 @@ public final class RegionChunkExecutorLimiter {
 
         final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
         final RegionRuntimeState state = level.chunkSource.tickingRegions.getOrCreateRuntimeStateForCell(regionPos);
-        return new PermitTask(chunkX, chunkZ, state.chunkIoTracker(), executor, runnable, priority, workType);
+        return new PermitTask(level, chunkX, chunkZ, regionPos, state.ownerId(), state.chunkIoTracker(), executor, runnable, priority, workType);
     }
 
     public enum WorkType {
@@ -116,9 +116,10 @@ public final class RegionChunkExecutorLimiter {
         private static final int CANCELLED = 3;
         private static final int COMPLETED = 4;
 
+        private final ServerLevel level;
         private final int chunkX;
         private final int chunkZ;
-        private final RegionChunkIoTracker tracker;
+        private final RegionPos regionPos;
         private final WorkType workType;
         private final PrioritisedExecutor.PrioritisedTask delegate;
         private final AtomicInteger state = new AtomicInteger(NEW);
@@ -131,21 +132,29 @@ public final class RegionChunkExecutorLimiter {
         private final AtomicBoolean backpressureRetryOutstanding = new AtomicBoolean();
         private final Object deferredLock = new Object();
         private volatile Priority requestedPriority;
+        private volatile long trackerOwnerId;
+        private volatile RegionChunkIoTracker tracker;
         private volatile BacklogRetry backlogRetry;
         private volatile BackpressureRetry backpressureRetry;
         private boolean deferredOutstanding;
 
         private PermitTask(
+                final ServerLevel level,
                 final int chunkX,
                 final int chunkZ,
+                final RegionPos regionPos,
+                final long trackerOwnerId,
                 final RegionChunkIoTracker tracker,
                 final PrioritisedExecutor executor,
                 final Runnable runnable,
                 final Priority priority,
                 final WorkType workType
         ) {
+            this.level = level;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
+            this.regionPos = regionPos;
+            this.trackerOwnerId = trackerOwnerId;
             this.tracker = tracker;
             this.workType = workType;
             this.requestedPriority = priority;
@@ -292,6 +301,9 @@ public final class RegionChunkExecutorLimiter {
             if (this.state.get() != WAITING) {
                 return false;
             }
+            if (!this.ensureWaitingOnCurrentOwner()) {
+                return this.deferBacklogAdmission(executeNow);
+            }
 
             final Priority requestedPriority = this.requestedPriority;
             final RegionChunkIoTracker.Admission admission = this.tracker.tryAcquireExecutor(
@@ -414,12 +426,24 @@ public final class RegionChunkExecutorLimiter {
             if (this.state.get() != WAITING) {
                 return;
             }
+            if (this.hasOwnerChanged()) {
+                this.releaseWaiting();
+                this.refreshTrackerForCurrentOwner();
+                this.acquireWaitingOrBacklog(executeNow);
+                return;
+            }
             this.tryStart(executeNow);
         }
 
         private void retryBackpressured(final boolean executeNow, final BackpressureRetry retry) {
             if (this.state.get() != WAITING) {
                 this.clearBackpressureRetry();
+                return;
+            }
+            if (this.hasOwnerChanged()) {
+                this.clearBackpressureRetry();
+                this.refreshTrackerForCurrentOwner();
+                this.startOverflowOrBackpressure(executeNow);
                 return;
             }
             if (this.tracker.hasExecutorDeferredRetryCapacity()) {
@@ -468,6 +492,7 @@ public final class RegionChunkExecutorLimiter {
         }
 
         private boolean acquireWaitingOrBacklog(final boolean executeNow) {
+            this.refreshTrackerForCurrentOwner();
             if (this.acquireWaiting()) {
                 return this.tryStart(executeNow);
             }
@@ -497,6 +522,12 @@ public final class RegionChunkExecutorLimiter {
         private void retryBacklogAdmission(final boolean executeNow, final BacklogRetry retry) {
             if (this.state.get() != WAITING) {
                 this.clearBacklogRetry();
+                return;
+            }
+            if (this.hasOwnerChanged()) {
+                this.clearBacklogRetry();
+                this.refreshTrackerForCurrentOwner();
+                this.acquireWaitingOrBacklog(executeNow);
                 return;
             }
             if (this.acquireWaiting()) {
@@ -583,6 +614,31 @@ public final class RegionChunkExecutorLimiter {
             if (this.backpressureRetryOutstanding.getAndSet(false)) {
                 this.tracker.executorBackpressureRetryStarted();
             }
+        }
+
+        private boolean ensureWaitingOnCurrentOwner() {
+            if (!this.hasOwnerChanged()) {
+                return true;
+            }
+
+            this.releaseWaiting();
+            this.refreshTrackerForCurrentOwner();
+            return this.acquireWaiting();
+        }
+
+        private boolean hasOwnerChanged() {
+            final RegionRuntimeState currentState = this.level.chunkSource.tickingRegions.runtimeStateForCellOrNull(this.regionPos);
+            return currentState != null && currentState.ownerId() != this.trackerOwnerId;
+        }
+
+        private void refreshTrackerForCurrentOwner() {
+            final RegionRuntimeState currentState = this.level.chunkSource.tickingRegions.runtimeStateForCellOrNull(this.regionPos);
+            if (currentState == null || currentState.ownerId() == this.trackerOwnerId) {
+                return;
+            }
+
+            this.tracker = currentState.chunkIoTracker();
+            this.trackerOwnerId = currentState.ownerId();
         }
 
         private boolean acquireWaiting() {

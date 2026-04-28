@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.commands;
 
 import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
+import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -16,7 +17,7 @@ public final class RegionCommand extends Command {
     public RegionCommand(final String command) {
         super(command);
         this.setPermission("shreddedpaper.command.region");
-        this.setUsage("/region top|dump|inspect <world> <regionX> <regionZ>");
+        this.setUsage("/region top|dump|ownership|inspect <world> <regionX> <regionZ>");
     }
 
     @Override
@@ -36,6 +37,11 @@ public final class RegionCommand extends Command {
 
         if (args[0].equalsIgnoreCase("dump")) {
             this.sendDump(sender);
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("ownership")) {
+            this.sendOwnership(sender);
             return true;
         }
 
@@ -86,6 +92,25 @@ public final class RegionCommand extends Command {
         for (final RegionTickScheduler.RegionTickSnapshot snapshot : snapshots) {
             sender.sendMessage(this.summaryLine(index++, snapshot));
             sender.sendMessage(this.compactDetailLine(snapshot));
+        }
+    }
+
+    private void sendOwnership(final CommandSender sender) {
+        this.sendHeader(sender, "ShreddedPaper Ownership", "global async ownership guard counters");
+        sender.sendMessage(this.metricLine(
+                "ownership",
+                this.metric("loadedReadFallbacks", Long.toString(ShreddedPaperAccess.loadedReadFallbacks()), this.countColor(ShreddedPaperAccess.loadedReadFallbacks())),
+                this.metric("ownerHandoffs", Long.toString(ShreddedPaperAccess.ownerHandoffs()), this.countColor(ShreddedPaperAccess.ownerHandoffs())),
+                this.metric("ownerHandoffRequeues", Long.toString(ShreddedPaperAccess.ownerHandoffRequeues()), this.countColor(ShreddedPaperAccess.ownerHandoffRequeues())),
+                this.metric("ownerHandoffRejections", Long.toString(ShreddedPaperAccess.ownerHandoffRejections()), this.countColor(ShreddedPaperAccess.ownerHandoffRejections())),
+                this.metric("prefetchFailures", Long.toString(ShreddedPaperAccess.prefetchFailures()), this.countColor(ShreddedPaperAccess.prefetchFailures()))
+        ));
+        final List<String> loadedReadFallbackSamples = ShreddedPaperAccess.loadedReadFallbackSamples();
+        if (!loadedReadFallbackSamples.isEmpty()) {
+            sender.sendMessage(Component.text("recent loaded-read fallbacks:", NamedTextColor.YELLOW));
+            for (final String sample : loadedReadFallbackSamples) {
+                sender.sendMessage(Component.text("  " + sample, NamedTextColor.GRAY));
+            }
         }
     }
 

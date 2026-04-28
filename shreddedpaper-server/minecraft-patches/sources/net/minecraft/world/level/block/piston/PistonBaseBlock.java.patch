@@ -1,0 +1,69 @@
+--- a/net/minecraft/world/level/block/piston/PistonBaseBlock.java
++++ b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+@@ -5,6 +_,8 @@
+ import com.mojang.serialization.Codec;
+ import com.mojang.serialization.MapCodec;
+ import com.mojang.serialization.codecs.RecordCodecBuilder;
++import io.multipaper.shreddedpaper.ShreddedPaper;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Map.Entry;
+@@ -34,6 +_,7 @@
+ import net.minecraft.world.level.block.state.properties.BooleanProperty;
+ import net.minecraft.world.level.block.state.properties.PistonType;
+ import net.minecraft.world.level.gameevent.GameEvent;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.material.PushReaction;
+ import net.minecraft.world.level.pathfinder.PathComputationType;
+ import net.minecraft.world.level.redstone.ExperimentalRedstoneUtils;
+@@ -149,9 +_,49 @@
+         }
+     }
+ 
++    // ShreddedPaper start - execute cross-region piston block events with all affected write locks
++    private boolean shreddedpaper$ensurePistonEventOwnership(BlockState state, Level level, BlockPos pos, Direction direction, int id, int param) {
++        if (!(level instanceof ServerLevel serverLevel) || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++
++        final BoundingBox affectedBox = this.shreddedpaper$pistonAffectedBox(pos, direction);
++        if (ShreddedPaper.isSync(serverLevel, affectedBox)) {
++            return true;
++        }
++
++        ShreddedPaper.runSync(serverLevel, affectedBox, () -> {
++            final BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this) && currentState.triggerEvent(serverLevel, pos, id, param)) {
++                serverLevel.getServer()
++                    .getPlayerList()
++                    .broadcast(
++                        null,
++                        pos.getX(),
++                        pos.getY(),
++                        pos.getZ(),
++                        64.0,
++                        serverLevel.dimension(),
++                        new net.minecraft.network.protocol.game.ClientboundBlockEventPacket(pos, this, id, param)
++                    );
++            }
++        });
++        return false;
++    }
++
++    private BoundingBox shreddedpaper$pistonAffectedBox(BlockPos pos, Direction direction) {
++        final BlockPos end = pos.relative(direction, 16);
++        return BoundingBox.fromCorners(
++            new BlockPos(Math.min(pos.getX(), end.getX()) - 32, pos.getY() - 2, Math.min(pos.getZ(), end.getZ()) - 32),
++            new BlockPos(Math.max(pos.getX(), end.getX()) + 32, pos.getY() + 2, Math.max(pos.getZ(), end.getZ()) + 32)
++        );
++    }
++    // ShreddedPaper end - execute cross-region piston block events with all affected write locks
++
+     @Override
+     protected boolean triggerEvent(BlockState state, Level level, BlockPos pos, int id, int param) {
+         Direction direction = state.getValue(FACING);
++        if (!this.shreddedpaper$ensurePistonEventOwnership(state, level, pos, direction, id, param)) return false; // ShreddedPaper - execute cross-region piston block events with all affected write locks
+         // Paper start - Protect Bedrock and End Portal/Frames from being destroyed; prevent retracting when we're facing the wrong way (we were replaced before retraction could occur)
+         Direction directionQueuedAs = Direction.from3DDataValue(param & 7); // Paper - copied from below
+         if (!io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.allowPermanentBlockBreakExploits && direction != directionQueuedAs) {

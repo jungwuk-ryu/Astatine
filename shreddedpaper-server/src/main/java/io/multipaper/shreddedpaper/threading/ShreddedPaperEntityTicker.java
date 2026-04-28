@@ -32,7 +32,9 @@ public class ShreddedPaperEntityTicker {
                     }
 
                     profilerFiller.push("tick");
-                    level.guardEntityTick(level::tickNonPassenger, entity);
+                    try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
+                        level.guardEntityTick(level::tickNonPassenger, entity);
+                    }
                     profilerFiller.pop();
                 }
             }

@@ -1,0 +1,85 @@
+--- a/net/minecraft/world/level/block/piston/PistonStructureResolver.java
++++ b/net/minecraft/world/level/block/piston/PistonStructureResolver.java
+@@ -37,7 +_,8 @@
+     public boolean resolve() {
+         this.toPush.clear();
+         this.toDestroy.clear();
+-        BlockState blockState = this.level.getBlockState(this.startPos);
++        BlockState blockState = this.level.getBlockStateIfLoaded(this.startPos); // ShreddedPaper - avoid sync-loading piston target chunks
++        if (blockState == null) return false; // ShreddedPaper - avoid sync-loading piston target chunks
+         if (!PistonBaseBlock.isPushable(blockState, this.level, this.startPos, this.pushDirection, false, this.pistonDirection)) {
+             if (this.extending && blockState.getPistonPushReaction() == PushReaction.DESTROY) {
+                 this.toDestroy.add(this.startPos);
+@@ -50,7 +_,8 @@
+         } else {
+             for (int i = 0; i < this.toPush.size(); i++) {
+                 BlockPos blockPos = this.toPush.get(i);
+-                if (isSticky(this.level.getBlockState(blockPos)) && !this.addBranchingBlocks(blockPos)) {
++                BlockState pushedState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading piston target chunks
++                if (pushedState != null && isSticky(pushedState) && !this.addBranchingBlocks(blockPos)) { // ShreddedPaper - avoid sync-loading piston target chunks
+                     return false;
+                 }
+             }
+@@ -70,7 +_,8 @@
+     }
+ 
+     private boolean addBlockLine(BlockPos originPos, Direction direction) {
+-        BlockState blockState = this.level.getBlockState(originPos);
++        BlockState blockState = this.level.getBlockStateIfLoaded(originPos); // ShreddedPaper - avoid sync-loading piston target chunks
++        if (blockState == null) return false; // ShreddedPaper - avoid sync-loading piston target chunks
+         if (blockState.isAir()) {
+             return true;
+         } else if (!PistonBaseBlock.isPushable(blockState, this.level, originPos, this.pushDirection, false, direction)) {
+@@ -87,7 +_,10 @@
+                 while (isSticky(blockState)) {
+                     BlockPos blockPos = originPos.relative(this.pushDirection.getOpposite(), i);
+                     BlockState blockState1 = blockState;
+-                    blockState = this.level.getBlockState(blockPos);
++                    blockState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading piston target chunks
++                    if (blockState == null) { // ShreddedPaper - avoid sync-loading piston target chunks
++                        break;
++                    }
+                     if (blockState.isAir()
+                         || !canStickToEachOther(blockState1, blockState)
+                         || !PistonBaseBlock.isPushable(blockState, this.level, blockPos, this.pushDirection, false, this.pushDirection.getOpposite())
+@@ -117,7 +_,8 @@
+ 
+                         for (int i3 = 0; i3 <= index + i1; i3++) {
+                             BlockPos blockPos2 = this.toPush.get(i3);
+-                            if (isSticky(this.level.getBlockState(blockPos2)) && !this.addBranchingBlocks(blockPos2)) {
++                            BlockState pushedState = this.level.getBlockStateIfLoaded(blockPos2); // ShreddedPaper - avoid sync-loading piston target chunks
++                            if (pushedState != null && isSticky(pushedState) && !this.addBranchingBlocks(blockPos2)) { // ShreddedPaper - avoid sync-loading piston target chunks
+                                 return false;
+                             }
+                         }
+@@ -125,7 +_,8 @@
+                         return true;
+                     }
+ 
+-                    blockState = this.level.getBlockState(blockPos1);
++                    blockState = this.level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync-loading piston target chunks
++                    if (blockState == null) return false; // ShreddedPaper - avoid sync-loading piston target chunks
+                     if (blockState.isAir()) {
+                         return true;
+                     }
+@@ -166,12 +_,18 @@
+     }
+ 
+     private boolean addBranchingBlocks(BlockPos fromPos) {
+-        BlockState blockState = this.level.getBlockState(fromPos);
++        BlockState blockState = this.level.getBlockStateIfLoaded(fromPos); // ShreddedPaper - avoid sync-loading piston target chunks
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading piston target chunks
++            return false;
++        }
+ 
+         for (Direction direction : Direction.values()) {
+             if (direction.getAxis() != this.pushDirection.getAxis()) {
+                 BlockPos blockPos = fromPos.relative(direction);
+-                BlockState blockState1 = this.level.getBlockState(blockPos);
++                BlockState blockState1 = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading piston target chunks
++                if (blockState1 == null) { // ShreddedPaper - avoid sync-loading piston target chunks
++                    continue;
++                }
+                 if (canStickToEachOther(blockState1, blockState) && !this.addBlockLine(blockPos, direction)) {
+                     return false;
+                 }

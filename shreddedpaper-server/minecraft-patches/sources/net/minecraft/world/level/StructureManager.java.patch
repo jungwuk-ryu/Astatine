@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/level/StructureManager.java
 +++ b/net/minecraft/world/level/StructureManager.java
-@@ -18,6 +_,7 @@
+@@ -17,6 +_,7 @@
  import net.minecraft.core.registries.Registries;
  import net.minecraft.server.level.WorldGenRegion;
  import net.minecraft.tags.TagKey;
@@ -8,7 +8,9 @@
  import net.minecraft.world.level.chunk.StructureAccess;
  import net.minecraft.world.level.chunk.status.ChunkStatus;
  import net.minecraft.world.level.levelgen.WorldOptions;
-@@ -55,4 +_,8 @@
+@@ -53,7 +_,11 @@
+     }
+ 
      public List<StructureStart> startsForStructure(ChunkPos chunkPos, Predicate<Structure> structurePredicate, @Nullable ServerLevelAccessor levelAccessor) {
 -        Map<Structure, LongSet> allReferences = (levelAccessor == null ? this.level : levelAccessor).getChunk(chunkPos.x, chunkPos.z, ChunkStatus.STRUCTURE_REFERENCES).getAllReferences();
 +        ChunkAccess referenceChunk = this.shreddedpaper$getChunkForStructureRead(levelAccessor == null ? this.level : levelAccessor, chunkPos.x, chunkPos.z, ChunkStatus.STRUCTURE_REFERENCES); // ShreddedPaper - avoid sync chunk loads during independent region ticks
@@ -18,7 +20,10 @@
 +        Map<Structure, LongSet> allReferences = referenceChunk.getAllReferences();
          // Paper end - Fix swamp hut cat generation deadlock
          Builder<StructureStart> builder = ImmutableList.builder();
-@@ -70,7 +_,10 @@
+ 
+@@ -68,9 +_,11 @@
+     }
+ 
      public List<StructureStart> startsForStructure(SectionPos sectionPos, Structure structure) {
 -        LongSet referencesForStructure = this.level
 -            .getChunk(sectionPos.x(), sectionPos.z(), ChunkStatus.STRUCTURE_REFERENCES)
@@ -45,23 +50,26 @@
              );
              if (startForStructure != null && startForStructure.isValid()) {
                  startConsumer.accept(startForStructure);
-@@ -174,4 +_,5 @@
+@@ -173,12 +_,20 @@
+ 
      public boolean hasAnyStructureAt(BlockPos pos) {
          SectionPos sectionPos = SectionPos.of(pos);
 -        return this.level.getChunk(sectionPos.x(), sectionPos.z(), ChunkStatus.STRUCTURE_REFERENCES).hasAnyStructureReferences();
 +        ChunkAccess referenceChunk = this.shreddedpaper$getChunkForStructureRead(this.level, sectionPos.x(), sectionPos.z(), ChunkStatus.STRUCTURE_REFERENCES); // ShreddedPaper - avoid sync chunk loads during independent region ticks
 +        return referenceChunk != null && referenceChunk.hasAnyStructureReferences();
      }
-@@ -179,4 +_,10 @@
+ 
      public Map<Structure, LongSet> getAllStructuresAt(BlockPos pos) {
          SectionPos sectionPos = SectionPos.of(pos);
 -        return this.level.getChunk(sectionPos.x(), sectionPos.z(), ChunkStatus.STRUCTURE_REFERENCES).getAllReferences();
 +        ChunkAccess referenceChunk = this.shreddedpaper$getChunkForStructureRead(this.level, sectionPos.x(), sectionPos.z(), ChunkStatus.STRUCTURE_REFERENCES); // ShreddedPaper - avoid sync chunk loads during independent region ticks
 +        return referenceChunk == null ? Map.of() : referenceChunk.getAllReferences();
-     }
++    }
 +
 +    private @Nullable ChunkAccess shreddedpaper$getChunkForStructureRead(LevelReader reader, int chunkX, int chunkZ, ChunkStatus status) {
 +        boolean requireChunk = !io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
 +            || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread();
 +        return reader.getChunk(chunkX, chunkZ, status, requireChunk);
-+    }
+     }
+ 
+     public StructureCheckResult checkStructurePresence(ChunkPos chunkPos, Structure structure, StructurePlacement placement, boolean skipKnownStructures) {

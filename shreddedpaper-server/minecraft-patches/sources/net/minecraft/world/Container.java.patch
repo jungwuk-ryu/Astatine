@@ -1,6 +1,7 @@
 --- a/net/minecraft/world/Container.java
 +++ b/net/minecraft/world/Container.java
-@@ -17,6 +_,6 @@
+@@ -16,7 +_,7 @@
+ import net.minecraft.world.level.block.entity.BlockEntity;
  import org.jspecify.annotations.Nullable;
  
 -public interface Container extends Clearable, SlotProvider, Iterable<ItemStack> {

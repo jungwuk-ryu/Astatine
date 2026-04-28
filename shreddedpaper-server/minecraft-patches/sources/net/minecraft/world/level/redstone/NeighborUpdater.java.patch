@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/level/redstone/NeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/NeighborUpdater.java
+@@ -34,7 +_,10 @@
+     static void executeShapeUpdate(
+         LevelAccessor level, Direction direction, BlockPos pos, BlockPos neighborPos, BlockState neighborState, @Block.UpdateFlags int flags, int recursionLeft
+     ) {
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - do not sync-load unloaded neighbor chunks from region workers
++        if (blockState == null) { // ShreddedPaper - do not sync-load unloaded neighbor chunks from region workers
++            return;
++        }
+         if ((flags & Block.UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE) == 0 || !blockState.is(Blocks.REDSTONE_WIRE)) {
+             BlockState blockState1 = blockState.updateShape(level, level, pos, direction, neighborPos, neighborState, level.getRandom());
+             Block.updateOrDestroy(blockState, blockState1, level, pos, flags, recursionLeft);

@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/level/ChunkHolder.java
 +++ b/net/minecraft/server/level/ChunkHolder.java
-@@ -1,5 +_,11 @@
+@@ -1,5 +_,12 @@
  package net.minecraft.server.level;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -80,7 +80,7 @@
      }
  
      @Override
-@@ -221,6 +_,10 @@
+@@ -221,6 +_,11 @@
      }
  
      public boolean blockChanged(BlockPos pos) {

@@ -1,0 +1,69 @@
+--- a/ca/spottedleaf/moonrise/patches/starlight/light/StarLightInterface.java
++++ b/ca/spottedleaf/moonrise/patches/starlight/light/StarLightInterface.java
+@@ -926,10 +_,59 @@
+ 
+             @Override
+             public void run() {
++                if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                    && this.shreddedpaper$requiresRegionLock()
++                    && this.lightEngine.getWorld() instanceof ServerLevel world) {
++                    this.shreddedpaper$runWithRegionLock(world);
++                    return;
++                }
++
+                 ((ServerLightQueue)this.queue).chunkTasks.remove(this.chunkCoordinate, this);
+ 
+                 this.runTasks();
+             }
++
++            // ShreddedPaper start - keep Starlight reads/writes out of live region mutation windows
++            private boolean shreddedpaper$requiresRegionLock() {
++                return !this.changedPositions.isEmpty()
++                    || this.changedSectionSet != null
++                    || this.queuedEdgeChecksSky != null
++                    || this.queuedEdgeChecksBlock != null;
++            }
++
++            private void shreddedpaper$runWithRegionLock(final ServerLevel world) {
++                final io.multipaper.shreddedpaper.region.RegionPos regionPos = io.multipaper.shreddedpaper.region.RegionPos.forChunk(
++                    CoordinateUtils.getChunkX(this.chunkCoordinate),
++                    CoordinateUtils.getChunkZ(this.chunkCoordinate)
++                );
++                final io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(regionPos);
++                if (lock == null) {
++                    ((ServerLightQueue)this.queue).chunkTasks.remove(this.chunkCoordinate, this);
++                    world.chunkScheduler.getRegionLocker().onUnlock(regionPos, () -> java.util.concurrent.CompletableFuture.runAsync(
++                        () -> this.shreddedpaper$runDeferredWithRegionLock(world, regionPos),
++                        io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.getExecutor()
++                    ));
++                    return;
++                }
++
++                try {
++                    ((ServerLightQueue)this.queue).chunkTasks.remove(this.chunkCoordinate, this);
++                    this.runTasks();
++                } finally {
++                    lock.unlock();
++                }
++            }
++
++            private void shreddedpaper$runDeferredWithRegionLock(final ServerLevel world, final io.multipaper.shreddedpaper.region.RegionPos regionPos) {
++                final io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(regionPos);
++                if (lock == null) {
++                    world.chunkScheduler.getRegionLocker().onUnlock(regionPos, () -> java.util.concurrent.CompletableFuture.runAsync(
++                        () -> this.shreddedpaper$runDeferredWithRegionLock(world, regionPos),
++                        io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.getExecutor()
++                    ));
++                    return;
++                }
++
++                try {
++                    this.runTasks();
++                } finally {
++                    lock.unlock();
++                }
++            }
++            // ShreddedPaper end - keep Starlight reads/writes out of live region mutation windows
+         }
+     }
+ }

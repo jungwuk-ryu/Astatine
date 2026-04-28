@@ -18,14 +18,11 @@
              return pendingStore.result;
          }).thenCompose(Function.identity());
      }
-@@ -213,10 +_,82 @@
+@@ -213,10 +_,73 @@
          });
      }
  
 -    private void storePendingChunk() {
--        Entry<ChunkPos, IOWorker.PendingStore> entry = this.pendingWrites.pollFirstEntry();
--        if (entry != null) {
--            this.runStore(entry.getKey(), entry.getValue());
 +    // ShreddedPaper start - C2ME: limit pending chunk NBT cache
 +    private boolean enforcePendingWriteHardLimit(int maxWrites) {
 +        int pendingWritesSize = this.pendingWrites.size();
@@ -71,7 +68,9 @@
 +    }
 +
 +    private boolean writeOldestPendingStore() {
-+        Entry<ChunkPos, IOWorker.PendingStore> entry = this.pendingWrites.pollFirstEntry();
+         Entry<ChunkPos, IOWorker.PendingStore> entry = this.pendingWrites.pollFirstEntry();
+-        if (entry != null) {
+-            this.runStore(entry.getKey(), entry.getValue());
 +        if (entry == null) {
 +            return false;
 +        }

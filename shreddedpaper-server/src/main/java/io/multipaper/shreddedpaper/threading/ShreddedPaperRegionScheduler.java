@@ -5,6 +5,8 @@ import net.minecraft.server.level.ServerLevel;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
@@ -123,34 +125,33 @@ public class ShreddedPaperRegionScheduler {
             }
 
             future.complete(null);
-        } catch (Exception e) {
-            future.completeExceptionally(e);
+        } catch (Throwable throwable) {
+            future.completeExceptionally(throwable);
         }
     }
 
     private void runOnMany(RegionPos[] regionPosArray, Runnable runnable, CompletableFuture<Void> future) {
-        ShreddedPaperRegionLocker.RegionLock[] locks = new ShreddedPaperRegionLocker.RegionLock[regionPosArray.length];
+        ShreddedPaperRegionLocker.RegionLock lock = null;
         try {
             try {
-                for (int i = 0; i < regionPosArray.length; i++) {
-                    locks[i] = locker.tryTakeLockNow(regionPosArray[i]);
-                    if (locks[i] == null) {
-                        locker.onUnlock(regionPosArray[i], () -> CompletableFuture.runAsync(() -> runOnMany(regionPosArray, runnable, future), ShreddedPaperTickThread.getExecutor()));
-                        return;
-                    }
+                final List<RegionPos> writeRegions = sortedUniqueRegions(regionPosArray);
+                final List<RegionPos> isolationRegions = isolationRegionsFor(writeRegions);
+                lock = locker.internalTryTakeExactLockNow(writeRegions, isolationRegions);
+                if (lock == null) {
+                    locker.onUnlock(isolationRegions, () -> CompletableFuture.runAsync(() -> runOnMany(regionPosArray, runnable, future), ShreddedPaperTickThread.getExecutor()));
+                    return;
                 }
 
-                // All locks acquired, run the task
-                runnable.run();
-            } finally {
-                for (int i = locks.length - 1; i >= 0; i--) {
-                    if (locks[i] != null) locks[i].unlock();
+                try (var ignored = locker.promoteCurrentThreadLocksToWrite()) {
+                    runnable.run();
                 }
+            } finally {
+                if (lock != null) lock.unlock();
             }
 
             future.complete(null);
-        } catch (Exception e) {
-            future.completeExceptionally(e);
+        } catch (Throwable throwable) {
+            future.completeExceptionally(throwable);
         }
     }
 
@@ -177,9 +178,41 @@ public class ShreddedPaperRegionScheduler {
             }
 
             future.complete(null);
-        } catch (Exception e) {
-            future.completeExceptionally(e);
+        } catch (Throwable throwable) {
+            future.completeExceptionally(throwable);
         }
+    }
+
+    private static List<RegionPos> sortedUniqueRegions(RegionPos[] posArray) {
+        final List<RegionPos> regions = new ArrayList<>(posArray.length);
+        for (final RegionPos regionPos : posArray) {
+            regions.add(regionPos);
+        }
+        regions.sort(ShreddedPaperRegionScheduler::compare);
+        for (int i = regions.size() - 1; i > 0; i--) {
+            if (regions.get(i).longKey == regions.get(i - 1).longKey) {
+                regions.remove(i);
+            }
+        }
+        return regions;
+    }
+
+    private static List<RegionPos> isolationRegionsFor(List<RegionPos> writeRegions) {
+        final List<RegionPos> regions = new ArrayList<>(writeRegions.size() * 9);
+        for (final RegionPos writeRegion : writeRegions) {
+            for (int x = -ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; x <= ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; x++) {
+                for (int z = -ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; z <= ShreddedPaperRegionLocker.REGION_LOCK_RADIUS; z++) {
+                    regions.add(new RegionPos(writeRegion.x + x, writeRegion.z + z));
+                }
+            }
+        }
+        regions.sort(ShreddedPaperRegionScheduler::compare);
+        for (int i = regions.size() - 1; i > 0; i--) {
+            if (regions.get(i).longKey == regions.get(i - 1).longKey) {
+                regions.remove(i);
+            }
+        }
+        return regions;
     }
 
     public ShreddedPaperRegionLocker getRegionLocker() {

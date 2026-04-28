@@ -1,0 +1,18 @@
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -125,8 +_,14 @@
+             if (this.chunkPosCache[chunkCacheKey] == chunkKey) {
+                 chunk = this.chunkCache[chunkCacheKey];
+             } else {
++                chunk = this.level.getChunkIfLoaded(x >> 4, z >> 4); // ShreddedPaper - avoid sync chunk loads from independent region explosions
++                if (chunk == null) {
++                    ret = new ca.spottedleaf.moonrise.patches.collisions.ExplosionBlockCache(key, pos, null, null, 0.0f, true);
++                    this.blockCache.put(key, ret);
++                    return ret;
++                }
+                 this.chunkPosCache[chunkCacheKey] = chunkKey;
+-                this.chunkCache[chunkCacheKey] = chunk = this.level.getChunk(x >> 4, z >> 4);
++                this.chunkCache[chunkCacheKey] = chunk;
+             }
+ 
+             BlockState blockState = ((ca.spottedleaf.moonrise.patches.getblock.GetBlockChunk)chunk).moonrise$getBlock(x, y, z);

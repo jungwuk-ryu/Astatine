@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
 +++ b/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
-@@ -257,6 +_,9 @@
+@@ -256,6 +_,9 @@
              this.setXRot(lerpRotation(this.getXRot(), f1));
              this.setYRot(lerpRotation(this.getYRot(), f));
              this.checkLeftOwner();

@@ -32,3 +32,14 @@
          // Paper end - Faster redstone torch rapid clock removal
          if (logToggle) {
              list.add(new RedstoneTorchBlock.Toggle(pos.immutable(), level.getGameTime()));
+@@ -181,8 +_,8 @@
+     }
+ 
+     public static class Toggle {
+-        final BlockPos pos;
+-        final long when;
++        public final BlockPos pos; // ShreddedPaper - accessed by region lifecycle pruning
++        public final long when; // ShreddedPaper - accessed by region lifecycle pruning
+ 
+         public Toggle(BlockPos pos, long when) {
+             this.pos = pos;

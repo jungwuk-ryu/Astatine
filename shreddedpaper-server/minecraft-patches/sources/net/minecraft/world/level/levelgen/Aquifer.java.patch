@@ -1,7 +1,6 @@
 --- a/net/minecraft/world/level/levelgen/Aquifer.java
 +++ b/net/minecraft/world/level/levelgen/Aquifer.java
-@@ -96,7 +_,15 @@
-         private final int minGridY;
+@@ -96,6 +_,14 @@
          private final int minGridZ;
          private final int gridSizeX;
          private final int gridSizeZ;

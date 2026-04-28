@@ -1,0 +1,22 @@
+--- a/net/minecraft/world/level/block/DiodeBlock.java
++++ b/net/minecraft/world/level/block/DiodeBlock.java
+@@ -137,7 +_,8 @@
+         if (signal >= 15) {
+             return signal;
+         } else {
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone diode input
++            if (blockState == null) return signal; // ShreddedPaper - avoid sync-loading redstone diode input
+             return Math.max(signal, blockState.is(Blocks.REDSTONE_WIRE) ? blockState.getValue(RedStoneWireBlock.POWER) : 0);
+         }
+     }
+@@ -204,7 +_,8 @@
+ 
+     public boolean shouldPrioritize(BlockGetter level, BlockPos pos, BlockState state) {
+         Direction opposite = state.getValue(FACING).getOpposite();
+-        BlockState blockState = level.getBlockState(pos.relative(opposite));
++        BlockState blockState = level.getBlockStateIfLoaded(pos.relative(opposite)); // ShreddedPaper - avoid sync-loading redstone diode priority checks
++        if (blockState == null) return false; // ShreddedPaper - avoid sync-loading redstone diode priority checks
+         return isDiode(blockState) && blockState.getValue(FACING) != opposite;
+     }
+ 

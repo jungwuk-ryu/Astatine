@@ -1,9 +1,10 @@
 --- a/net/minecraft/world/level/ScheduledTickAccess.java
 +++ b/net/minecraft/world/level/ScheduledTickAccess.java
-@@ -1,6 +_,8 @@
+@@ -1,6 +_,9 @@
  package net.minecraft.world.level;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
++import io.multipaper.shreddedpaper.region.LevelTicksRegionProxy;
  import net.minecraft.core.BlockPos;
 +import net.minecraft.server.level.ServerLevel;
  import net.minecraft.world.level.block.Block;
@@ -13,24 +14,24 @@
      LevelTickAccess<Block> getBlockTicks();
  
      default void scheduleTick(BlockPos pos, Block block, int delay, TickPriority priority) {
-+        if (this instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); // ShreddedPaper
++        if (this instanceof ServerLevel serverLevel && !LevelTicksRegionProxy.canScheduleFromCurrentThread(serverLevel, pos)) { if (LevelTicksRegionProxy.scheduleOnOwningRegionIfNeeded(serverLevel, pos, () -> serverLevel.scheduleTick(pos, block, delay, priority))) return; TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); } // ShreddedPaper
          this.getBlockTicks().schedule(this.createTick(pos, block, delay, priority));
      }
  
      default void scheduleTick(BlockPos pos, Block block, int delay) {
-+        if (this instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); // ShreddedPaper
++        if (this instanceof ServerLevel serverLevel && !LevelTicksRegionProxy.canScheduleFromCurrentThread(serverLevel, pos)) { if (LevelTicksRegionProxy.scheduleOnOwningRegionIfNeeded(serverLevel, pos, () -> serverLevel.scheduleTick(pos, block, delay))) return; TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); } // ShreddedPaper
          this.getBlockTicks().schedule(this.createTick(pos, block, delay));
      }
  
      LevelTickAccess<Fluid> getFluidTicks();
  
      default void scheduleTick(BlockPos pos, Fluid fluid, int delay, TickPriority priority) {
-+        if (this instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); // ShreddedPaper
++        if (this instanceof ServerLevel serverLevel && !LevelTicksRegionProxy.canScheduleFromCurrentThread(serverLevel, pos)) { if (LevelTicksRegionProxy.scheduleOnOwningRegionIfNeeded(serverLevel, pos, () -> serverLevel.scheduleTick(pos, fluid, delay, priority))) return; TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); } // ShreddedPaper
          this.getFluidTicks().schedule(this.createTick(pos, fluid, delay, priority));
      }
  
      default void scheduleTick(BlockPos pos, Fluid fluid, int delay) {
-+        if (this instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); // ShreddedPaper
++        if (this instanceof ServerLevel serverLevel && !LevelTicksRegionProxy.canScheduleFromCurrentThread(serverLevel, pos)) { if (LevelTicksRegionProxy.scheduleOnOwningRegionIfNeeded(serverLevel, pos, () -> serverLevel.scheduleTick(pos, fluid, delay))) return; TickThread.ensureTickThread(serverLevel, pos, "Cannot schedule outside of tick thread"); } // ShreddedPaper
          this.getFluidTicks().schedule(this.createTick(pos, fluid, delay));
      }
  }

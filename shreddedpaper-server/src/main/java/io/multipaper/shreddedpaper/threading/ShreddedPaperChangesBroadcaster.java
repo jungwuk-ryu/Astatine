@@ -1,10 +1,13 @@
 package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
+import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import io.multipaper.shreddedpaper.threading.region.RegionWorkType;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 public class ShreddedPaperChangesBroadcaster {
@@ -54,7 +57,13 @@ public class ShreddedPaperChangesBroadcaster {
             boolean deferred = false;
             for (ChunkHolder holder : copy) {
                 if (!TickThread.isTickThreadFor(holder.moonrise$getRealChunkHolder().world, holder.getPos())) {
-                    // The changes will get picked up by the correct thread when it is ticked
+                    final ServerLevel targetLevel = holder.moonrise$getRealChunkHolder().world;
+                    final RegionPos targetRegion = RegionPos.forChunk(holder.getPos());
+                    final Runnable broadcastTask = () -> {
+                        ShreddedPaperChangesBroadcaster.add(holder);
+                        ShreddedPaperChangesBroadcaster.broadcastChanges();
+                    };
+                    targetLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(targetRegion, broadcastTask, 1L, RegionTaskClass.TRACKER_BROADCAST);
                     continue;
                 }
 

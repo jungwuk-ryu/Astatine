@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/entity/item/PrimedTnt.java
 +++ b/net/minecraft/world/entity/item/PrimedTnt.java
-@@ -1,5 +1,13 @@
+@@ -1,8 +_,16 @@
  package net.minecraft.world.entity.item;
  
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
@@ -14,7 +14,10 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleTypes;
 +import net.minecraft.server.MinecraftServer;
-@@ -37,6 +45,9 @@ import org.bukkit.event.entity.ExplosionPrimeEvent;
+ import net.minecraft.network.syncher.EntityDataAccessor;
+ import net.minecraft.network.syncher.EntityDataSerializers;
+ import net.minecraft.network.syncher.SynchedEntityData;
+@@ -37,12 +_,22 @@
  public class PrimedTnt extends Entity implements TraceableEntity {
      private static final EntityDataAccessor<Integer> DATA_FUSE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.INT);
      private static final EntityDataAccessor<BlockState> DATA_BLOCK_STATE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.BLOCK_STATE);
@@ -24,7 +27,6 @@
      private static final short DEFAULT_FUSE_TIME = 80;
      private static final float DEFAULT_EXPLOSION_POWER = 4.0F;
      private static final BlockState DEFAULT_BLOCK_STATE = Blocks.TNT.defaultBlockState();
-@@ -43,6 +54,13 @@ public class PrimedTnt extends Entity implements TraceableEntity {
      private static final String TAG_BLOCK_STATE = "block_state";
      public static final String TAG_FUSE = "fuse";
      private static final String TAG_EXPLOSION_POWER = "explosion_power";
@@ -38,7 +40,7 @@
      private static final ExplosionDamageCalculator USED_PORTAL_DAMAGE_CALCULATOR = new ExplosionDamageCalculator() {
          @Override
          public boolean shouldBlockExplode(Explosion explosion, BlockGetter level, BlockPos pos, BlockState state, float power) {
-@@ -58,6 +76,14 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -58,6 +_,15 @@
      private boolean usedPortal;
      public float explosionPower = 4.0F;
      public boolean isIncendiary = false; // CraftBukkit
@@ -50,10 +52,11 @@
 +    private float shreddedpaper$deferredExplosionRadius;
 +    private boolean shreddedpaper$deferredExplosionFire;
 +    private boolean shreddedpaper$deferredExplosionPortalCalculator;
++    private boolean shreddedpaper$deferredExplosionExecutionQueued;
  
      public PrimedTnt(EntityType<? extends PrimedTnt> type, Level level) {
          super(type, level);
-@@ -80,6 +106,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -80,6 +_,7 @@
      protected void defineSynchedData(SynchedEntityData.Builder builder) {
          builder.define(DATA_FUSE_ID, 80);
          builder.define(DATA_BLOCK_STATE_ID, DEFAULT_BLOCK_STATE);
@@ -61,7 +64,8 @@
      }
  
      @Override
-@@ -100,6 +127,10 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -99,6 +_,10 @@
+ 
      @Override
      public void tick() {
 +        if (this.shreddedpaper$isDeferredExplosion()) {
@@ -71,8 +75,7 @@
          if (this.level().spigotConfig.maxTntTicksPerTick > 0 && ++this.level().spigotConfig.currentPrimedTnt > this.level().spigotConfig.maxTntTicksPerTick) { return; } // Spigot
          this.handlePortal();
          this.applyGravity();
-         this.move(MoverType.SELF, this.getDeltaMovement());
-@@ -121,7 +152,9 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -121,7 +_,9 @@
              // CraftBukkit start - Need to reverse the order of the explosion and the entity death so we have a location for the event
              //this.discard();
              if (!this.level().isClientSide()) {
@@ -83,17 +86,17 @@
              }
              this.discard(EntityRemoveEvent.Cause.EXPLODE); // CraftBukkit - add Bukkit remove cause
              // CraftBukkit end
-@@ -139,27 +172,172 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -139,27 +_,245 @@
          // Paper end - Option to prevent TNT from moving in water
      }
  
+-    private void explode() {
 +    @Override
 +    public void onRemoval(Entity.RemovalReason reason) {
 +        super.onRemoval(reason);
 +        this.shreddedpaper$releaseDeferredExplosionSlot();
 +    }
 +
--    private void explode() {
 +    private boolean explode() {
          if (this.level() instanceof ServerLevel serverLevel && serverLevel.getGameRules().get(GameRules.TNT_EXPLODES)) {
              // CraftBukkit start
@@ -115,6 +118,7 @@
 -                    event.getFire(), // CraftBukkit
 -                    Level.ExplosionInteraction.TNT
 -                );
+-        }
 +            final double explosionX = this.getX();
 +            final double explosionY = this.getY(0.0625);
 +            final double explosionZ = this.getZ();
@@ -122,14 +126,15 @@
 +            final boolean fire = event.getFire();
 +            final boolean usedPortalDamageCalculator = this.usedPortal;
 +            final RegionTickBudget budget = RegionTickBudget.current();
-+            if (budget != null && !budget.canContinue(RegionWorkType.EXPLOSION)) {
++            if ((budget != null && !budget.canContinue(RegionWorkType.EXPLOSION))
++                || !this.shreddedpaper$canRunExplosionNow(serverLevel, explosionX, explosionY, explosionZ, radius)) {
 +                if (this.shreddedpaper$startDeferredExplosion(serverLevel, explosionX, explosionY, explosionZ, radius, fire, usedPortalDamageCalculator)) {
 +                    return false;
 +                }
 +                return true;
 +            }
 +            this.runDeferredExplosion(serverLevel, explosionX, explosionY, explosionZ, radius, fire, usedPortalDamageCalculator);
-         }
++        }
 +        return true;
 +    }
 +
@@ -141,6 +146,7 @@
 +        this.shreddedpaper$deferredExplosion = deferredExplosion;
 +        this.entityData.set(DATA_DEFERRED_EXPLOSION_ID, deferredExplosion);
 +        if (!deferredExplosion) {
++            this.shreddedpaper$deferredExplosionExecutionQueued = false;
 +            this.shreddedpaper$releaseDeferredExplosionSlot();
 +        }
 +    }
@@ -234,6 +240,16 @@
 +        if (budget != null && !budget.canDrainDeferred(RegionWorkType.EXPLOSION)) {
 +            return;
 +        }
++        if (!this.shreddedpaper$canRunExplosionNow(
++            serverLevel,
++            this.shreddedpaper$deferredExplosionX,
++            this.shreddedpaper$deferredExplosionY,
++            this.shreddedpaper$deferredExplosionZ,
++            this.shreddedpaper$deferredExplosionRadius
++        )) {
++            this.shreddedpaper$scheduleDeferredExplosion(serverLevel);
++            return;
++        }
 +        this.shreddedpaper$setDeferredExplosion(false);
 +        this.runDeferredExplosion(
 +            serverLevel,
@@ -245,6 +261,67 @@
 +            this.shreddedpaper$deferredExplosionPortalCalculator
 +        );
 +        this.discard(EntityRemoveEvent.Cause.EXPLODE);
++    }
++
++    private boolean shreddedpaper$canRunExplosionNow(
++        ServerLevel serverLevel,
++        double explosionX,
++        double explosionY,
++        double explosionZ,
++        float radius
++    ) {
++        return !ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++            || io.multipaper.shreddedpaper.ShreddedPaper.isSync(
++                serverLevel,
++                shreddedpaper$explosionOwnershipBox(explosionX, explosionY, explosionZ, radius)
++            );
++    }
++
++    private void shreddedpaper$scheduleDeferredExplosion(final ServerLevel serverLevel) {
++        if (this.shreddedpaper$deferredExplosionExecutionQueued) {
++            return;
++        }
++        this.shreddedpaper$deferredExplosionExecutionQueued = true;
++        final double explosionX = this.shreddedpaper$deferredExplosionX;
++        final double explosionY = this.shreddedpaper$deferredExplosionY;
++        final double explosionZ = this.shreddedpaper$deferredExplosionZ;
++        final float radius = this.shreddedpaper$deferredExplosionRadius;
++        final boolean fire = this.shreddedpaper$deferredExplosionFire;
++        final boolean usedPortalDamageCalculator = this.shreddedpaper$deferredExplosionPortalCalculator;
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(
++            serverLevel,
++            shreddedpaper$explosionOwnershipBox(explosionX, explosionY, explosionZ, radius),
++            () -> {
++                this.shreddedpaper$deferredExplosionExecutionQueued = false;
++                if (!this.shreddedpaper$isDeferredExplosion() || this.isRemoved() || this.level() != serverLevel) {
++                    return;
++                }
++                final RegionTickBudget budget = RegionTickBudget.current();
++                if (budget != null && !budget.canDrainDeferred(RegionWorkType.EXPLOSION)) {
++                    return;
++                }
++                if (!this.shreddedpaper$canRunExplosionNow(serverLevel, explosionX, explosionY, explosionZ, radius)) {
++                    this.shreddedpaper$scheduleDeferredExplosion(serverLevel);
++                    return;
++                }
++                this.shreddedpaper$setDeferredExplosion(false);
++                this.runDeferredExplosion(serverLevel, explosionX, explosionY, explosionZ, radius, fire, usedPortalDamageCalculator);
++                this.discard(EntityRemoveEvent.Cause.EXPLODE);
++            }
++        );
++    }
++
++    private static net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$explosionOwnershipBox(
++        final double x,
++        final double y,
++        final double z,
++        final float radius
++    ) {
++        final int reach = Mth.ceil(radius * 2.0F) + 2;
++        return net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(
++            BlockPos.containing(x - reach, y - reach, z - reach),
++            BlockPos.containing(x + reach, y + reach, z + reach)
++        );
 +    }
 +
 +    private void runDeferredExplosion(
@@ -270,7 +347,7 @@
      }
  
      @Override
-@@ -169,6 +347,15 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -169,6 +_,15 @@
          if (this.explosionPower != 4.0F) {
              output.putFloat("explosion_power", this.explosionPower);
          }
@@ -286,7 +363,7 @@
  
          EntityReference.store(this.owner, output, "owner");
      }
-@@ -178,6 +365,23 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -178,6 +_,23 @@
          this.setFuse(input.getShortOr("fuse", (short)80));
          this.setBlockState(input.read("block_state", BlockState.CODEC).orElse(DEFAULT_BLOCK_STATE));
          this.explosionPower = Mth.clamp(input.getFloatOr("explosion_power", 4.0F), 0.0F, 128.0F);
@@ -310,7 +387,7 @@
          this.owner = EntityReference.read(input, "owner");
      }
  
-@@ -191,5 +395,16 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -191,6 +_,17 @@
          super.restoreFrom(entity);
          if (entity instanceof PrimedTnt primedTnt) {
              this.owner = primedTnt.owner;
@@ -327,3 +404,4 @@
 +            this.shreddedpaper$deferredExplosionPortalCalculator = primedTnt.shreddedpaper$deferredExplosionPortalCalculator;
          }
      }
+ 

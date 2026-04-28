@@ -397,6 +397,10 @@ public final class DivineConfig {
             multithreadedTracker.queueSize = asyncEntityTrackerQueueSize;
 
             asyncPathfinding = pathfinding.enable;
+            if (asyncPathfinding && configuration.multithreading.independentRegionTicking) {
+                asyncPathfinding = false;
+                LOGGER.warn("Disabling async pathfinding while ShreddedPaper independent region ticking is enabled; pathfinding needs a region-safe snapshot before it can run off-thread.");
+            }
             asyncPathfindingMaxThreads = pathfinding.maxThreads;
             asyncPathfindingKeepalive = Math.max(1, pathfinding.keepalive);
 

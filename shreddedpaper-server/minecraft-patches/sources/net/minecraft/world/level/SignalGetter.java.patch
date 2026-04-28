@@ -1,0 +1,39 @@
+--- a/net/minecraft/world/level/SignalGetter.java
++++ b/net/minecraft/world/level/SignalGetter.java
+@@ -11,7 +_,11 @@
+     Direction[] DIRECTIONS = Direction.values();
+ 
+     default int getDirectSignal(BlockPos pos, Direction direction) {
+-        return this.getBlockState(pos).getDirectSignal(this, pos, direction);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++            return 0;
++        }
++        return blockState.getDirectSignal(this, pos, direction);
+     }
+ 
+     default int getDirectSignalTo(BlockPos pos) {
+@@ -46,7 +_,10 @@
+     }
+ 
+     default int getControlInputSignal(BlockPos pos, Direction direction, boolean diodesOnly) {
+-        BlockState blockState = this.getBlockState(pos);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++            return 0;
++        }
+         if (diodesOnly) {
+             return DiodeBlock.isDiode(blockState) ? this.getDirectSignal(pos, direction) : 0;
+         } else if (blockState.is(Blocks.REDSTONE_BLOCK)) {
+@@ -63,7 +_,10 @@
+     }
+ 
+     default int getSignal(BlockPos pos, Direction direction) {
+-        BlockState blockState = this.getBlockState(pos);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
++            return 0;
++        }
+         int signal = blockState.getSignal(this, pos, direction);
+         return blockState.isRedstoneConductor(this, pos) ? Math.max(signal, this.getDirectSignalTo(pos)) : signal;
+     }

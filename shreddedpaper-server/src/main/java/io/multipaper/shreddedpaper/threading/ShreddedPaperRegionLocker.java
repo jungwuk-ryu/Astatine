@@ -1,6 +1,5 @@
 package io.multipaper.shreddedpaper.threading;
 
-import ca.spottedleaf.moonrise.common.util.TickThread;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import io.multipaper.shreddedpaper.region.RegionPos;
 
@@ -44,7 +43,7 @@ public class ShreddedPaperRegionLocker {
      * Checks if the current thread holds a read lock for the given region
      */
     public boolean hasLock(RegionPos regionPos) {
-        return localLocks.get().contains(regionPos) || TickThread.canBypassTickThreadCheck();
+        return localLocks.get().contains(regionPos);
     }
 
     /**
@@ -53,7 +52,7 @@ public class ShreddedPaperRegionLocker {
      * syncing conflicts with other servers.
      */
     public boolean hasWriteLock(RegionPos regionPos) {
-        return writeLocks.get().contains(regionPos) || TickThread.canBypassTickThreadCheck();
+        return writeLocks.get().contains(regionPos);
     }
 
     /**
@@ -267,6 +266,9 @@ public class ShreddedPaperRegionLocker {
 
     @Nullable
     public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> writeRegionPositions, Collection<RegionPos> isolationRegionPositions) {
+        if (writeRegionPositions.isEmpty() || isolationRegionPositions.isEmpty()) {
+            return null;
+        }
         final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(isolationRegionPositions);
         return lock == null ? null : new WriteRegionLock(lock, sortedUniqueRegions(writeRegionPositions));
     }
@@ -447,14 +449,19 @@ public class ShreddedPaperRegionLocker {
             this.superLock = superLock;
 
             final Collection<RegionPos> newlyLockedRegions = superLock.lockedRegions();
+            final Set<RegionPos> local = ShreddedPaperRegionLocker.this.localLocks.get();
+            final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
             this.writeLocks = new ArrayList<>(writeRegions.size());
             for (final RegionPos writeRegion : writeRegions) {
                 if (newlyLockedRegions.contains(writeRegion)
-                    || ShreddedPaperRegionLocker.this.localLocks.get().contains(writeRegion)) {
+                    || local.contains(writeRegion)) {
+                    if (writes.contains(writeRegion)) {
+                        continue;
+                    }
                     this.writeLocks.add(writeRegion);
                 }
             }
-            ShreddedPaperRegionLocker.this.writeLocks.get().addAll(this.writeLocks);
+            writes.addAll(this.writeLocks);
             ShreddedPaperRegionLocker.this.readOnlyLocks.get().removeAll(this.writeLocks);
         }
 
@@ -499,8 +506,8 @@ public class ShreddedPaperRegionLocker {
             headUnlockFuture.complete(null);
         }
 
-        public CompletableFuture<Void> onUnlock(Supplier<CompletableFuture<Void>> nextTask) {
-            return tailUnlockFuture = tailUnlockFuture.thenCompose(v -> nextTask.get());
+        public synchronized CompletableFuture<Void> onUnlock(Supplier<CompletableFuture<Void>> nextTask) {
+            return tailUnlockFuture = tailUnlockFuture.handle((ignored, throwable) -> null).thenCompose(v -> nextTask.get());
         }
     }
 

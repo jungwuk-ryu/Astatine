@@ -1,6 +1,9 @@
 --- a/net/minecraft/world/level/levelgen/DensityFunctions.java
 +++ b/net/minecraft/world/level/levelgen/DensityFunctions.java
-@@ -759,4 +_,88 @@
+@@ -756,7 +_,91 @@
+         }
+     }
+ 
 -    public record Marker(@Override DensityFunctions.Marker.Type type, @Override DensityFunction wrapped) implements DensityFunctions.MarkerOrMarked {
 +    // ShreddedPaper start - C2ME: Density Function Compiler
 +    public static final class Marker implements com.ishland.c2me.opts.dfc.common.ducks.IFastCacheLike, com.ishland.c2me.opts.dfc.common.ducks.IEqualityOverriding, DensityFunctions.MarkerOrMarked {
@@ -90,11 +93,11 @@
          @Override
          public double compute(DensityFunction.FunctionContext context) {
              return this.wrapped.compute(context);
-@@ -776,7 +_,19 @@
+@@ -776,6 +_,18 @@
          public double maxValue() {
              return this.wrapped.maxValue();
          }
- 
++
 +        // ShreddedPaper start - C2ME: Density Function Compiler
 +        @Override
 +        public Type type() {
@@ -106,7 +109,6 @@
 +            return this.wrapped;
 +        }
 +        // ShreddedPaper end - C2ME: Density Function Compiler
-+
+ 
          public static enum Type implements StringRepresentable {
              Interpolated("interpolated"),
-             FlatCache("flat_cache"),

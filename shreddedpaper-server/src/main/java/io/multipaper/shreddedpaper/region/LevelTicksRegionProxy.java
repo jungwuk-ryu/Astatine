@@ -1,16 +1,20 @@
 package io.multipaper.shreddedpaper.region;
 
+import ca.spottedleaf.moonrise.common.util.TickThread;
+import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
+import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.Vec3i;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.world.ticks.ScheduledTick;
-import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +52,29 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
 
     public boolean hasRegionData(RegionPos pos) {
         return get(pos).map(region -> !region.isEmpty()).orElse(false);
+    }
+
+    public static boolean canScheduleFromCurrentThread(ServerLevel level, BlockPos pos) {
+        final RegionPos targetRegion = RegionPos.forBlockPos(pos);
+        if (TickThread.isTickThreadFor(level, pos)) {
+            return true;
+        }
+
+        return ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
+                && ShreddedPaperTickThread.isShreddedPaperTickThread()
+                && level.chunkScheduler.getRegionLocker().hasWriteLock(targetRegion);
+    }
+
+    public static boolean scheduleOnOwningRegionIfNeeded(ServerLevel level, BlockPos pos, Runnable task) {
+        final RegionPos targetRegion = RegionPos.forBlockPos(pos);
+        if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
+                || !ShreddedPaperTickThread.isShreddedPaperTickThread()
+                || !level.chunkScheduler.getRegionLocker().hasLock(targetRegion)) {
+            return false;
+        }
+
+        level.chunkScheduler.schedule(targetRegion, task);
+        return true;
     }
 
     public void addContainer(ChunkPos pos, LevelChunkTicks<T> scheduler) {

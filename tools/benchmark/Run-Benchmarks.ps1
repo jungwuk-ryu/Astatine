@@ -512,7 +512,7 @@ function Parse-RltLog([string]$Text) {
     $probes = @()
     $chunks = @()
     foreach ($line in ($Text -split "`r?`n")) {
-        if ($line -match "(?<label>.+) finished at chunk=(?<chunkX>-?\d+),(?<chunkZ>-?\d+): samples=(?<samples>\d+) periodTicks=(?<period>\d+) avgLagMs=(?<avg>-?[0-9.]+) p95LagMs=(?<p95>-?[0-9.]+) maxLagMs=(?<max>-?[0-9.]+)") {
+        if ($line -match "(?<label>.+) finished at chunk=(?<chunkX>-?\d+),(?<chunkZ>-?\d+): samples=(?<samples>\d+) periodTicks=(?<period>\d+) avgLagMs=(?<avg>-?[0-9.]+) p95LagMs=(?<p95>-?[0-9.]+)(?: p99LagMs=(?<p99>-?[0-9.]+))? maxLagMs=(?<max>-?[0-9.]+)") {
             $probes += [pscustomobject]@{
                 Label = $Matches.label.Trim()
                 ChunkX = [int]$Matches.chunkX
@@ -521,6 +521,7 @@ function Parse-RltLog([string]$Text) {
                 PeriodTicks = [int]$Matches.period
                 AvgLagMs = [double]$Matches.avg
                 P95LagMs = [double]$Matches.p95
+                P99LagMs = if ($Matches.p99) { [double]$Matches.p99 } else { $null }
                 MaxLagMs = [double]$Matches.max
                 Raw = $line
             }

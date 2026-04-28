@@ -1,0 +1,72 @@
+--- a/net/minecraft/world/entity/SpawnPlacementTypes.java
++++ b/net/minecraft/world/entity/SpawnPlacementTypes.java
+@@ -3,5 +_,7 @@
+ import net.minecraft.core.BlockPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+ import net.minecraft.tags.FluidTags;
++import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.LevelReader;
+ import net.minecraft.world.level.NaturalSpawner;
+ import net.minecraft.world.level.block.state.BlockState;
+@@ -13,14 +_,20 @@
+     SpawnPlacementType IN_WATER = (level, pos, entityType) -> {
+         if (entityType != null && level.getWorldBorder().isWithinBounds(pos)) {
+             BlockPos blockPos = pos.above();
+-            return level.getFluidState(pos).is(FluidTags.WATER) && !level.getBlockState(blockPos).isRedstoneConductor(level, blockPos);
++            BlockState spawnBlockState = shreddedpaper$getBlockStateIfLoaded(level, pos); // ShreddedPaper - do not sync-load chunks during spawn placement checks
++            BlockState aboveBlockState = shreddedpaper$getBlockStateIfLoaded(level, blockPos); // ShreddedPaper - do not sync-load chunks during spawn placement checks
++            return spawnBlockState != null && aboveBlockState != null && spawnBlockState.getFluidState().is(FluidTags.WATER) && !aboveBlockState.isRedstoneConductor(level, blockPos);
+         } else {
+             return false;
+         }
+     };
+-    SpawnPlacementType IN_LAVA = (level, pos, entityType) -> entityType != null
+-        && level.getWorldBorder().isWithinBounds(pos)
+-        && level.getFluidState(pos).is(FluidTags.LAVA);
++    SpawnPlacementType IN_LAVA = (level, pos, entityType) -> { // ShreddedPaper - do not sync-load chunks during spawn placement checks
++        if (entityType != null && level.getWorldBorder().isWithinBounds(pos)) {
++            BlockState blockState = shreddedpaper$getBlockStateIfLoaded(level, pos);
++            return blockState != null && blockState.getFluidState().is(FluidTags.LAVA);
++        }
++        return false;
++    };
+     SpawnPlacementType ON_GROUND = new SpawnPlacementType() {
+         @Override
+         public boolean isSpawnPositionOk(LevelReader level, BlockPos pos, @Nullable EntityType<?> entityType) {
+@@ -27,7 +_,8 @@
+                 BlockPos blockPos = pos.above();
+                 BlockPos blockPos1 = pos.below();
+-                BlockState blockState = level.getBlockState(blockPos1);
+-                return blockState.isValidSpawn(level, blockPos1, entityType)
++                BlockState blockState = shreddedpaper$getBlockStateIfLoaded(level, blockPos1); // ShreddedPaper - do not sync-load chunks during spawn placement checks
++                return blockState != null
++                    && blockState.isValidSpawn(level, blockPos1, entityType)
+                     && this.isValidEmptySpawnBlock(level, pos, entityType)
+                     && this.isValidEmptySpawnBlock(level, blockPos, entityType);
+             } else {
+@@ -37,14 +_,22 @@
+         }
+ 
+         private boolean isValidEmptySpawnBlock(LevelReader level, BlockPos pos, EntityType<?> entityType) {
+-            BlockState blockState = level.getBlockState(pos);
+-            return NaturalSpawner.isValidEmptySpawnBlock(level, pos, blockState, blockState.getFluidState(), entityType);
++            BlockState blockState = shreddedpaper$getBlockStateIfLoaded(level, pos); // ShreddedPaper - do not sync-load chunks during spawn placement checks
++            return blockState != null && NaturalSpawner.isValidEmptySpawnBlock(level, pos, blockState, blockState.getFluidState(), entityType);
+         }
+ 
+         @Override
+         public BlockPos adjustSpawnPosition(LevelReader level, BlockPos pos) {
+             BlockPos blockPos = pos.below();
+-            return level.getBlockState(blockPos).isPathfindable(PathComputationType.LAND) ? blockPos : pos;
++            BlockState blockState = shreddedpaper$getBlockStateIfLoaded(level, blockPos); // ShreddedPaper - do not sync-load chunks during spawn placement checks
++            return blockState != null && blockState.isPathfindable(PathComputationType.LAND) ? blockPos : pos;
+         }
+     };
++
++    private static @Nullable BlockState shreddedpaper$getBlockStateIfLoaded(LevelReader level, BlockPos pos) { // ShreddedPaper - do not sync-load chunks during spawn placement checks
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread() && level instanceof Level fullLevel) {
++            return fullLevel.getBlockStateIfLoaded(pos);
++        }
++        return level.getBlockState(pos);
++    }
+ }

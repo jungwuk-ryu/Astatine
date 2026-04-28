@@ -27,6 +27,7 @@ public final class RegionMailbox {
     private static final RegionTaskClass[] DRAIN_ORDER = {
             RegionTaskClass.CRITICAL_SYSTEM,
             RegionTaskClass.PLAYER_ACTION,
+            RegionTaskClass.OWNER_HANDOFF,
             RegionTaskClass.CHUNK_IO_LOAD,
             RegionTaskClass.CHUNK_IO_SAVE,
             RegionTaskClass.PLUGIN,
@@ -106,6 +107,28 @@ public final class RegionMailbox {
             );
         }
         return true;
+    }
+
+    public boolean offerNonDropping(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
+        if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
+            return this.offer(taskClass, runnable, delayTicks, affinityRegionPos);
+        }
+
+        final long normalizedDelayTicks = Math.max(1L, delayTicks);
+        final int queuedAfterReserve = this.reserveSlot(taskClass);
+        if (queuedAfterReserve < 0) {
+            return this.offerTransferred(taskClass, runnable, normalizedDelayTicks, affinityRegionPos);
+        }
+
+        final long readyTick = this.currentTick + normalizedDelayTicks;
+        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey);
+        final boolean accepted = this.ingress.get(taskClass).offer(task);
+        if (accepted) {
+            return true;
+        }
+
+        this.releaseSlot(taskClass);
+        return this.offerTransferred(taskClass, runnable, normalizedDelayTicks, affinityRegionPos);
     }
 
     public boolean offer(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
@@ -206,6 +229,7 @@ public final class RegionMailbox {
         final int configured = switch (taskClass) {
             case CRITICAL_SYSTEM -> config.criticalRegionMailboxCapacity;
             case PLAYER_ACTION -> config.playerActionRegionMailboxCapacity;
+            case OWNER_HANDOFF -> config.ownerHandoffRegionMailboxCapacity;
             case CHUNK_IO_LOAD -> config.chunkIoLoadRegionMailboxCapacity;
             case CHUNK_IO_SAVE -> config.chunkIoSaveRegionMailboxCapacity;
             case PLUGIN -> config.pluginRegionMailboxCapacity;
@@ -374,7 +398,7 @@ public final class RegionMailbox {
             case CRITICAL_SYSTEM -> 64;
             case CHUNK_IO_LOAD -> 8;
             case CHUNK_IO_SAVE -> 4;
-            case PLAYER_ACTION, TRACKER_BROADCAST, EXPLOSION_PHYSICS -> 32;
+            case PLAYER_ACTION, OWNER_HANDOFF, TRACKER_BROADCAST, EXPLOSION_PHYSICS -> 32;
             case PLUGIN -> 16;
         };
     }

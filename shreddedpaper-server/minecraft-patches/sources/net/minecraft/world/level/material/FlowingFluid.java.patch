@@ -1,0 +1,42 @@
+--- a/net/minecraft/world/level/material/FlowingFluid.java
++++ b/net/minecraft/world/level/material/FlowingFluid.java
+@@ -5,6 +_,9 @@
+ import it.unimi.dsi.fastutil.shorts.Short2BooleanMap;
+ import it.unimi.dsi.fastutil.shorts.Short2BooleanOpenHashMap;
+ import it.unimi.dsi.fastutil.shorts.Short2ObjectMap;
++import io.multipaper.shreddedpaper.ShreddedPaper;
++import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+ import it.unimi.dsi.fastutil.shorts.Short2ObjectOpenHashMap;
+ import java.util.Map;
+ import java.util.Map.Entry;
+@@ -29,6 +_,7 @@
+ import net.minecraft.world.level.block.state.properties.IntegerProperty;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.Shapes;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ 
+ public abstract class FlowingFluid extends Fluid {
+@@ -328,6 +_,21 @@
+     // Purpur end - Implement infinite liquids
+ 
+     protected void spreadTo(LevelAccessor level, BlockPos pos, BlockState state, Direction direction, FluidState fluidState) {
++        // ShreddedPaper start - hand off cross-region fluid writes to the target owner
++        if (level instanceof ServerLevel serverLevel && ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaper.isSync(serverLevel, RegionPos.forBlockPos(pos))) {
++            final BlockPos targetPos = pos.immutable();
++            final BlockPos sourcePos = targetPos.relative(direction.getOpposite()).immutable();
++            final Direction spreadDirection = direction;
++            final FluidState targetFluidState = fluidState;
++            ShreddedPaper.runSync(serverLevel, BoundingBox.fromCorners(targetPos, sourcePos), () -> {
++                final BlockState currentState = serverLevel.getBlockStateIfLoaded(targetPos);
++                if (currentState != null) {
++                    this.spreadTo(serverLevel, targetPos, currentState, spreadDirection, targetFluidState);
++                }
++            });
++            return;
++        }
++        // ShreddedPaper end - hand off cross-region fluid writes to the target owner
+         if (state.getBlock() instanceof LiquidBlockContainer liquidBlockContainer) {
+             liquidBlockContainer.placeLiquid(level, pos, state, fluidState);
+         } else {

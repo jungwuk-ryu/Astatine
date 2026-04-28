@@ -50,6 +50,8 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
         public int playerActionRegionMailboxCapacity = 2048;
+        @Comment("Maximum queued cross-owner world mutation handoffs per region. Values below 0 use regionMailboxCapacity.")
+        public int ownerHandoffRegionMailboxCapacity = 2048;
         @Comment("Maximum queued deferred chunk load/generation retry tasks per region before async chunk request backpressure rejects plugin/external requests.")
         public int chunkIoLoadRegionMailboxCapacity = 1024;
         @Comment("Maximum in-flight ticketed async chunk load/generation requests per normal region owner before requests are deferred.")

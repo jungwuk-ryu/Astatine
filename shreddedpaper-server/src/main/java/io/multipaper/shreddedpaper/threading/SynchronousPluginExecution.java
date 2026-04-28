@@ -44,7 +44,7 @@ public class SynchronousPluginExecution {
 
     public static void execute(Plugin plugin, RunnableWithException runnable) throws Exception {
         ShreddedPaperConfiguration config = ShreddedPaperConfiguration.get();
-        if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || plugin.getDescription().isFoliaSupported() || TickThread.isShutdownThread()) {
+        if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || isFoliaSupported(plugin) || TickThread.isShutdownThread()) {
             // Multi-thread safe plugin, run it straight away
             runnable.run();
             return;
@@ -88,6 +88,14 @@ public class SynchronousPluginExecution {
         }
 
         return lock;
+    }
+
+    private static boolean isFoliaSupported(Plugin plugin) {
+        try {
+            return plugin.getDescription().isFoliaSupported();
+        } catch (UnsupportedOperationException ignored) {
+            return true;
+        }
     }
 
     private static void lock(List<String> pluginsToLock) {

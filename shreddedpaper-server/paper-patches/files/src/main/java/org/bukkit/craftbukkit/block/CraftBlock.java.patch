@@ -1,6 +1,23 @@
 --- a/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
 +++ b/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
-@@ -332,7 +_,7 @@ public class CraftBlock implements Block {
+@@ -39,6 +_,7 @@
+ import org.bukkit.block.BlockState;
+ import org.bukkit.block.PistonMoveReaction;
+ import org.bukkit.block.data.BlockData;
++import org.bukkit.craftbukkit.CraftChunk;
+ import org.bukkit.craftbukkit.CraftFluidCollisionMode;
+ import org.bukkit.craftbukkit.CraftWorld;
+ import org.bukkit.craftbukkit.block.data.CraftBlockData;
+@@ -139,7 +_,7 @@
+ 
+     @Override
+     public Chunk getChunk() {
+-        return this.getWorld().getChunkAt(this);
++        return new CraftChunk(this.getCraftWorld().getHandle(), this.getX() >> 4, this.getZ() >> 4); // ShreddedPaper - do not sync-load from Block#getChunk
+     }
+ 
+     public void setData(final byte data) {
+@@ -332,7 +_,7 @@
  
      @Override
      public BlockState getState() {
@@ -9,7 +26,8 @@
      }
  
      // Paper start
-@@ -555,14 +_,22 @@
+@@ -554,15 +_,25 @@
+         UseOnContext context = new UseOnContext(world, null, InteractionHand.MAIN_HAND, Items.BONE_MEAL.getDefaultInstance(), new BlockHitResult(Vec3.ZERO, direction, this.getPosition(), false));
  
          // SPIGOT-6895: Call StructureGrowEvent and BlockFertilizeEvent
 -        world.captureTreeGeneration = true;

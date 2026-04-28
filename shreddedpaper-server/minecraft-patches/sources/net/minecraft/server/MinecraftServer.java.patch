@@ -67,12 +67,11 @@
          this.forceTicks = true;
          // CraftBukkit end
          ChunkLoadCounter chunkLoadCounter = new ChunkLoadCounter();
-@@ -1018,6 +_,8 @@
+@@ -1018,6 +_,7 @@
  
          LOGGER.info("Stopping server");
          Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
 +        org.bxteam.divinemc.async.pathfinding.AsyncPath.shutdownExecutor(); // DivineMC - Async Pathfinding
-+        ShreddedPaperTickThread.stopServer(); // ShreddedPaper
          // Purpur start - UPnP Port Forwarding
          if (upnp) {
              if (dev.omega24.upnp4j.UPnP4J.close(this.getPort(), dev.omega24.upnp4j.util.Protocol.TCP)) {
@@ -85,6 +84,22 @@
              }
  
              this.waitUntilNextTick();
+@@ -1072,6 +_,7 @@
+         this.saveAllChunks(false, true, false, true); // Paper - rewrite chunk system
+ 
+         this.isSaving = false;
++        ShreddedPaperTickThread.stopServer(); // ShreddedPaper - stop region workers after chunk/world shutdown work has drained
+         this.resources.close();
+ 
+         try {
+@@ -1100,6 +_,7 @@
+         // Paper start - Improved watchdog support - move final shutdown items here
+         Util.shutdownExecutors();
+         this.onServerExit();
++        this.hasFullyShutdown = true; // ShreddedPaper - Watchdog emergency shutdown completion marker
+         // Paper end - Improved watchdog support - move final shutdown items here
+     }
+ 
 @@ -1622,7 +_,9 @@
                      this.autoSave();
                  }
@@ -143,7 +158,7 @@
 +        for (ServerPlayer player : this.playerList.getPlayers()) {
 +            if (player.isRemoved()) {
 +                ShreddedPaper.runSync((ServerLevel) player.level(), player.chunkPosition(), () -> {
-+                    if (TickThread.isTickThreadFor(player)) {
++                    if (TickThread.isTickThreadFor(player) && !player.getBukkitEntity().taskScheduler.isRetired()) {
 +                        player.getBukkitEntity().taskScheduler.executeTick();
 +                        ShreddedPaperPlayerTicker.tickPlayer(player);
 +                    }
@@ -192,17 +207,19 @@
          profilerFiller.popPush("players");
          this.playerList.tick();
          profilerFiller.popPush("debugSubscribers");
-@@ -1887,6 +_,9 @@
+@@ -1885,9 +_,12 @@
+ 
+         profilerFiller.popPush("send chunks");
  
 -        for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
 -            serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
 -            serverPlayer.connection.resumeFlushing();
--        }
 +        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) { // ShreddedPaper - independent regions flush owner players inside region tick
 +            for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
 +                serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
 +                serverPlayer.connection.keepConnectionAlive(); // ShreddedPaper - send the ping packet right before flushing
 +                serverPlayer.connection.resumeFlushing();
 +            }
-+        }
+         }
  
+         profilerFiller.pop();

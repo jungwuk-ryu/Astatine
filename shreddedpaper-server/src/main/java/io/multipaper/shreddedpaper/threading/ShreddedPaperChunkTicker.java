@@ -1,5 +1,6 @@
 package io.multipaper.shreddedpaper.threading;
 
+import ca.spottedleaf.moonrise.common.util.TickThread;
 import ca.spottedleaf.moonrise.common.util.WorldUtil;
 import com.google.common.collect.Lists;
 import com.mojang.logging.LogUtils;
@@ -155,18 +156,12 @@ public class ShreddedPaperChunkTicker {
 
             level.moonrise$getChunkTaskScheduler().chunkHolderManager.processUnloads(region);
 
-            if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                region.setEntityTaskCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTaskCursor(), entity -> entity.getId(), entity -> {
-                    if (budget != null && !budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                        return false;
-                    }
-                    CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
-                    if (bukkitEntity != null && !entity.isRemoved()) { // Entity could have been removed by another entity's task
-                        bukkitEntity.taskScheduler.executeTick();
-                    }
-                    return true;
-                }));
-            }
+            region.forEachTickingEntity(entity -> {
+                CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
+                if (bukkitEntity != null && !entity.isRemoved() && !bukkitEntity.taskScheduler.isRetired() && TickThread.isTickThreadFor(entity)) {
+                    bukkitEntity.taskScheduler.executeTick();
+                }
+            });
 
             region.tickTasks();
 
@@ -213,7 +208,9 @@ public class ShreddedPaperChunkTicker {
             }
 
             if (budget == null || budget.canContinue(RegionWorkType.BLOCK_ENTITY)) {
-                level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
+                try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
+                    level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
+                }
             }
 
             if (budget == null || budget.canContinue(RegionWorkType.PLAYER)) {
@@ -297,7 +294,7 @@ public class ShreddedPaperChunkTicker {
         for (int processed = 0; processed < size; processed++) {
             final RegionPos cell = ownerCells.get(index);
             // Dynamic split/merge can leave stale scheduled tick cursors behind; never tick a cell through a read-only isolation lock.
-            if (!region.getOwner().ownsCell(cell) || !level.chunkScheduler.getRegionLocker().hasWriteLock(cell)) {
+            if (!region.getOwner().ownsCell(cell) || !level.chunkScheduler.getRegionLocker().hasWriteLock(cell) || !hasLoadedChunkInCell(level, cell)) {
                 fluidPhase = false;
                 index++;
                 if (index == size) {
@@ -327,6 +324,17 @@ public class ShreddedPaperChunkTicker {
         }
 
         region.clearScheduledTickCellCursor();
+    }
+
+    private static boolean hasLoadedChunkInCell(final ServerLevel level, final RegionPos cell) {
+        for (int chunkX = cell.getLowerChunkX(); chunkX <= cell.getUpperChunkX(); chunkX++) {
+            for (int chunkZ = cell.getLowerChunkZ(); chunkZ <= cell.getUpperChunkZ(); chunkZ++) {
+                if (level.getChunkSource().getChunkAtIfLoadedImmediately(chunkX, chunkZ) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static <T> long processRoundRobin(final List<T> entries, final long cursor, final ToLongFunction<T> keyFunction, final Predicate<T> action) {
