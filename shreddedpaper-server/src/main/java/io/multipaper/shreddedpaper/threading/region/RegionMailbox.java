@@ -11,8 +11,6 @@ import net.minecraft.server.level.ServerLevel;
 import org.jctools.queues.MpscArrayQueue;
 import org.slf4j.Logger;
 
-import java.util.EnumMap;
-import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -43,11 +41,11 @@ public final class RegionMailbox {
     private final LongSupplier ownerEpochSupplier;
     private final LongPredicate ownerOwnsCell;
     private final Queue<RegionTask> transferred = new ConcurrentLinkedQueue<>();
-    private final Map<RegionTaskClass, Queue<RegionTask>> ingress = new EnumMap<>(RegionTaskClass.class);
-    private final Map<RegionTaskClass, AtomicInteger> queuedByClass = new EnumMap<>(RegionTaskClass.class);
-    private final Map<RegionTaskClass, Integer> capacityByClass = new EnumMap<>(RegionTaskClass.class);
-    private final Map<RegionTaskClass, AtomicLong> rejectedByClass = new EnumMap<>(RegionTaskClass.class);
-    private final Map<RegionTaskClass, AtomicLong> failedByClass = new EnumMap<>(RegionTaskClass.class);
+    private final Queue<RegionTask>[] ingress;
+    private final AtomicInteger[] queuedByClass;
+    private final int[] capacityByClass;
+    private final AtomicLong[] rejectedByClass;
+    private final AtomicLong[] failedByClass;
     private final PriorityQueue<RegionTask> delayed = new PriorityQueue<>();
     private final AtomicLong rejected = new AtomicLong();
     private final AtomicLong executed = new AtomicLong();
@@ -87,17 +85,32 @@ public final class RegionMailbox {
         this.ownerId = ownerId;
         this.ownerEpochSupplier = ownerEpochSupplier;
         this.ownerOwnsCell = ownerOwnsCell;
+        this.ingress = createQueueArray();
+        this.queuedByClass = new AtomicInteger[ALL_CLASSES.length];
+        this.capacityByClass = new int[ALL_CLASSES.length];
+        this.rejectedByClass = new AtomicLong[ALL_CLASSES.length];
+        this.failedByClass = new AtomicLong[ALL_CLASSES.length];
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         for (final RegionTaskClass taskClass : ALL_CLASSES) {
+            final int index = index(taskClass);
             final int capacity = this.capacityFor(config, taskClass);
-            this.capacityByClass.put(taskClass, capacity);
-            this.queuedByClass.put(taskClass, new AtomicInteger());
-            this.rejectedByClass.put(taskClass, new AtomicLong());
-            this.failedByClass.put(taskClass, new AtomicLong());
-            this.ingress.put(taskClass, taskClass == RegionTaskClass.CRITICAL_SYSTEM
+            this.capacityByClass[index] = capacity;
+            this.queuedByClass[index] = new AtomicInteger();
+            this.rejectedByClass[index] = new AtomicLong();
+            this.failedByClass[index] = new AtomicLong();
+            this.ingress[index] = taskClass == RegionTaskClass.CRITICAL_SYSTEM
                     ? new ConcurrentLinkedQueue<>()
-                    : new MpscArrayQueue<>(capacity));
+                    : new MpscArrayQueue<>(capacity);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Queue<RegionTask>[] createQueueArray() {
+        return (Queue<RegionTask>[]) new Queue<?>[ALL_CLASSES.length];
+    }
+
+    private static int index(final RegionTaskClass taskClass) {
+        return taskClass.ordinal();
     }
 
     public boolean offer(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks) {
@@ -107,9 +120,10 @@ public final class RegionMailbox {
     public boolean offerTransferred(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final int queuedAfter = this.reserveTransferSlot(taskClass);
+        final int capacity = this.capacityByClass[index(taskClass)];
         final long readyTick = this.currentTick + normalizedDelayTicks;
         this.transferred.offer(new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey));
-        if (this.shouldCommitCrossRegionTaskEvent(true, queuedAfter, this.capacityByClass.get(taskClass))) {
+        if (this.shouldCommitCrossRegionTaskEvent(true, queuedAfter, capacity)) {
             this.commitCrossRegionTaskEvent(
                     "transferred",
                     taskClass,
@@ -127,7 +141,7 @@ public final class RegionMailbox {
                     false,
                     false,
                     queuedAfter,
-                    this.capacityByClass.get(taskClass)
+                    capacity
             );
         }
         return true;
@@ -146,7 +160,7 @@ public final class RegionMailbox {
 
         final long readyTick = this.currentTick + normalizedDelayTicks;
         final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey);
-        final boolean accepted = this.ingress.get(taskClass).offer(task);
+        final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (accepted) {
             return true;
         }
@@ -169,7 +183,7 @@ public final class RegionMailbox {
         final int sourceRegionZ = sourcePrimary == null ? Integer.MIN_VALUE : sourcePrimary.z;
         final long sourceOwnerEpoch = hasSourceRegion ? sourceRegion.getOwner().layoutEpoch() : Long.MIN_VALUE;
         final long targetOwnerEpoch = this.ownerEpochSupplier.getAsLong();
-        final int capacity = this.capacityByClass.get(taskClass);
+        final int capacity = this.capacityByClass[index(taskClass)];
 
         final int queuedAfterReserve = this.reserveSlot(taskClass);
         if (queuedAfterReserve < 0) {
@@ -200,7 +214,7 @@ public final class RegionMailbox {
 
         final long readyTick = this.currentTick + normalizedDelayTicks;
         final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, targetOwnerEpoch, affinityRegionPos.longKey);
-        final boolean accepted = this.ingress.get(taskClass).offer(task);
+        final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (!accepted) {
             this.releaseSlot(taskClass);
             if (crossRegion) {
@@ -264,8 +278,8 @@ public final class RegionMailbox {
     }
 
     private int reserveSlot(final RegionTaskClass taskClass) {
-        final AtomicInteger queued = this.queuedByClass.get(taskClass);
-        final int capacity = this.capacityByClass.get(taskClass);
+        final AtomicInteger queued = this.queuedByClass[index(taskClass)];
+        final int capacity = this.capacityByClass[index(taskClass)];
         if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
             final int current = queued.incrementAndGet();
             if (current > capacity) {
@@ -298,8 +312,8 @@ public final class RegionMailbox {
     }
 
     private int reserveTransferSlot(final RegionTaskClass taskClass) {
-        final AtomicInteger queued = this.queuedByClass.get(taskClass);
-        final int capacity = this.capacityByClass.get(taskClass);
+        final AtomicInteger queued = this.queuedByClass[index(taskClass)];
+        final int capacity = this.capacityByClass[index(taskClass)];
         final int current = queued.incrementAndGet();
         if (current > capacity) {
             if (current == capacity + 1 || ((current - capacity) & 255) == 0) {
@@ -318,15 +332,15 @@ public final class RegionMailbox {
     }
 
     private void releaseSlot(final RegionTaskClass taskClass) {
-        final int remaining = this.queuedByClass.get(taskClass).decrementAndGet();
+        final int remaining = this.queuedByClass[index(taskClass)].decrementAndGet();
         if (remaining < 0) {
-            this.queuedByClass.get(taskClass).compareAndSet(remaining, 0);
+            this.queuedByClass[index(taskClass)].compareAndSet(remaining, 0);
             LOGGER.error("Region mailbox accounting underflow for {} {} {}", taskClass, this.worldName, this.regionPos);
         }
     }
 
     private void reject(final RegionTaskClass taskClass, final String reason) {
-        final long rejectedForClass = this.rejectedByClass.get(taskClass).incrementAndGet();
+        final long rejectedForClass = this.rejectedByClass[index(taskClass)].incrementAndGet();
         final long rejectedTotal = this.rejected.incrementAndGet();
         if (rejectedForClass == 1L || (rejectedForClass & 255L) == 0L) {
             this.commitQueueEvent("rejected", taskClass);
@@ -336,8 +350,8 @@ public final class RegionMailbox {
                     this.worldName,
                     this.regionPos,
                     reason,
-                    this.queuedByClass.get(taskClass).get(),
-                    this.capacityByClass.get(taskClass),
+                    this.queuedByClass[index(taskClass)].get(),
+                    this.capacityByClass[index(taskClass)],
                     rejectedForClass,
                     rejectedTotal
             );
@@ -429,7 +443,7 @@ public final class RegionMailbox {
 
     private int drainIngress(final RegionTaskClass taskClass, final RegionTickBudget budget, final int maxTasks) {
         int ran = 0;
-        final Queue<RegionTask> queue = this.ingress.get(taskClass);
+        final Queue<RegionTask> queue = this.ingress[index(taskClass)];
         RegionTask task;
         for (int remaining = maxTasks; remaining > 0 && (task = queue.poll()) != null; remaining--) {
             if (task.readyTick() > this.currentTick) {
@@ -456,7 +470,7 @@ public final class RegionMailbox {
             task.run();
             this.executed.incrementAndGet();
         } catch (final Throwable throwable) {
-            final long failedForClass = this.failedByClass.get(task.taskClass()).incrementAndGet();
+            final long failedForClass = this.failedByClass[index(task.taskClass())].incrementAndGet();
             if (failedForClass == 1L || (failedForClass & 255L) == 0L) {
                 LOGGER.error(
                         "Error while executing {} region task in {} {} (failureClass={}); further failures are sampled",
@@ -488,7 +502,7 @@ public final class RegionMailbox {
     }
 
     public boolean hasPendingTasks() {
-        for (final AtomicInteger queued : this.queuedByClass.values()) {
+        for (final AtomicInteger queued : this.queuedByClass) {
             if (queued.get() > 0) {
                 return true;
             }
@@ -498,18 +512,18 @@ public final class RegionMailbox {
 
     public int depth() {
         int depth = 0;
-        for (final AtomicInteger queued : this.queuedByClass.values()) {
+        for (final AtomicInteger queued : this.queuedByClass) {
             depth += Math.max(0, queued.get());
         }
         return depth;
     }
 
     public int queued(final RegionTaskClass taskClass) {
-        return Math.max(0, this.queuedByClass.get(taskClass).get());
+        return Math.max(0, this.queuedByClass[index(taskClass)].get());
     }
 
     public int capacity(final RegionTaskClass taskClass) {
-        return this.capacityByClass.get(taskClass);
+        return this.capacityByClass[index(taskClass)];
     }
 
     public double maxClassPressure() {
@@ -539,10 +553,10 @@ public final class RegionMailbox {
         event.action = action;
         event.taskClass = taskClass.name();
         event.depth = this.depth();
-        event.queuedForClass = this.queuedByClass.get(taskClass).get();
-        event.capacity = this.capacityByClass.get(taskClass);
+        event.queuedForClass = this.queuedByClass[index(taskClass)].get();
+        event.capacity = this.capacityByClass[index(taskClass)];
         event.rejected = this.rejected.get();
-        event.rejectedForClass = this.rejectedByClass.get(taskClass).get();
+        event.rejectedForClass = this.rejectedByClass[index(taskClass)].get();
         event.commit();
     }
 
