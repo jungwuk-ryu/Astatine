@@ -40,6 +40,7 @@ public final class RegionTickScheduler {
     private final DelayQueue<RegionHandle> degradedQueue = new DelayQueue<>();
     private final List<Thread> workers = new ArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
+    private final boolean normalWorkersMayStealDegraded;
 
     private RegionTickScheduler() {
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
@@ -49,6 +50,7 @@ public final class RegionTickScheduler {
                 ? 0
                 : Math.min(totalThreads - 1, configuredDegraded < 0 ? Math.max(1, totalThreads / 8) : Math.max(0, configuredDegraded));
         final int normalThreads = Math.max(1, totalThreads - degradedThreads);
+        this.normalWorkersMayStealDegraded = degradedThreads == 0;
 
         for (int i = 0; i < normalThreads; i++) {
             this.startWorker(false, i);
@@ -193,6 +195,9 @@ public final class RegionTickScheduler {
     }
 
     private RegionHandle takeNormalOrSteal() throws InterruptedException {
+        if (!this.normalWorkersMayStealDegraded) {
+            return this.normalQueue.take();
+        }
         final RegionHandle normal = this.normalQueue.poll(1L, TimeUnit.MILLISECONDS);
         if (normal != null) {
             return normal;
