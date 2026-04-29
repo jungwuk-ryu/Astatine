@@ -84,3 +84,20 @@
                  stack = leftover; // Paper - Make hoppers respect inventory max stack size
                  flag = true;
              } else if (canMergeItems(item, stack)) {
+@@ -869,4 +_,16 @@
+     protected AbstractContainerMenu createMenu(int id, Inventory player) {
+         return new HopperMenu(id, player, this);
+     }
++
++    // ShreddedPaper start - Lithium: hopper cache invalidation bridge
++    public void lithium$invalidateCacheOnNeighborUpdate(boolean above) {
++    }
++
++    public void lithium$invalidateCacheOnUndirectedNeighborUpdate() {
++    }
++
++    public void lithium$invalidateCacheOnNeighborUpdate(Direction fromDirection) {
++        this.lithium$invalidateCacheOnNeighborUpdate(fromDirection == Direction.UP);
++    }
++    // ShreddedPaper end - Lithium: hopper cache invalidation bridge
+ }

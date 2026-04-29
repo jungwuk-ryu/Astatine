@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
-@@ -1,7 +_,10 @@
+@@ -1,7 +_,11 @@
  package net.minecraft.server.network;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -8,6 +8,7 @@
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.SynchronousPluginExecution;
  import io.netty.channel.ChannelFutureListener;
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
@@ -29,7 +30,7 @@
              org.bukkit.craftbukkit.util.Waitable waitable = new org.bukkit.craftbukkit.util.Waitable() {
                  @Override
                  protected Object evaluate() {
-@@ -400,9 +_,20 @@
+@@ -400,13 +_,30 @@
                  }
              };
  
@@ -47,7 +48,37 @@
 +            // ShreddedPaper end - run on player's thread
  
              try {
-+                if (TickThread.isTickThread()) this.server.managedBlock(waitable::isDone); // ShreddedPaper - don't block when waiting
-                 waitable.get();
+-                waitable.get();
++                SynchronousPluginExecution.runWithoutCurrentPluginLocks(() -> { // ShreddedPaper - avoid plugin-lock deadlock while waiting for owner disconnect
++                    if (TickThread.isTickThread()) this.server.managedBlock(waitable::isDone); // ShreddedPaper - don't block when waiting
++                    waitable.get();
++                }); // ShreddedPaper - avoid plugin-lock deadlock while waiting for owner disconnect
              } catch (InterruptedException e) {
                  Thread.currentThread().interrupt();
+             } catch (java.util.concurrent.ExecutionException e) {
+                 throw new RuntimeException(e);
++            } catch (RuntimeException e) {
++                throw e;
++            } catch (Exception e) {
++                throw new RuntimeException(e);
+             }
+             return;
+@@ -497,6 +_,18 @@
+ 
+     public int latency() {
+         return this.latency;
++    }
++
++    public void recordNetworkKeepAliveSent(long challengeId, long txTimeNS) {
++        this.keepAlive.trackNetworkKeepAliveSent(challengeId, txTimeNS);
++    }
++
++    public void recordNetworkKeepAliveReceived(long challengeId, long rxTimeNS) {
++        this.keepAlive.trackNetworkKeepAliveReceived(challengeId, rxTimeNS);
++    }
++
++    public int networkLatency() {
++        return this.keepAlive.getNetworkLatencyMS();
+     }
+ 
+     protected CommonListenerCookie createCookie(ClientInformation clientInformation) {

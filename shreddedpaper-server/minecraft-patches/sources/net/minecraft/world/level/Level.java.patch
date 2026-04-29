@@ -8,14 +8,15 @@
  import java.util.Collection;
  import java.util.Iterator;
  import java.util.List;
-@@ -10,6 +_,10 @@
+@@ -10,6 +_,11 @@
  import java.util.function.Consumer;
  import java.util.function.Predicate;
  import java.util.stream.Collectors;
 +
-+import io.multipaper.shreddedpaper.region.LevelChunkRegion;
-+import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.PerThreadNeighborUpdater;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
++import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
  import net.minecraft.ReportedException;
@@ -79,6 +80,24 @@
  
      // Purpur start - Add adjustable breeding cooldown to config
      private com.google.common.cache.Cache<BreedingCooldownPair, Object> playerBreedingCooldowns;
+@@ -471,10 +_,15 @@
+ 
+             if ((chunkDiff | chunkYDiff) != 0) {
+                 if (chunkDiff != 0) {
+-                    lastChunk = level.getChunk(newChunkX, newChunkZ).getSections();
++                    if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - do not sync-load chunks while ray tracing from independent region workers
++                        final ChunkAccess chunk = level.getChunkIfLoadedImmediately(newChunkX, newChunkZ);
++                        lastChunk = chunk == null ? null : chunk.getSections();
++                    } else {
++                        lastChunk = level.getChunk(newChunkX, newChunkZ).getSections();
++                    }
+                 }
+                 final int sectionY = newChunkY - minSection;
+-                lastSection = sectionY >= 0 && sectionY < lastChunk.length ? lastChunk[sectionY].states : null;
++                lastSection = lastChunk != null && sectionY >= 0 && sectionY < lastChunk.length ? lastChunk[sectionY].states : null;
+ 
+                 lastChunkX = newChunkX;
+                 lastChunkY = newChunkY;
 @@ -907,7 +_,7 @@
          this.thread = Thread.currentThread();
          this.biomeManager = new BiomeManager(this, biomeZoomSeed);
@@ -99,9 +118,18 @@
              if (previous != null) {
                  return previous.getHandle();
              }
-@@ -1090,15 +_,15 @@
+@@ -1089,16 +_,24 @@
+ 
      @Override
      public boolean setBlock(BlockPos pos, BlockState state, @Block.UpdateFlags int flags, int recursionLeft) {
++        if (this instanceof ServerLevel serverLevel && ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(serverLevel, pos)) { // ShreddedPaper - defer cross-owner block writes
++            final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult = ShreddedPaperAccess.runWithWriteLockIfHeldOrDeferToOwner(serverLevel, pos, RegionTaskClass.OWNER_HANDOFF, () -> serverLevel.setBlock(pos, state, flags, recursionLeft)); // ShreddedPaper - defer cross-owner block writes
++            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) { // ShreddedPaper - do not silently drop cross-owner block writes
++                throw new IllegalStateException("Failed to hand off cross-owner block write; world=" + serverLevel.getWorld().getName() + ", pos=" + pos + ", state=" + state); // ShreddedPaper - do not silently drop cross-owner block writes
++            }
++            return false; // ShreddedPaper - defer cross-owner block writes
++        }
++
          // CraftBukkit start - tree generation
 -        if (this.captureTreeGeneration) {
 +        if (this.captureTreeGenerationThreadLocal.get()) { // ShreddedPaper - use thread local
@@ -168,16 +196,13 @@
              if (previous != null) {
                  return previous.getHandle();
              }
-@@ -1433,15 +_,25 @@
+@@ -1433,15 +_,22 @@
      }
  
      public void addBlockEntityTicker(TickingBlockEntity ticker) {
 -        (this.tickingBlockEntities ? this.pendingBlockEntityTickers : this.blockEntityTickers).add(ticker);
 +        // ShreddedPaper start - handle block entities ourselves
-+        LevelChunkRegion region = ((ServerLevel) this).chunkSource.tickingRegions.getOrCreate(RegionPos.forChunk(new ChunkPos(ticker.getPos())));
-+        synchronized (region.pendingBlockEntityTickers) {
-+            region.pendingBlockEntityTickers.add(ticker);
-+        }
++        ((ServerLevel) this).chunkSource.tickingRegions.addPendingBlockEntityTicker(ticker);
 +        // ShreddedPaper end - handle block entities ourselves
 +//        (this.tickingBlockEntities ? this.pendingBlockEntityTickers : this.blockEntityTickers).add(ticker); // ShreddedPaper - handle block entities ourselves
      }
@@ -248,3 +273,22 @@
                  return;
              }
              // CraftBukkit end
+@@ -2146,4 +_,18 @@
+         return getWorld().getEnvironment() == org.bukkit.World.Environment.THE_END;
+     }
+     // Purpur end - Add allow water in end world option
++
++    // ShreddedPaper start - Lithium: loaded block entity lookup
++    public BlockEntity lithium$getLoadedExistingBlockEntity(BlockPos pos) {
++        if (!this.isOutsideBuildHeight(pos)) {
++            ChunkAccess chunk = this.getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
++            if (chunk != null) {
++                BlockEntity blockEntity = chunk.blockEntities.get(pos);
++                return blockEntity != null && !blockEntity.isRemoved() ? blockEntity : null;
++            }
++        }
++
++        return null;
++    }
++    // ShreddedPaper end - Lithium: loaded block entity lookup
+ }

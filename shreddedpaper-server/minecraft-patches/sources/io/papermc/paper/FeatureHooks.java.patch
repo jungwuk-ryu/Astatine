@@ -1,0 +1,33 @@
+--- a/io/papermc/paper/FeatureHooks.java
++++ b/io/papermc/paper/FeatureHooks.java
+@@ -29,7 +_,7 @@
+ import net.minecraft.world.level.chunk.PalettedContainerFactory;
+ import net.minecraft.world.level.chunk.Strategy;
+ import org.bukkit.Chunk;
+-import org.bukkit.World;
++import org.bukkit.craftbukkit.CraftChunk;
+ 
+ public final class FeatureHooks {
+ 
+@@ -80,10 +_,10 @@
+         }
+         final LongOpenHashSet rawChunkKeys = player.moonrise$getChunkLoader().getSentChunksRaw();
+         final ObjectSet<org.bukkit.Chunk> chunks = new ObjectOpenHashSet<>(rawChunkKeys.size());
+-        final World world = player.level().getWorld();
+         final LongIterator iter = player.moonrise$getChunkLoader().getSentChunksRaw().longIterator();
+         while (iter.hasNext()) {
+-            chunks.add(world.getChunkAt(iter.nextLong(), false));
++            final long chunkKey = iter.nextLong();
++            chunks.add(new CraftChunk(player.level(), ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey)));
+         }
+         // Paper end - rewrite chunk system
+         return ObjectSets.unmodifiable(chunks);
+@@ -130,7 +_,7 @@
+                 }
+ 
+                 if (chunk == null) {
+-                    chunk = world.getWorld().getChunkAt(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
++                    chunk = new CraftChunk(world, ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+                 }
+ 
+                 ret.computeIfAbsent((org.bukkit.plugin.Plugin) ticket.getIdentifier(), (key) -> com.google.common.collect.ImmutableList.builder()).add(chunk);

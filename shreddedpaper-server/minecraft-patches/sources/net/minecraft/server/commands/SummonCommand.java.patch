@@ -1,0 +1,27 @@
+--- a/net/minecraft/server/commands/SummonCommand.java
++++ b/net/minecraft/server/commands/SummonCommand.java
+@@ -3,6 +_,7 @@
+ import com.mojang.brigadier.CommandDispatcher;
+ import com.mojang.brigadier.exceptions.CommandSyntaxException;
+ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
++import io.multipaper.shreddedpaper.ShreddedPaper;
+ import net.minecraft.commands.CommandBuildContext;
+ import net.minecraft.commands.CommandSourceStack;
+ import net.minecraft.commands.Commands;
+@@ -108,8 +_,14 @@
+     }
+ 
+     private static int spawnEntity(CommandSourceStack source, Holder.Reference<EntityType<?>> type, Vec3 pos, CompoundTag tag, boolean randomizeProperties) throws CommandSyntaxException {
+-        Entity entity = createEntity(source, type, pos, tag, randomizeProperties);
+-        source.sendSuccess(() -> Component.translatable("commands.summon.success", entity.getDisplayName()), true);
++        ShreddedPaper.ensureSync(source.getLevel(), BlockPos.containing(pos), () -> { // ShreddedPaper - run on correct region thread
++            try {
++                Entity entity = createEntity(source, type, pos, tag, randomizeProperties);
++                source.sendSuccess(() -> Component.translatable("commands.summon.success", entity.getDisplayName()), true);
++            } catch (CommandSyntaxException exception) {
++                source.sendFailure(Component.literal(exception.getMessage()));
++            }
++        }); // ShreddedPaper - run on correct region thread
+         return 1;
+     }
+ }

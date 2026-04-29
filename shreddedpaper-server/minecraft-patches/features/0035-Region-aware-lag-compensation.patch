@@ -1,0 +1,265 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Mon, 27 Apr 2026 12:00:00 +0900
+Subject: [PATCH] Add region-aware lag compensation
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 50d06c8..6f13b4d 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -313,6 +313,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     private final Set<String> pluginsBlockingSleep = new java.util.HashSet<>(); // Paper - API to allow/disallow tick sleeping
+     public static final long SERVER_INIT = System.nanoTime(); // Paper - Lag compensation
+     public boolean lagging = false; // Purpur - Lagging threshold
++    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // DivineMC - Lag compensation
+     protected boolean upnp = false; // Purpur - UPnP Port Forwarding
+     public static boolean isBukkitSchedulerHearbeat = false;
+     // Paper start - improve tick loop
+@@ -1371,6 +1372,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+
+                 this.currentTickStart = tickStart;
+                 ++MinecraftServer.currentTick;
++                this.tpsCalculator.doTick(); // DivineMC - Lag compensation
+                 // Paper end - improve tick loop
+
+                 boolean flag = l == 0L;
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 602dcfc..29207db 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -239,6 +239,7 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
+     public final ShreddedPaperRegionScheduler chunkScheduler = new ShreddedPaperRegionScheduler(); // ShreddedPaper
+     public final Executor levelThread; // ShreddedPaper
+     public final java.util.concurrent.atomic.AtomicLong shreddedpaper$projectileChunkLoadCounter = new java.util.concurrent.atomic.AtomicLong(); // ShreddedPaper - Pufferfish: reduce projectile chunk loading
++    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // DivineMC - Lag compensation
+     final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
+
+     // CraftBukkit start
+@@ -792,6 +793,7 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
+
+     public CompletableFuture<Void> tickAsync(BooleanSupplier hasTimeLeft) { // ShreddedPaper - run async
+         ProfilerFiller profilerFiller = Profiler.get();
++        this.tpsCalculator.doTick(); // DivineMC - Lag compensation
+         this.handlingTickThreadLocal.set(true); // ShreddedPaper
+         TickRateManager tickRateManager = this.tickRateManager();
+         boolean runsNormally = tickRateManager.runsNormally();
+@@ -944,12 +946,13 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
+             if (this.getGameRules().get(GameRules.ADVANCE_TIME)) {
+                 // Purpur start - Configurable daylight cycle
+                 int incrementTicks = isBrightOutside() ? this.purpurConfig.daytimeTicks : this.purpurConfig.nighttimeTicks;
++                long lagCompensatedTimeIncrement = io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedDayTimeIncrement(this); // DivineMC - Lag compensation
+                 if (incrementTicks != 12000) {
+-                    this.preciseTime += 12000 / (double) incrementTicks;
++                    this.preciseTime += (12000 / (double) incrementTicks) * lagCompensatedTimeIncrement;
+                     this.setDayTime(this.preciseTime);
+                 } else
+                 // Purpur end - Configurable daylight cycle
+-                this.setDayTime(this.levelData.getDayTime() + 1L);
++                this.setDayTime(this.levelData.getDayTime() + lagCompensatedTimeIncrement); // DivineMC - Lag compensation
+             }
+         }
+     }
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index bfe19a9..4fea6bd 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -626,6 +626,7 @@ public class ServerGamePacketListenerImpl
+                     speed = this.player.getAbilities().walkingSpeed * 10f;
+                 }
+                 speed *= 2f; // TODO: Get the speed of the vehicle instead of the player
++                final int lagCompensatedMoveTicks = io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.compensatedMoveTicks(this.player, i); // DivineMC - region lag movement compensation
+
+                 // Paper start - Prevent moving into unloaded chunks
+                 if (this.player.level().paperConfig().chunks.preventMovingIntoUnloadedChunks && (
+@@ -649,7 +650,7 @@ public class ServerGamePacketListenerImpl
+                     return;
+                 }
+                 // ShreddedPaper end - Check we own the destination location
+-                if (d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed)) && !this.isSingleplayerOwner()) {
++                if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) lagCompensatedMoveTicks * speed)) && !this.isSingleplayerOwner()) {
+                     // CraftBukkit end
+                     LOGGER.warn("{} (vehicle of {}) moved too quickly! {},{},{}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), d3, d4, d5);
+                     this.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
+@@ -677,7 +678,7 @@ public class ServerGamePacketListenerImpl
+                 d5 = d2 - rootVehicle.getZ();
+                 d7 = d3 * d3 + d4 * d4 + d5 * d5;
+                 boolean flag1 = false;
+-                if (d7 > org.spigotmc.SpigotConfig.movedWronglyThreshold) { // Spigot
++                if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedWrongly(this.player) && d7 > org.spigotmc.SpigotConfig.movedWronglyThreshold) { // Spigot // DivineMC - region lag movement compensation
+                     flag1 = true; // Paper - diff on change, this should be moved wrongly
+                     LOGGER.warn("{} (vehicle of {}) moved wrongly! {}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), Math.sqrt(d7));
+                 }
+@@ -1584,6 +1585,7 @@ public class ServerGamePacketListenerImpl
+                                     } else {
+                                         speed = this.player.getAbilities().walkingSpeed * 10f;
+                                     }
++                                    final int lagCompensatedMoveTicks = io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.compensatedMoveTicks(this.player, i); // DivineMC - region lag movement compensation
+                                     // Paper start - Prevent moving into unloaded chunks
+                                     if (this.player.level().paperConfig().chunks.preventMovingIntoUnloadedChunks && (this.player.getX() != toX || this.player.getZ() != toZ) && !serverLevel.areChunksLoadedForMove(this.player.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(this.player.position())))) {
+                                         // Paper start - Add fail move event
+@@ -1611,7 +1613,7 @@ public class ServerGamePacketListenerImpl
+
+                                     if (this.shouldCheckPlayerMovement(isFallFlying)) {
+                                         float f2 = isFallFlying ? 300.0F : 100.0F;
+-                                        if (d7 - d6 > Math.max(f2, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed))) {
++                                        if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && d7 - d6 > Math.max(f2, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) lagCompensatedMoveTicks * speed))) {
+                                             // CraftBukkit end
+                                             // Paper start - Add fail move event
+                                             io.papermc.paper.event.player.PlayerFailMoveEvent event = fireFailMove(io.papermc.paper.event.player.PlayerFailMoveEvent.FailReason.MOVED_TOO_QUICKLY,
+@@ -1686,6 +1688,7 @@ public class ServerGamePacketListenerImpl
+                                 d7 = d3 * d3 + d4 * d4 + d5 * d5;
+                                 boolean movedWrongly = false; // Paper - Add fail move event; rename
+                                 if (!this.player.isChangingDimension()
++                                    && !io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedWrongly(this.player) // DivineMC - region lag movement compensation
+                                     && d7 > org.spigotmc.SpigotConfig.movedWronglyThreshold // Spigot
+                                     && !this.player.isSleeping()
+                                     && !this.player.isCreative()
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index e86f5e5..e63ddd7 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -525,6 +525,9 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+         }
+
+         this.tickEffects();
++        for (int i = 0; i < io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.extraPotionEffectTicks(this); i++) { // DivineMC - Lag compensation
++            this.tickEffects();
++        }
+         this.yHeadRotO = this.yHeadRot;
+         this.yBodyRotO = this.yBodyRot;
+         this.yRotO = this.getYRot();
+diff --git a/net/minecraft/world/entity/PortalProcessor.java b/net/minecraft/world/entity/PortalProcessor.java
+index a680e41..2bbdb13 100644
+--- a/net/minecraft/world/entity/PortalProcessor.java
++++ b/net/minecraft/world/entity/PortalProcessor.java
+@@ -26,7 +26,9 @@ public class PortalProcessor {
+             return false;
+         } else {
+             this.insidePortalThisTick = false;
+-            return canChangeDimensions && this.portalTime++ >= this.portal.getPortalTransitionTime(level, entity);
++            final int previousPortalTime = this.portalTime; // DivineMC - Lag compensation
++            this.portalTime += io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.tickIncrement(level, entity.blockPosition(), org.bxteam.divinemc.config.DivineConfig.MiscCategory.portalAcceleration); // DivineMC - Lag compensation
++            return canChangeDimensions && previousPortalTime >= this.portal.getPortalTransitionTime(level, entity);
+         }
+     }
+
+diff --git a/net/minecraft/world/entity/item/ItemEntity.java b/net/minecraft/world/entity/item/ItemEntity.java
+index fff7cc3..ba12976 100644
+--- a/net/minecraft/world/entity/item/ItemEntity.java
++++ b/net/minecraft/world/entity/item/ItemEntity.java
+@@ -128,7 +128,7 @@ public class ItemEntity extends Entity implements TraceableEntity {
+     public void inactiveTick() {
+         super.inactiveTick();
+         if (this.pickupDelay > 0 && this.pickupDelay != 32767) {
+-            this.pickupDelay--;
++            io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.decrementPickupDelay(this); // DivineMC - Lag compensation
+         }
+         if (this.age != -32768) {
+             this.age++;
+@@ -153,7 +153,7 @@ public class ItemEntity extends Entity implements TraceableEntity {
+         } else {
+             super.tick();
+             if (this.pickupDelay > 0 && this.pickupDelay != 32767) {
+-                this.pickupDelay--;
++                io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.decrementPickupDelay(this); // DivineMC - Lag compensation
+             }
+
+             this.xo = this.getX();
+diff --git a/net/minecraft/world/item/Item.java b/net/minecraft/world/item/Item.java
+index a97923a..c060fe4 100644
+--- a/net/minecraft/world/item/Item.java
++++ b/net/minecraft/world/item/Item.java
+@@ -300,12 +300,14 @@ public class Item implements FeatureElement, ItemLike {
+     }
+
+     public int getUseDuration(ItemStack stack, LivingEntity entity) {
++        final int originalUseDuration; // DivineMC - Lag compensation
+         Consumable consumable = stack.get(DataComponents.CONSUMABLE);
+         if (consumable != null) {
+-            return consumable.consumeTicks();
++            originalUseDuration = consumable.consumeTicks(); // DivineMC - Lag compensation
+         } else {
+-            return !stack.has(DataComponents.BLOCKS_ATTACKS) && !stack.has(DataComponents.KINETIC_WEAPON) ? 0 : 72000;
++            originalUseDuration = !stack.has(DataComponents.BLOCKS_ATTACKS) && !stack.has(DataComponents.KINETIC_WEAPON) ? 0 : 72000; // DivineMC - Lag compensation
+         }
++        return io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedUseDuration(originalUseDuration, entity); // DivineMC - Lag compensation
+     }
+
+     public boolean releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
+diff --git a/net/minecraft/world/level/block/state/BlockBehaviour.java b/net/minecraft/world/level/block/state/BlockBehaviour.java
+index ac8466b..1d25fa2 100644
+--- a/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -353,10 +353,10 @@ public abstract class BlockBehaviour implements FeatureElement {
+     protected float getDestroyProgress(BlockState state, Player player, BlockGetter level, BlockPos pos) {
+         float destroySpeed = state.getDestroySpeed(level, pos);
+         if (destroySpeed == -1.0F) {
+-            return 0.0F;
++            return io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedBlockDestroyProgress(0.0F, player, level); // DivineMC - Lag compensation
+         } else {
+             int i = player.hasCorrectToolForDrops(state) ? 30 : 100;
+-            return player.getDestroySpeed(state) / destroySpeed / i;
++            return io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedBlockDestroyProgress(player.getDestroySpeed(state) / destroySpeed / i, player, level); // DivineMC - Lag compensation
+         }
+     }
+
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index b9ac400..ec36d81 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -954,6 +954,18 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+             this.ticker = ticker;
+         }
+
++        private void shreddedpaper$tickWithLagCompensation(final Runnable original) {
++            original.run();
++            final int missedTicks = io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.applicableMissedTicks(
++                LevelChunk.this.level,
++                this.blockEntity.getBlockPos(),
++                org.bxteam.divinemc.config.DivineConfig.MiscCategory.blockEntityAcceleration
++            );
++            for (int i = 0; i < missedTicks; i++) {
++                original.run();
++            }
++        }
++
+         @Override
+         public void tick() {
+             if (!this.blockEntity.isRemoved() && this.blockEntity.hasLevel()) {
+@@ -964,7 +976,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource, ca.spot
+                         profilerFiller.push(this::getType);
+                         BlockState blockState = LevelChunk.this.getBlockState(blockPos);
+                         if (this.blockEntity.getType().isValid(blockState)) {
+-                            this.ticker.tick(LevelChunk.this.level, this.blockEntity.getBlockPos(), blockState, this.blockEntity);
++                            this.shreddedpaper$tickWithLagCompensation(() -> this.ticker.tick(LevelChunk.this.level, this.blockEntity.getBlockPos(), blockState, this.blockEntity)); // DivineMC - Lag compensation
+                             this.loggedInvalidBlockState = false;
+                         // Paper start - Remove the Block Entity if it's invalid
+                         } else {
+diff --git a/net/minecraft/world/level/material/LavaFluid.java b/net/minecraft/world/level/material/LavaFluid.java
+index 3e81c98..176fdf4 100644
+--- a/net/minecraft/world/level/material/LavaFluid.java
++++ b/net/minecraft/world/level/material/LavaFluid.java
+@@ -190,7 +190,8 @@ public abstract class LavaFluid extends FlowingFluid {
+
+     @Override
+     public int getTickDelay(LevelReader level) {
+-        return level.getWorldBorder().world != null ? (isFastLava(level) ? level.getWorldBorder().world.purpurConfig.lavaSpeedNether : level.getWorldBorder().world.purpurConfig.lavaSpeedNotNether) : (isFastLava(level) ? 10 : 30); // Purpur - Make lava flow speed configurable
++        final int original = level.getWorldBorder().world != null ? (isFastLava(level) ? level.getWorldBorder().world.purpurConfig.lavaSpeedNether : level.getWorldBorder().world.purpurConfig.lavaSpeedNotNether) : (isFastLava(level) ? 10 : 30); // Purpur - Make lava flow speed configurable
++        return level instanceof ServerLevel serverLevel ? io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedFluidDelay(original, serverLevel) : original; // DivineMC - Lag compensation
+     }
+
+     @Override
+diff --git a/net/minecraft/world/level/material/WaterFluid.java b/net/minecraft/world/level/material/WaterFluid.java
+index 4533d9f..626c37f 100644
+--- a/net/minecraft/world/level/material/WaterFluid.java
++++ b/net/minecraft/world/level/material/WaterFluid.java
+@@ -125,7 +125,7 @@ public abstract class WaterFluid extends FlowingFluid {
+
+     @Override
+     public int getTickDelay(LevelReader level) {
+-        return 5;
++        return level instanceof ServerLevel serverLevel ? io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.adjustedFluidDelay(5, serverLevel) : 5; // DivineMC - Lag compensation
+     }
+
+     @Override

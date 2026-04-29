@@ -7,16 +7,26 @@
  import com.mojang.logging.LogUtils;
  import com.mojang.serialization.Codec;
  import java.util.HashSet;
-@@ -37,7 +_,7 @@
+@@ -36,8 +_,8 @@
+ import org.jspecify.annotations.Nullable;
  import org.slf4j.Logger;
  
- public abstract class BlockEntity implements DebugValueSource {
+-public abstract class BlockEntity implements DebugValueSource {
 -    static boolean ignoreBlockEntityUpdates; // Paper - Perf: Optimize Hoppers
++public abstract class BlockEntity implements DebugValueSource, net.caffeinemc.mods.lithium.common.block.entity.inventory_comparator_tracking.ComparatorTracker, net.caffeinemc.mods.lithium.common.block.entity.SetBlockStateHandlingBlockEntity, net.caffeinemc.mods.lithium.common.block.entity.SetChangedHandlingBlockEntity { // ShreddedPaper - Lithium: block entity hooks
 +    static final ThreadLocal<Boolean> ignoreBlockEntityUpdatesThreadLocal = ThreadLocal.withInitial(() -> false); // Paper - Perf: Optimize Hoppers // ShreddedPaper - use thread local for ignoreBlockEntityUpdates
      // CraftBukkit start - data containers
      private static final org.bukkit.craftbukkit.persistence.CraftPersistentDataTypeRegistry DATA_TYPE_REGISTRY = new org.bukkit.craftbukkit.persistence.CraftPersistentDataTypeRegistry();
      public final org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer persistentDataContainer;
-@@ -236,7 +_,8 @@
+@@ -57,6 +_,7 @@
+         this.validateBlockState(blockState);
+         this.blockState = blockState;
+         this.persistentDataContainer = new org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer(DATA_TYPE_REGISTRY); // Paper - always init
++        this.hasComparators = UNKNOWN; // ShreddedPaper - Lithium: comparator tracking
+     }
+ 
+     private void validateBlockState(BlockState state) {
+@@ -236,8 +_,10 @@
  
      public void setChanged() {
          if (this.level != null) {
@@ -24,5 +34,58 @@
 +            if (ignoreBlockEntityUpdatesThreadLocal.get()) return; // Paper - Perf: Optimize Hoppers // ShreddedPaper - use thread local for ignoreBlockEntityUpdates
 +            TickThread.ensureTickThread(this.level, this.worldPosition, "Block entity modification"); // ShreddedPaper
              setChanged(this.level, this.worldPosition, this.blockState);
++            this.lithium$handleSetChanged(); // ShreddedPaper - Lithium: inventory change tracking
          }
      }
+ 
+@@ -269,7 +_,9 @@
+     }
+ 
+     public void setRemoved() {
++        this.hasComparators = UNKNOWN; // ShreddedPaper - Lithium: comparator tracking
+         this.remove = true;
++        if (this.level != null && !this.level.isClientSide() && this instanceof net.caffeinemc.mods.lithium.common.block.entity.inventory_change_tracking.InventoryChangeTracker inventoryChangeTracker) inventoryChangeTracker.lithium$emitRemoved(); // ShreddedPaper - Lithium: inventory change tracking
+     }
+ 
+     public void clearRemoved() {
+@@ -309,6 +_,7 @@
+     public void setBlockState(BlockState blockState) {
+         this.validateBlockState(blockState);
+         this.blockState = blockState;
++        this.lithium$handleSetBlockState(); // ShreddedPaper - Lithium: block entity hooks
+     }
+ 
+     protected void applyImplicitComponents(DataComponentGetter componentGetter) {
+@@ -423,4 +_,32 @@
+         return this.persistentLore;
+     }
+     // Purpur end - Persistent BlockEntity Lore and DisplayName
++
++    // ShreddedPaper start - Lithium: comparator tracking
++    private static final byte UNKNOWN = (byte) -1;
++    private static final byte COMPARATOR_PRESENT = (byte) 1;
++    private static final byte COMPARATOR_ABSENT = (byte) 0;
++
++    byte hasComparators;
++
++    @Override
++    public void lithium$onComparatorAdded(net.minecraft.core.Direction direction, int offset) {
++        byte hasComparators = this.hasComparators;
++        if (direction.getAxis() != net.minecraft.core.Direction.Axis.Y && hasComparators != COMPARATOR_PRESENT && offset >= 1 && offset <= 2) {
++            this.hasComparators = COMPARATOR_PRESENT;
++
++            if (this instanceof net.caffeinemc.mods.lithium.common.block.entity.inventory_change_tracking.InventoryChangeTracker inventoryChangeTracker) {
++                inventoryChangeTracker.lithium$emitFirstComparatorAdded();
++            }
++        }
++    }
++
++    @Override
++    public boolean lithium$hasAnyComparatorNearby() {
++        if (this.hasComparators == UNKNOWN) {
++            this.hasComparators = net.caffeinemc.mods.lithium.common.block.entity.inventory_comparator_tracking.ComparatorTracking.findNearbyComparators(this.level, this.worldPosition) ? COMPARATOR_PRESENT : COMPARATOR_ABSENT;
++        }
++        return this.hasComparators == COMPARATOR_PRESENT;
++    }
++    // ShreddedPaper end - Lithium: comparator tracking
+ }

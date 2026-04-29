@@ -1,0 +1,26 @@
+--- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
++++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+@@ -56,12 +_,20 @@
+             return;
+         }
+ 
+-        final Long ticketId = Long.valueOf(this.chunkWorkCounter.getAndIncrement());
+         final ChunkPos pos = new ChunkPos(chunkX, chunkZ);
+-        ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)world).moonrise$getChunkTaskScheduler().chunkHolderManager.addTicketAtLevel(ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.CHUNK_WORK_TICKET, pos, ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.LIGHT_TICKET_LEVEL, ticketId);
++        final boolean skipTicketFromOwnedRegionWorker = io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++            && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++            && ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(world, chunkX, chunkZ); // ShreddedPaper - avoid ticket/region lock inversion from owner region workers
++        final Long ticketId;
++        if (skipTicketFromOwnedRegionWorker) { // ShreddedPaper - avoid ticket/region lock inversion from owner region workers
++            ticketId = null;
++        } else {
++            ticketId = Long.valueOf(this.chunkWorkCounter.getAndIncrement());
++            ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)world).moonrise$getChunkTaskScheduler().chunkHolderManager.addTicketAtLevel(ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.CHUNK_WORK_TICKET, pos, ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.LIGHT_TICKET_LEVEL, ticketId);
++        }
+ 
+         scheduledTask.queueOrRunTask(() -> {
+-            ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)world).moonrise$getChunkTaskScheduler().chunkHolderManager.removeTicketAtLevel(ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.CHUNK_WORK_TICKET, pos, ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.LIGHT_TICKET_LEVEL, ticketId);
++            if (ticketId != null) ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)world).moonrise$getChunkTaskScheduler().chunkHolderManager.removeTicketAtLevel(ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.CHUNK_WORK_TICKET, pos, ca.spottedleaf.moonrise.patches.starlight.light.StarLightInterface.LIGHT_TICKET_LEVEL, ticketId); // ShreddedPaper - avoid ticket/region lock inversion from owner region workers
+         });
+     }
+ 

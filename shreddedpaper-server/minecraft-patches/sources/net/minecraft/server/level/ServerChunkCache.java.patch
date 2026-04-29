@@ -1,18 +1,17 @@
 --- a/net/minecraft/server/level/ServerChunkCache.java
 +++ b/net/minecraft/server/level/ServerChunkCache.java
-@@ -1,8 +_,15 @@
- package net.minecraft.server.level;
- 
-+import ca.spottedleaf.moonrise.common.util.TickThread;
+@@ -3,6 +_,14 @@
  import com.google.common.annotations.VisibleForTesting;
  import com.mojang.datafixers.DataFixer;
  import com.mojang.logging.LogUtils;
++import ca.spottedleaf.moonrise.common.util.TickThread;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.region.LevelChunkRegionMap;
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperChangesBroadcaster;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.events.ChunkRequestEvent;
  import it.unimi.dsi.fastutil.longs.LongSet;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
@@ -27,6 +26,49 @@
      @VisibleForDebug
      private NaturalSpawner.@Nullable SpawnState lastSpawnState;
      // Paper start
+@@ -101,6 +_,42 @@
+     }
+ 
+     private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
++        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
++            final long rejectedCount = ChunkRequestEvent.recordSyncLoadRejection();
++            if (ChunkRequestEvent.shouldCommitSample(rejectedCount)) {
++                final ChunkRequestEvent event = new ChunkRequestEvent();
++                event.world = ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level);
++                event.regionX = regionPos.x;
++                event.regionZ = regionPos.z;
++                event.chunkX = chunkX;
++                event.chunkZ = chunkZ;
++                event.status = toStatus.toString();
++                event.action = "sync-load-rejected";
++                event.count = rejectedCount;
++                event.thread = Thread.currentThread().getName();
++                event.sync = true;
++                event.rejected = true;
++                event.inFlight = 0;
++                event.capacity = 0;
++                event.priority = ca.spottedleaf.concurrentutil.util.Priority.BLOCKING.name();
++                event.commit();
++            }
++            throw new IllegalStateException(
++                "Synchronous chunk load is not allowed from an independent region tick worker; "
++                    + "use async chunk loading and resume on the target region. world="
++                    + ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level)
++                    + ", chunk=[" + chunkX + "," + chunkZ + "], status=" + toStatus
++            );
++        }
++        final io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.RegionLock syncLoadRegionLock;
++        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++            && !TickThread.isTickThreadFor(this.level, chunkX, chunkZ)) {
++            syncLoadRegionLock = this.level.chunkScheduler.getRegionLocker().lockRegion(RegionPos.forChunk(chunkX, chunkZ));
++        } else {
++            syncLoadRegionLock = null;
++        }
++        try {
+         final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler chunkTaskScheduler = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler();
+         final CompletableFuture<ChunkAccess> completable = new CompletableFuture<>();
+         chunkTaskScheduler.scheduleChunkLoad(
 @@ -115,7 +_,7 @@
              );
          }
@@ -36,6 +78,18 @@
              ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.pushChunkWait(this.level, chunkX, chunkZ);
              this.mainThreadProcessor.managedBlock(completable::isDone);
              ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.popChunkWait();
+@@ -127,6 +_,11 @@
+         }
+ 
+         return ret;
++        } finally {
++            if (syncLoadRegionLock != null) {
++                syncLoadRegionLock.unlock();
++            }
++        }
+     }
+ 
+     private ChunkAccess getChunkFallback(final int chunkX, final int chunkZ, final ChunkStatus toStatus,
 @@ -198,6 +_,7 @@
          Supplier<DimensionDataStorage> overworldDataStorage
      ) {
@@ -44,7 +98,7 @@
          this.mainThreadProcessor = new ServerChunkCache.MainThreadExecutor(level);
          this.mainThread = Thread.currentThread();
          Path path = levelStorageAccess.getDimensionPath(level.dimension()).resolve("data");
-@@ -350,14 +_,14 @@
+@@ -350,14 +_,16 @@
      }
  
      public CompletableFuture<ChunkResult<ChunkAccess>> getChunkFuture(int x, int z, ChunkStatus chunkStatus, boolean requireChunk) {
@@ -53,7 +107,10 @@
          CompletableFuture<ChunkResult<ChunkAccess>> chunkFutureMainThread;
          if (flag) {
              chunkFutureMainThread = this.getChunkFutureMainThread(x, z, chunkStatus, requireChunk);
-             this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
+-            this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
++            if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++                this.mainThreadProcessor.managedBlock(chunkFutureMainThread::isDone);
++            }
          } else {
              chunkFutureMainThread = CompletableFuture.<CompletableFuture<ChunkResult<ChunkAccess>>>supplyAsync(
 -                    () -> this.getChunkFutureMainThread(x, z, chunkStatus, requireChunk), this.mainThreadProcessor
@@ -286,7 +343,7 @@
 +                        region.getInternalTaskQueue().executeTask();
 +                    } else if (!region.getInternalTaskQueue().hasNoScheduledTasks()) {
 +                        // We're the main thread, try executing chunk tasks for regions not being ticked
-+                        level.chunkScheduler.getRegionLocker().tryReadOnlyLockNow(region.getRegionPos(), () -> {
++                        level.chunkScheduler.getRegionLocker().tryLockNow(region.getOwner().cellPositionsSnapshot(), region.getOwner().isolationCellPositionsSnapshot(io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.REGION_LOCK_RADIUS), () -> {
 +                            region.getInternalTaskQueue().executeTask();
 +                        });
 +                    }

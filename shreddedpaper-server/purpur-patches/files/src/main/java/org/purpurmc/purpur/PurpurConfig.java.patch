@@ -1,0 +1,23 @@
+--- a/src/main/java/org/purpurmc/purpur/PurpurConfig.java
++++ b/src/main/java/org/purpurmc/purpur/PurpurConfig.java
+@@ -262,10 +_,11 @@
+-    public static String commandTPSBarTitle = "<gray>TPS<yellow>:</yellow> <tps> MSPT<yellow>:</yellow> <mspt> Ping<yellow>:</yellow> <ping>ms";
++    public static String commandTPSBarTitle = "<gray>TPS<yellow>:</yellow> <tps> MSPT<yellow>:</yellow> <mspt> Ping<yellow>:</yellow> <ping>ms Net<yellow>:</yellow> <network_ping>ms <dark_gray>(<gray><region></gray>)</dark_gray>";
+     public static BossBar.Overlay commandTPSBarProgressOverlay = BossBar.Overlay.NOTCHED_20;
+     public static TPSBarTask.FillMode commandTPSBarProgressFillMode = TPSBarTask.FillMode.MSPT;
++    public static TPSBarTask.Source commandTPSBarSource = TPSBarTask.Source.REGION;
+     public static BossBar.Color commandTPSBarProgressColorGood = BossBar.Color.GREEN;
+     public static BossBar.Color commandTPSBarProgressColorMedium = BossBar.Color.YELLOW;
+     public static BossBar.Color commandTPSBarProgressColorLow = BossBar.Color.RED;
+     public static String commandTPSBarTextColorGood = "<gradient:#55ff55:#00aa00><text></gradient>";
+     public static String commandTPSBarTextColorMedium = "<gradient:#ffff55:#ffaa00><text></gradient>";
+     public static String commandTPSBarTextColorLow = "<gradient:#ff5555:#aa0000><text></gradient>";
+     public static int commandTPSBarTickInterval = 20;
+@@ -299,6 +_,7 @@
+         commandTPSBarTitle = getString("settings.command.tpsbar.title", commandTPSBarTitle);
+         commandTPSBarProgressOverlay = BossBar.Overlay.valueOf(getString("settings.command.tpsbar.overlay", commandTPSBarProgressOverlay.name()));
+         commandTPSBarProgressFillMode = TPSBarTask.FillMode.valueOf(getString("settings.command.tpsbar.fill-mode", commandTPSBarProgressFillMode.name()));
++        commandTPSBarSource = TPSBarTask.Source.valueOf(getString("settings.command.tpsbar.source", commandTPSBarSource.name()));
+         commandTPSBarProgressColorGood = BossBar.Color.valueOf(getString("settings.command.tpsbar.progress-color.good", commandTPSBarProgressColorGood.name()));
+         commandTPSBarProgressColorMedium = BossBar.Color.valueOf(getString("settings.command.tpsbar.progress-color.medium", commandTPSBarProgressColorMedium.name()));
+         commandTPSBarProgressColorLow = BossBar.Color.valueOf(getString("settings.command.tpsbar.progress-color.low", commandTPSBarProgressColorLow.name()));

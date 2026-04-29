@@ -1,0 +1,97 @@
+--- a/net/minecraft/world/level/chunk/storage/IOWorker.java
++++ b/net/minecraft/world/level/chunk/storage/IOWorker.java
+@@ -35,6 +_,9 @@
+     private final SequencedMap<ChunkPos, IOWorker.PendingStore> pendingWrites = new LinkedHashMap<>();
+     private final Long2ObjectLinkedOpenHashMap<CompletableFuture<BitSet>> regionCacheForBlender = new Long2ObjectLinkedOpenHashMap<>();
+     private static final int REGION_CACHE_SIZE = 1024;
++    private static final int MAX_PENDING_WRITE_DRAIN_PER_TASK = 1; // ShreddedPaper - C2ME: limit pending chunk NBT cache
++    private static final long HARD_LIMIT_WARNING_INTERVAL_MILLIS = 30_000L; // ShreddedPaper - C2ME: limit pending chunk NBT cache
++    private long lastPendingWriteHardLimitWarningMillis; // ShreddedPaper - C2ME: limit pending chunk NBT cache
+ 
+     protected IOWorker(RegionStorageInfo info, Path folder, boolean sync) {
+         this.storage = new RegionFileStorage(info, folder, sync);
+@@ -131,6 +_,7 @@
+             CompoundTag compoundTag = dataSupplier.get();
+             IOWorker.PendingStore pendingStore = this.pendingWrites.computeIfAbsent(chunkPos, chunkPos1 -> new IOWorker.PendingStore(compoundTag));
+             pendingStore.data = compoundTag;
++            this.enforcePendingWriteHardLimit(MAX_PENDING_WRITE_DRAIN_PER_TASK); // ShreddedPaper - C2ME: limit pending chunk NBT cache
+             return pendingStore.result;
+         }).thenCompose(Function.identity());
+     }
+@@ -213,10 +_,73 @@
+         });
+     }
+ 
+-    private void storePendingChunk() {
++    // ShreddedPaper start - C2ME: limit pending chunk NBT cache
++    private boolean enforcePendingWriteHardLimit(int maxWrites) {
++        int pendingWritesSize = this.pendingWrites.size();
++        long hardLimit = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.chunkDataCacheLimit;
++        if (pendingWritesSize < hardLimit) {
++            return false;
++        }
++
++        long now = Util.getMillis();
++        if (now - this.lastPendingWriteHardLimitWarningMillis >= HARD_LIMIT_WARNING_INTERVAL_MILLIS) {
++            this.lastPendingWriteHardLimitWarningMillis = now;
++            LOGGER.warn(
++                "Chunk data cache size exceeded hard limit ({} >= {}), draining up to {} pending writes",
++                pendingWritesSize,
++                hardLimit,
++                maxWrites
++            );
++        }
++
++        long writesNeeded = pendingWritesSize - hardLimit + 1L;
++        return this.drainPendingWrites((int)Math.min(maxWrites, Math.max(1L, writesNeeded)));
++    }
++
++    private boolean enforcePendingWriteSoftLimit() {
++        int pendingWritesSize = this.pendingWrites.size();
++        long softLimit = org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.chunkDataCacheSoftLimit;
++        if (pendingWritesSize < softLimit) {
++            return false;
++        }
++
++        return this.drainPendingWrites(MAX_PENDING_WRITE_DRAIN_PER_TASK);
++    }
++
++    private boolean drainPendingWrites(int maxWrites) {
++        boolean wroteAny = false;
++        for (int i = 0; i < maxWrites; i++) {
++            if (!this.writeOldestPendingStore()) {
++                return wroteAny;
++            }
++            wroteAny = true;
++        }
++        return wroteAny;
++    }
++
++    private boolean writeOldestPendingStore() {
+         Entry<ChunkPos, IOWorker.PendingStore> entry = this.pendingWrites.pollFirstEntry();
+-        if (entry != null) {
+-            this.runStore(entry.getKey(), entry.getValue());
++        if (entry == null) {
++            return false;
++        }
++
++        this.runStore(entry.getKey(), entry.getValue());
++        return true;
++    }
++    // ShreddedPaper end - C2ME: limit pending chunk NBT cache
++
++    private void storePendingChunk() {
++        // ShreddedPaper start - C2ME: limit pending chunk NBT cache
++        boolean wrotePendingStore = false;
++        if (!this.pendingWrites.isEmpty()) {
++            wrotePendingStore = this.enforcePendingWriteHardLimit(MAX_PENDING_WRITE_DRAIN_PER_TASK);
++            if (!wrotePendingStore) {
++                wrotePendingStore = this.enforcePendingWriteSoftLimit();
++            }
++        }
++        // ShreddedPaper end - C2ME: limit pending chunk NBT cache
++
++        if (wrotePendingStore || this.writeOldestPendingStore()) { // ShreddedPaper - C2ME: limit pending chunk NBT cache
+             this.tellStorePending();
+         }
+     }

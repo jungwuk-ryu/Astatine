@@ -1,0 +1,15 @@
+--- a/net/minecraft/world/level/levelgen/Heightmap.java
++++ b/net/minecraft/world/level/levelgen/Heightmap.java
+@@ -123,6 +_,12 @@
+         this.data.set(getIndex(x, z), value - this.chunk.getMinY());
+     }
+ 
++    // ShreddedPaper start - Lithium: combined heightmap update
++    public final Predicate<BlockState> isOpaque() {
++        return this.isOpaque;
++    }
++    // ShreddedPaper end - Lithium: combined heightmap update
++
+     public void setRawData(ChunkAccess chunk, Heightmap.Types type, long[] data) {
+         long[] raw = this.data.getRaw();
+         if (raw.length == data.length) {

@@ -1,0 +1,23 @@
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -3376,6 +_,20 @@
+      */
+     public int getPing();
+ 
++    // ShreddedPaper start - add network ping API
++    /**
++     * Gets the player's estimated network ping in milliseconds.
++     * <p>
++     * This value is measured from the server network I/O path using Minecraft
++     * keepalive packets. Unlike {@link #getPing()}, it avoids the normal
++     * server packet handler queue as much as possible and is therefore less
++     * affected by tick or region MSPT.
++     *
++     * @return player network ping
++     */
++    public int getNetworkPing();
++    // ShreddedPaper end - add network ping API
++
+     /**
+      * Gets the player's current locale.
+      *

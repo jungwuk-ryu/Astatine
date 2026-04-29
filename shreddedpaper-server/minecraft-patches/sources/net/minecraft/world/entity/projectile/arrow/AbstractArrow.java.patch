@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
++++ b/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
+@@ -256,6 +_,9 @@
+             this.setXRot(lerpRotation(this.getXRot(), f1));
+             this.setYRot(lerpRotation(this.getYRot(), f));
+             this.checkLeftOwner();
++            if (this.shreddedpaper$shouldDeferProjectileMove(deltaMovement)) {
++                return;
++            }
+             if (flag) {
+                 BlockHitResult blockHitResult = this.level()
+                     .clipIncludingBorder(new ClipContext(vec31, vec31.add(deltaMovement), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));

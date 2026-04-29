@@ -1,0 +1,43 @@
+--- a/net/minecraft/world/level/biome/TheEndBiomeSource.java
++++ b/net/minecraft/world/level/biome/TheEndBiomeSource.java
+@@ -55,8 +_,39 @@
+         return CODEC;
+     }
+ 
++    // ShreddedPaper start - C2ME: The End Biome Cache
++    private final ThreadLocal<it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<Holder<Biome>>> c2me$endBiomeCache =
++        ThreadLocal.withInitial(it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap::new);
++
+     @Override
+-    public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
++    public Holder<Biome> getNoiseBiome(int biomeX, int biomeY, int biomeZ, Climate.Sampler sampler) {
++        if (!org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.endBiomeCacheEnabled) {
++            return this.c2me$getVanillaNoiseBiome(biomeX, biomeY, biomeZ, sampler);
++        }
++
++        final int cacheCapacity = Math.max(1, org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.endBiomeCacheCapacity);
++        final long key = net.minecraft.world.level.ChunkPos.asLong(biomeX, biomeZ);
++        final it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<Holder<Biome>> cache = this.c2me$endBiomeCache.get();
++        final Holder<Biome> biome = cache.getAndMoveToLast(key);
++
++        if (biome != null) {
++            return biome;
++        }
++
++        final Holder<Biome> generatedBiome = this.c2me$getVanillaNoiseBiome(biomeX, biomeY, biomeZ, sampler);
++        cache.putAndMoveToLast(key, generatedBiome);
++        if (cache.size() > cacheCapacity) {
++            int removals = Math.max(1, cacheCapacity / 16);
++            while (cache.size() > cacheCapacity && removals-- > 0) {
++                cache.removeFirst();
++            }
++        }
++
++        return generatedBiome;
++    }
++    // ShreddedPaper end - C2ME: The End Biome Cache
++
++    private Holder<Biome> c2me$getVanillaNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
+         int blockPosX = QuartPos.toBlock(x);
+         int blockPosY = QuartPos.toBlock(y);
+         int blockPosZ = QuartPos.toBlock(z);

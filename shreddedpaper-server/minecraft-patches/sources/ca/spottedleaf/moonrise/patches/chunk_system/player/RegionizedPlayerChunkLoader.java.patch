@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/chunk_system/player/RegionizedPlayerChunkLoader.java
 +++ b/ca/spottedleaf/moonrise/patches/chunk_system/player/RegionizedPlayerChunkLoader.java
-@@ -17,6 +_,9 @@
+@@ -17,10 +_,14 @@
  import ca.spottedleaf.moonrise.patches.chunk_system.ticket.ChunkSystemTicketType;
  import ca.spottedleaf.moonrise.patches.chunk_system.util.ParallelSearchRadiusIteration;
  import com.google.gson.JsonObject;
@@ -10,6 +10,81 @@
  import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
  import it.unimi.dsi.fastutil.longs.LongArrayList;
  import it.unimi.dsi.fastutil.longs.LongComparator;
+ import it.unimi.dsi.fastutil.longs.LongHeapPriorityQueue;
++import it.unimi.dsi.fastutil.longs.LongIterator;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+@@ -41,8 +_,10 @@
+ import java.lang.invoke.VarHandle;
+ import java.util.ArrayDeque;
+ import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.concurrent.atomic.AtomicLong;
+ import java.util.function.Function;
++import org.bukkit.craftbukkit.CraftChunk;
+ 
+ public final class RegionizedPlayerChunkLoader {
+ 
+@@ -190,9 +_,14 @@
+             return;
+         }
+ 
+-        if (((ChunkSystemServerPlayer)player).moonrise$getChunkLoader() != null) {
++        final PlayerChunkLoaderData existing = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
++        if (existing != null && existing.world == this.world) {
+             throw new IllegalStateException("Player is already added to player chunk loader");
+         }
++        if (existing != null) {
++            existing.scheduleStaleWorldChangeCleanup();
++            ((ChunkSystemServerPlayer)player).moonrise$setChunkLoader(null);
++        }
+ 
+         final PlayerChunkLoaderData loader = new PlayerChunkLoaderData(this.world, player);
+ 
+@@ -202,7 +_,7 @@
+ 
+     public void updatePlayer(final ServerPlayer player) {
+         final PlayerChunkLoaderData loader = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
+-        if (loader != null) {
++        if (loader != null && loader.world == this.world) {
+             loader.update();
+             // update view distances for nearby players
+             ((ChunkSystemServerLevel)loader.world).moonrise$getNearbyPlayers().tickPlayer(player);
+@@ -210,17 +_,23 @@
+     }
+ 
+     public void removePlayer(final ServerPlayer player) {
++        if (!((ChunkSystemServerPlayer)player).moonrise$isRealPlayer()) {
++            return;
++        }
++
++        final PlayerChunkLoaderData loader = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
++
++        if (loader == null || loader.world != this.world) {
++            return;
++        }
++
++        final ChunkPos removalChunk = loader.removalChunkPos();
++        if (!TickThread.isShutdownThread()
++            && (!TickThread.isTickThreadFor(player) || !TickThread.isTickThreadFor(this.world, removalChunk))) {
++            ShreddedPaper.runSync(this.world, player.chunkPosition(), this.world, removalChunk, () -> this.removePlayer(player));
++            return;
++        }
+         TickThread.ensureTickThread(player, "Cannot remove player from player chunk loader async");
+-        if (!((ChunkSystemServerPlayer)player).moonrise$isRealPlayer()) {
+-            return;
+-        }
+-
+-        final PlayerChunkLoaderData loader = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
+-
+-        if (loader == null) {
+-            return;
+-        }
+-
+         loader.remove();
+         ((ChunkSystemServerPlayer)player).moonrise$setChunkLoader(null);
+     }
 @@ -305,6 +_,7 @@
  
      public void tick() {
@@ -26,16 +101,159 @@
          private final LongHeapPriorityQueue sendQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue tickingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue generatingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
-@@ -641,7 +_,7 @@
+@@ -395,10 +_,72 @@
+         private final LongHeapPriorityQueue loadQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
+ 
+         private volatile boolean removed;
++        private final int initialChunkX; // ShreddedPaper
++        private final int initialChunkZ; // ShreddedPaper
+ 
+         public PlayerChunkLoaderData(final ServerLevel world, final ServerPlayer player) {
+             this.world = world;
+             this.player = player;
++            this.initialChunkX = player.chunkPosition().x; // ShreddedPaper
++            this.initialChunkZ = player.chunkPosition().z; // ShreddedPaper
++        }
++
++        public boolean isForWorld(final ServerLevel world) { // ShreddedPaper
++            return this.world == world;
++        }
++
++        public void scheduleStaleWorldChangeCleanup() { // ShreddedPaper
++            final int cleanupChunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int cleanupChunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
++            ShreddedPaper.runSync(this.world, new ChunkPos(cleanupChunkX, cleanupChunkZ), () -> {
++                if (!this.removed && this.isStaleWorldChangeCleanupStillValid()) {
++                    this.removeAfterWorldChange();
++                }
++            });
++        }
++
++        private boolean isStaleWorldChangeCleanupStillValid() { // ShreddedPaper
++            final PlayerChunkLoaderData current = ((ChunkSystemServerPlayer)this.player).moonrise$getChunkLoader();
++            return current != this && (current == null || current.world != this.world);
++        }
++
++        private void removeAfterWorldChange() { // ShreddedPaper
++            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
++            TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Cannot remove stale player chunk loader asynchronously");
++            if (this.removed) {
++                return;
++            }
++            this.removed = true;
++            // Do not send chunk unload packets here. A dimension-change cleanup can run after
++            // the replacement loader has already sent same-coordinate chunks in the new world.
++            this.forgetSentChunksForWorldChange();
++            this.loadTicketCleanup.remove();
++            this.tickMap.remove();
++            this.retryLaterSendQueue.clear();
++            this.sendQueue.clear();
++            this.tickingQueue.clear();
++            this.generatingQueue.clear();
++            this.genQueue.clear();
++            this.loadingQueue.clear();
++            this.loadQueue.clear();
++            this.flushDelayedTicketOps();
++        }
++
++        private void forgetSentChunksForWorldChange() { // ShreddedPaper
++            final ChunkHolderManager chunkHolderManager = ((ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager;
++            final LongIterator iterator = this.sentChunks.longIterator();
++            while (iterator.hasNext()) {
++                final long chunk = iterator.nextLong();
++                final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder holder = chunkHolderManager.getChunkHolder(chunk);
++                if (holder != null) {
++                    try {
++                        ((ChunkSystemChunkHolder)holder.vanillaChunkHolder).moonrise$removeReceivedChunk(this.player);
++                    } catch (final IllegalStateException ignored) {
++                    }
++                }
++            }
++            this.sentChunks.clear();
+         }
+ 
+         private void flushDelayedTicketOps() {
+@@ -413,16 +_,27 @@
+             this.delayedTicketOps.addLast(op);
+         }
+ 
+-        private void sendChunk(final int chunkX, final int chunkZ) {
++        private boolean sendChunk(final int chunkX, final int chunkZ) {
++            if (this.removed || !TickThread.isTickThreadFor(this.world, chunkX, chunkZ)) {
++                return false;
++            }
++
++            final LevelChunk chunk = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(chunkX, chunkZ);
++            if (chunk == null || !this.areNeighboursGenerated(chunkX, chunkZ, 1)) {
++                return false;
++            }
++
++            final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder holder =
++                ((ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager.getChunkHolder(chunkX, chunkZ);
++            if (holder == null) {
++                return false;
++            }
++
+             if (this.sentChunks.add(CoordinateUtils.getChunkKey(chunkX, chunkZ))) {
+-                ((ChunkSystemChunkHolder)((ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager
+-                        .getChunkHolder(chunkX, chunkZ).vanillaChunkHolder).moonrise$addReceivedChunk(this.player);
+-
+-                final LevelChunk chunk = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(chunkX, chunkZ);
+-
++                ((ChunkSystemChunkHolder)holder.vanillaChunkHolder).moonrise$addReceivedChunk(this.player);
+                 PlatformHooks.get().onChunkWatch(this.world, chunk, this.player);
+                 PlayerChunkSender.sendChunk(this.player.connection, this.world, chunk);
+-                return;
++                return true;
+             }
+             throw new IllegalStateException();
+         }
+@@ -438,12 +_,15 @@
+             PlatformHooks.get().onChunkUnWatch(this.world, new ChunkPos(chunkX, chunkZ), this.player);
+             // Note: Check PlayerChunkSender#dropChunk for other logic
+             // Note: drop isAlive() check so that chunks properly unload client-side when the player dies
+-            ((ChunkSystemChunkHolder)((ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager
+-                .getChunkHolder(chunkX, chunkZ).vanillaChunkHolder).moonrise$removeReceivedChunk(this.player);
++            final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder holder =
++                ((ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager.getChunkHolder(chunkX, chunkZ);
++            if (holder != null) {
++                ((ChunkSystemChunkHolder)holder.vanillaChunkHolder).moonrise$removeReceivedChunk(this.player);
++            }
+             this.player.connection.send(new ClientboundForgetLevelChunkPacket(new ChunkPos(chunkX, chunkZ)));
+             // Paper start - PlayerChunkUnloadEvent
+             if (io.papermc.paper.event.packet.PlayerChunkUnloadEvent.getHandlerList().getRegisteredListeners().length > 0) {
+-                new io.papermc.paper.event.packet.PlayerChunkUnloadEvent(player.getBukkitEntity().getWorld().getChunkAt(new ChunkPos(chunkX, chunkZ).longKey), player.getBukkitEntity()).callEvent();
++                new io.papermc.paper.event.packet.PlayerChunkUnloadEvent(new CraftChunk(this.world, chunkX, chunkZ), player.getBukkitEntity()).callEvent();
+             }
+             // Paper end - PlayerChunkUnloadEvent
+         }
+@@ -641,7 +_,23 @@
              return true;
          }
  
 -        void updateQueues(final long time) {
++        private boolean areNeighboursFullLoaded(final int chunkX, final int chunkZ, final int radius) { // ShreddedPaper
++            for (int dz = -radius; dz <= radius; ++dz) {
++                for (int dx = -radius; dx <= radius; ++dx) {
++                    if ((dx | dz) == 0) {
++                        continue;
++                    }
++
++                    if (((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(dx + chunkX, dz + chunkZ) == null) {
++                        return false;
++                    }
++                }
++            }
++
++            return true;
++        }
++
 +        public void updateQueues(final long time) { // ShreddedPaper - make public
              TickThread.ensureTickThread(this.player, "Cannot tick player chunk loader async");
              if (this.removed) {
                  throw new IllegalStateException("Ticking removed player chunk loader");
-@@ -821,17 +_,31 @@
+@@ -821,19 +_,38 @@
              final long maxSends = Math.max(0L, Math.min(MAX_RATE, Integer.MAX_VALUE)); // note: no logic to track concurrent sends
              final int maxSendsThisTick = Math.min((int)this.chunkSendLimiter.takeAllocation(time, sendRate, maxSends), this.sendQueue.size());
              // we do not return sends that we took from the allocation back because we want to limit the max send rate, not target it
@@ -52,13 +270,18 @@
                      break;
                  }
                  if (!((ChunkSystemLevelChunk)chunk).moonrise$isPostProcessingDone()) {
++                    if (!this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1)) { // ShreddedPaper - post-processing may inspect neighbour fluids
++                        this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
++                        if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
++                        continue;
++                    }
 +                    // ShreddedPaper start - run post-processing on the tick thread
 +                    if (!ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, RegionPos.forChunk(chunk.getPos()))) {
 +                        this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
 +                        ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
 +                            final LevelChunk chunk2 = this.world.chunkSource.getChunkAtIfLoadedImmediately(pendingSendX, pendingSendZ);
-+                            if (chunk2 != null && this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
-+                                chunk2.postProcessGeneration(this.world);
++                            if (chunk2 != null && this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
++                                ShreddedPaper.postProcessGeneration(this.world, chunk2);
 +                            }
 +                        });
 +                        if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
@@ -66,19 +289,29 @@
 +                    }
 +                    // ShreddedPaper end - run post-processing on the tick thread
                      // not yet post-processed, need to do this so that tile entities can properly be sent to clients
-                     chunk.postProcessGeneration(this.world);
+-                    chunk.postProcessGeneration(this.world);
++                    ShreddedPaper.postProcessGeneration(this.world, chunk);
                      // check if there was any recursive action
-@@ -841,7 +_,17 @@
+                     if (this.removed || this.sendQueue.isEmpty() || this.sendQueue.firstLong() != pendingSend) {
+                         return;
+@@ -841,7 +_,24 @@
                  }
                  this.sendQueue.dequeueLong();
  
 -                this.sendChunk(pendingSendX, pendingSendZ);
 +                // ShreddedPaper start - send on both player and tick thread
++                boolean sent = false;
 +                if (TickThread.isTickThreadFor(this.world, chunk.getPos())) {
-+                    this.sendChunk(pendingSendX, pendingSendZ);
-+                } else if (!this.world.chunkScheduler.getRegionLocker().tryReadOnlyLockNow(RegionPos.forChunk(chunk.getPos()), () -> {
-+                    this.sendChunk(pendingSendX, pendingSendZ);
-+                })) {
++                    sent = this.sendChunk(pendingSendX, pendingSendZ);
++                } else {
++                    final AtomicBoolean lockedSendCompleted = new AtomicBoolean();
++                    if (this.world.chunkScheduler.getRegionLocker().tryLockNow(RegionPos.forChunk(chunk.getPos()), () -> {
++                        lockedSendCompleted.set(this.sendChunk(pendingSendX, pendingSendZ));
++                    })) {
++                        sent = lockedSendCompleted.get();
++                    }
++                }
++                if (!sent) {
 +                    this.retryLaterSendQueue.add(pendingSend);
 +                    if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
 +                    continue;
@@ -120,6 +353,25 @@
              this.sendQueue.clear();
              this.tickingQueue.clear();
              this.generatingQueue.clear();
+@@ -1059,8 +_,17 @@
+             this.flushDelayedTicketOps();
+         }
+ 
++        ChunkPos removalChunkPos() {
++            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
++            return new ChunkPos(chunkX, chunkZ);
++        }
++
+         void remove() {
+-            TickThread.ensureTickThread(this.player, "Cannot add player asynchronously");
++            final ChunkPos removalChunk = this.removalChunkPos();
++            final int chunkX = removalChunk.x;
++            final int chunkZ = removalChunk.z;
++            TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Cannot remove player chunk loader asynchronously");
+             if (this.removed) {
+                 throw new IllegalStateException("Removing removed player chunk loader");
+             }
 @@ -1073,6 +_,7 @@
              this.tickMap.remove();
  

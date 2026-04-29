@@ -12,7 +12,7 @@
              if (level.isDebug()) {
                  throw ERROR_FAILED.create();
              } else {
-+                ShreddedPaper.ensureSync(level, new BlockPos(box.minX(), box.minY(), box.minZ()), () -> { // ShreddedPaper - run on correct region thread
++                ShreddedPaper.ensureSync(level, new BoundingBox(box.minX() - 1, box.minY() - 1, box.minZ() - 1, box.maxX() + 1, box.maxY() + 1, box.maxZ() + 1), () -> { // ShreddedPaper - run on correct region thread
                  int i2 = 0;
  
                  for (BlockPos blockPos : BlockPos.betweenClosed(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ())) {

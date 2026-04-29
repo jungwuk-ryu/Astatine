@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/level/block/SpreadingSnowyDirtBlock.java
++++ b/net/minecraft/world/level/block/SpreadingSnowyDirtBlock.java
+@@ -80,7 +_,10 @@
+                     if (cachedBlockChunk.locX == blockPos.getX() >> 4 && cachedBlockChunk.locZ == blockPos.getZ() >> 4) {
+                         access = cachedBlockChunk;
+                     } else {
+-                        access = level.getChunkAt(blockPos);
++                        access = level.getChunkIfLoaded(blockPos);
++                        if (access == null) {
++                            continue;
++                        }
+                     }
+                     if (access.getBlockState(blockPos).is(Blocks.DIRT) && SpreadingSnowyDirtBlock.canPropagate(access, blockState, level, blockPos)) {
+                         org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockSpreadEvent(level, pos, blockPos, blockState.setValue(SNOWY, isSnowySetting(access.getBlockState(blockPos.above()))), Block.UPDATE_ALL); // CraftBukkit

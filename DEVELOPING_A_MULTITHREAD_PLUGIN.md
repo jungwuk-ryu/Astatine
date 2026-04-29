@@ -1,158 +1,206 @@
-# Developing a multi-thread plugin
+# Developing A Plugin For ShreddedPaper
 
-When developing a plugin for a multi-threaded server, you must be careful of
-multiple things:
+ShreddedPaper follows the same plugin principle as Folia: there is no single
+"main thread" that is safe for every world object. A player, entity, block, or
+chunk belongs to a region owner, and code that touches it must run on that
+owner's scheduler.
 
-## 1. Updating data
+Traditional Bukkit plugins can still run through ShreddedPaper's synchronous
+compatibility mode, but that path exists to keep common plugins alive while the
+server redirects unsafe work. New or actively maintained plugins should use the
+region-aware APIs directly.
 
-Be careful of multiple threads updating data at the same time. This can cause
-a race-condition between threads, meaning the data will not be updated
-correctly.
+## Declare Folia Compatibility
 
-For example, given the command:
+If your plugin is safe for Paper's region scheduler model, add this to
+`plugin.yml` or `paper-plugin.yml`:
+
+```yaml
+folia-supported: true
+```
+
+Do not hard-code a Folia implementation class check such as:
 
 ```java
-final HashMap<UUID, Integer> playerMoney = new HashMap<>();
+Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+```
 
-// Called via /givemoney PureGero 100
-public void giveMoneyCommand(UUID player, int amount) {
-    int currentMoney = playerMoney.get(player);
-    int newMoney = currentMoney + amount;
-    playerMoney.put(player, newMoney);
+Instead, check for the scheduler API you need:
+
+```java
+try {
+    Bukkit.class.getMethod("getRegionScheduler");
+    return true;
+} catch (NoSuchMethodException ex) {
+    return false;
 }
 ```
 
-Commands can be called from multiple threads at the same time. If two threads
-try to update the same player's money at the same time, the following will
-happen:
+## Shared Plugin State
 
-1. Thread 1 reads the current money as 100.
-2. Thread 2 reads the current money as 100.
-3. Thread 1 adds 100 to the current money, making it 200.
-4. Thread 2 adds 100 to the current money, making it 200.
-5. Thread 1 writes the new money as 200.
-6. Thread 2 writes the new money as 200.
-7. The player's money is now 200, not 300. Money has been lost.
+Plugin data structures can be accessed from several region threads at once.
+Plain `HashMap`, `ArrayList`, or mutable fields are not safe unless you protect
+them.
 
-To solve this, you can use a synchronized block around the code, which will
-ensure the code is only called on one thread at a time.
+Unsafe example:
 
 ```java
-final HashMap<UUID, Integer> playerMoney = new HashMap<>();
+final HashMap<UUID, Integer> balances = new HashMap<>();
 
-// Called via /givemoney PureGero 100
-public void giveMoneyCommand(UUID player, int amount) {
-    synchronized (playerMoney) {
-        // Only one thread will run this code at a time while in a
-        // synchronized block for a given object
-        int currentMoney = playerMoney.get(player);
-        int newMoney = currentMoney + amount;
-        playerMoney.put(player, newMoney);
-    }
+public void addMoney(UUID playerId, int amount) {
+    int current = balances.getOrDefault(playerId, 0);
+    balances.put(playerId, current + amount);
 }
 ```
 
-You can take this a step further by using a ConcurrentHashMap. A HashMap is not
-thread-safe, meaning data can be lost if two threads update any data in it at
-the same time. However, a ConcurrentHashMap is thread-safe.
-
-In addition, ConcurrentHashMap lets you lock a certain value while updating it,
-meaning you don't have to lock the entire HashMap, but can instead lock one key.
+Safer example:
 
 ```java
-final ConcurrentHashMap<UUID, Integer> playerMoney = new ConcurrentHashMap<>();
+final ConcurrentHashMap<UUID, Integer> balances = new ConcurrentHashMap<>();
 
-// Called via /givemoney PureGero 100
-public void giveMoneyCommand(UUID player, int amount) {
-    playerMoney.compute(player, (key, currentValue) -> {
-        // This locks the 'player' key in the map, meaning only one thread can
-        // update it at a time
-        if (currentValue == null) currentValue = 0; // Values default to null
-        
-        return currentValue + amount;
+public void addMoney(UUID playerId, int amount) {
+    balances.merge(playerId, amount, Integer::sum);
+}
+```
+
+For multi-step state changes, use a lock around the specific shared state or
+model the work as immutable messages sent to one owner.
+
+## Run World Access On The Owning Region
+
+Use Paper's region scheduler for block and chunk work:
+
+```java
+public void setBlock(JavaPlugin plugin, Location location) {
+    Bukkit.getRegionScheduler().run(plugin, location, task -> {
+        location.getBlock().setType(Material.DIAMOND_BLOCK);
     });
 }
 ```
 
-## 2. Reading data
-
-Be careful of one thread reading data while it is being updated by another
-thread. This can cause the thread to read incorrect data.
-
-For example:
+Use the entity scheduler for entity work:
 
 ```java
-List<UUID> players = new ArrayList<>();
-
-for (UUID player : players) {
-    // If another thread removes a player from the list, this will throw an
-    // IndexOutOfBoundsException
-}
-
-for (int i = 0; i < players.size(); i++) {
-    // If another thread removes a player to the list, this may skip a player
-    // as the indecies will shift during the iteration.
-        
-    UUID player = players.get(i);
-    // `player` may be null, or an IndexOutOfBoundsException may be thrown if
-    // a player was removed from the list by another thread
-}
-```
-
-## 3. Chunk threads
-
-Code must be executed on the chunk's thread. You can no longer rely on a main
-thread.
-
-For example, for a command the updates a block:
-
-```java
-// A player at 0,0,0 wants to update a far-away block at 1000,0,0
-// This block will certainly be on a different thread, so we must use the
-// block's thread instead.
-public void updateBlockCommand(Player player, Location blockLocation) {
-    Bukkit.getRegionScheduler().run(plugin, blockLocation, task -> {
-        // This code block will be run on the chunk at blockLocation's thread
-        blockLocation.getBlock().setType(Material.DIAMOND_BLOCK); 
-    });
-    
-}
-```
-
-Another example, for a command that updates an entity:
-
-```java
-// A player at 0,0,0 wants to update a far-away entity at 1000,0,0
-// This entity will certainly be on a different thread, so we must use the
-// entity's thread instead.
-public void updateEntityCommand(Player player, Entity entity) {
+public void updateEntity(JavaPlugin plugin, Entity entity) {
     entity.getScheduler().run(plugin, task -> {
-        // This code block will be run on the entity's chunk's thread, even if
-        // the entity moves to another chunk!
-        Bukkit.broadcastMessage("Hello, world!");
+        entity.setGlowing(true);
     }, null);
 }
 ```
 
-Note that these two examples use Paper's Scheduler API, so you must reference
-the paper api rather than the spigot api in your dependencies.
+This matters even when your command handler is already running on a server
+thread. The command thread may be the wrong owner for the target entity or
+block.
 
-If you want to continue supporting Spigot and other Bukkit variants, check out
-[MultiLib](https://github.com/MultiPaper/MultiLib#shreddedpaper--folia-methods)
-which includes fallback mechanics for Bukkit servers.
+## Avoid Global Scheduler World Mutations
 
-## 4. Use entity.teleportAsync
+`Bukkit.getGlobalRegionScheduler()` and the classic Bukkit scheduler are not a
+blanket permission to mutate arbitrary world state. In ShreddedPaper, unsupported
+plugins can be routed through a synchronous compatibility path, but relying on
+that path can still create stalls or ownership handoffs under load.
 
-This one's easy enough.
+Prefer:
 
-Do this:
+- region scheduler for block/chunk locations
+- entity scheduler for entities
+- async work only for pure computation or external IO
+- a final scheduler handoff before touching Bukkit world state
+
+## Teleports
+
+Prefer asynchronous teleports:
 
 ```java
-entity.teleportAsync(location);
+entity.teleportAsync(targetLocation);
 ```
 
-Not this:
+Avoid synchronous teleports from plugin tasks:
 
 ```java
-entity.teleport(location); // Do not do this
+entity.teleport(targetLocation); // Avoid this on regionized servers.
 ```
+
+Synchronous plugin teleports are guarded in this branch, but they can still make
+the main thread wait for chunk/region ownership. Under load that can trigger
+watchdog dumps or make unrelated diagnostics look frozen.
+
+## Chunk Loading
+
+Do not call blocking chunk loads from arbitrary threads before mutating the
+chunk. Use async chunk APIs where possible, then hand back to the region owner:
+
+```java
+world.getChunkAtAsync(location).thenAccept(chunk -> {
+    Bukkit.getRegionScheduler().run(plugin, location, task -> {
+        location.getBlock().setType(Material.STONE);
+    });
+});
+```
+
+ShreddedPaper adds region-aware chunk IO QoS. Repeated blocking loads from a
+plugin can be deferred, downgraded, backpressured, or rejected depending on the
+current region pressure.
+
+## Player Disconnects And Kicks
+
+Do not hold your own plugin lock while kicking, teleporting, saving, or moving a
+player. These operations can call into network, entity, and chunk systems. If a
+plugin lock is needed, collect the data first, release the lock, and then
+schedule the player operation.
+
+Good shape:
+
+```java
+String reason;
+synchronized (stateLock) {
+    reason = computeKickReason(player.getUniqueId());
+}
+player.kick(Component.text(reason));
+```
+
+Bad shape:
+
+```java
+synchronized (stateLock) {
+    player.kick(Component.text("bye"));
+}
+```
+
+The server has compatibility fixes for common disconnect paths, but plugins
+should still avoid lock inversions.
+
+## Events
+
+An event being fired on a thread does not mean every object referenced by the
+event is owned by that thread. If your handler touches a different entity,
+far-away block, or another world, schedule to that target.
+
+Examples:
+
+- A player command changing a far-away block: schedule to the block location.
+- A projectile hit event changing the shooter: schedule to the shooter entity.
+- A portal or RTP plugin moving a player: use `teleportAsync` or schedule the
+  final move through the player/entity owner.
+
+## Testing Checklist
+
+Before claiming ShreddedPaper compatibility:
+
+- run with `folia-supported: true`
+- test player join, quit, kick, death, respawn, portal, and teleport flows
+- test your commands from two players in different regions
+- test your plugin while one unrelated region is under high entity or chunk
+  generation load
+- check console for `Thread failed main thread check`, `wrong thread`, or
+  region mailbox rejection logs
+- use `/region ownership` after stress tests to check unexpected fallback and
+  handoff counters
+
+## Supporting Bukkit, Paper, Folia, And ShreddedPaper
+
+Use reflection or an abstraction layer only at the scheduler boundary. Keep the
+world mutation code itself written as "run this on the owner of the target".
+
+If you need a compatibility library, make sure it dispatches to Paper's region
+scheduler APIs on Folia/ShreddedPaper rather than only falling back to the
+classic Bukkit scheduler.

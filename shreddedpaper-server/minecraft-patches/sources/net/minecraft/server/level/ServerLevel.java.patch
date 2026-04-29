@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -1,10 +_,20 @@
+@@ -1,10 +_,25 @@
  package net.minecraft.server.level;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -17,6 +17,9 @@
 +import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
++import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 +import io.multipaper.shreddedpaper.util.NoOpServerWaypointManager;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -69,12 +72,13 @@
      private final List<CustomSpawner> customSpawners;
      private @Nullable EndDragonFight dragonFight;
      final Int2ObjectMap<EnderDragonPart> dragonParts = new Int2ObjectOpenHashMap<>();
-@@ -221,6 +_,8 @@
+@@ -221,6 +_,9 @@
      private double preciseTime; // Purpur - Configurable daylight cycle
      private boolean forceTime; // Purpur - Configurable daylight cycle
      private final RandomSequences randomSequences;
 +    public final ShreddedPaperRegionScheduler chunkScheduler = new ShreddedPaperRegionScheduler(); // ShreddedPaper
 +    public final Executor levelThread; // ShreddedPaper
++    public final java.util.concurrent.atomic.AtomicLong shreddedpaper$projectileChunkLoadCounter = new java.util.concurrent.atomic.AtomicLong(); // ShreddedPaper - Pufferfish: reduce projectile chunk loading
      final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
  
      // CraftBukkit start
@@ -113,7 +117,7 @@
 +//    public final ca.spottedleaf.moonrise.common.list.ReferenceList<LevelChunk> moonrise$getLoadedChunks() {
 +//        return this.loadedChunks;
 +//    }
-+    // ShreddedPaper start - loadedChunks is unused, remove
++    // ShreddedPaper end - loadedChunks is unused, remove
  
      @Override
      public final ca.spottedleaf.moonrise.common.list.ReferenceList<LevelChunk> moonrise$getTickingChunks() {
@@ -466,6 +470,20 @@
              passengerEntity.setOldPosAndRot();
              passengerEntity.tickCount++;
              passengerEntity.totalEntityAge++; // Paper - age-like counter for all entities
+@@ -1695,6 +_,13 @@
+ 
+     // CraftBukkit start
+     private boolean addEntity(Entity entity, org.bukkit.event.entity.CreatureSpawnEvent.@Nullable SpawnReason spawnReason) {
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(this, entity.chunkPosition())) { // ShreddedPaper - defer cross-owner entity adds
++            final OwnerTaskResult handoffResult = ShreddedPaperAccess.runOrDeferToOwner(
++                this, entity.chunkPosition(), RegionTaskClass.OWNER_HANDOFF, () -> this.addEntity(entity, spawnReason)
++            ); // ShreddedPaper - defer cross-owner entity adds
++            return handoffResult != OwnerTaskResult.REJECTED && handoffResult != OwnerTaskResult.CHUNK_UNAVAILABLE; // ShreddedPaper - defer cross-owner entity adds
++        }
++
+         org.spigotmc.AsyncCatcher.catchOp("entity add"); // Spigot
+         entity.generation = false; // Paper - Don't fire sync event during generation; Reset flag if it was added during a ServerLevel generation process
+         // Paper start - extra debug info
 @@ -1710,8 +_,8 @@
          } else {
              if (entity instanceof net.minecraft.world.entity.item.ItemEntity itemEntity && itemEntity.getItem().isEmpty()) return false; // Paper - Prevent empty items from being added
@@ -531,7 +549,7 @@
              }
          }
          } // Paper - option to disable pathfinding updates
-@@ -1949,17 +_,17 @@
+@@ -1949,35 +_,53 @@
      @Override
      public void updateNeighborsAt(BlockPos pos, Block block) {
          // CraftBukkit start
@@ -549,10 +567,105 @@
      public void updateNeighborsAt(BlockPos pos, Block block, @Nullable Orientation orientation) {
 -        if (captureBlockStates) { return; } // Paper - Cancel all physics during placement
 +        if (captureBlockStatesThreadLocal.get()) { return; } // Paper - Cancel all physics during placement // ShreddedPaper - use thread local
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.updateNeighborsAt(pos, block, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
          this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, block, null, orientation);
      }
  
-@@ -2084,14 +_,15 @@
+     @Override
+     public void updateNeighborsAtExceptFromFacing(BlockPos pos, Block block, Direction facing, @Nullable Orientation orientation) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.updateNeighborsAtExceptFromFacing(pos, block, facing, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, block, facing, orientation);
+     }
+ 
+     @Override
+     public void neighborChanged(BlockPos pos, Block block, @Nullable Orientation orientation) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.neighborChanged(pos, block, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.neighborChanged(pos, block, orientation);
+     }
+ 
+     @Override
+     public void neighborChanged(BlockState state, BlockPos pos, Block block, @Nullable Orientation orientation, boolean movedByPiston) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.neighborChanged(state, pos, block, orientation, movedByPiston))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.neighborChanged(state, pos, block, orientation, movedByPiston);
+     }
+ 
++    private boolean shreddedpaper$handoffNeighborUpdateIfNeeded(BlockPos pos, Runnable update) {
++        if (TickThread.isTickThreadFor(this, pos)) {
++            return true;
++        }
++        if (this.getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4) == null) {
++            return false;
++        }
++        RegionPos targetRegion = RegionPos.forBlockPos(pos);
++        if (!this.chunkSource.tickingRegions.scheduleTaskNonDropping(targetRegion, update, 0L, RegionTaskClass.OWNER_HANDOFF)) {
++            throw new IllegalStateException("Region mailbox rejected cross-cell neighbor update for " + pos);
++        }
++        return false;
++    }
++
+     @Override
+     public void broadcastEntityEvent(Entity entity, byte state) {
+         this.getChunkSource().sendToTrackingPlayersAndSelf(entity, new ClientboundEntityEventPacket(entity, state));
+@@ -2010,6 +_,11 @@
+         Holder<SoundEvent> explosionSound
+     ) {
+         // CraftBukkit start
++        if (this.shreddedpaper$deferExplosionIfNeeded(
++            source, damageSource, damageCalculator, x, y, z, radius, fire, explosionInteraction, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound, null
++        )) {
++            return;
++        }
+         this.explode0(source, damageSource, damageCalculator, x, y, z, radius, fire, explosionInteraction, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound);
+     }
+ 
+@@ -2078,20 +_,64 @@
+         return serverExplosion; // CraftBukkit
+     }
+ 
++    private boolean shreddedpaper$deferExplosionIfNeeded(
++        @Nullable Entity source,
++        @Nullable DamageSource damageSource,
++        @Nullable ExplosionDamageCalculator damageCalculator,
++        double x,
++        double y,
++        double z,
++        float radius,
++        boolean fire,
++        Level.ExplosionInteraction explosionInteraction,
++        ParticleOptions smallExplosionParticles,
++        ParticleOptions largeExplosionParticles,
++        WeightedList<ExplosionParticleInfo> blockParticles,
++        Holder<SoundEvent> explosionSound,
++        java.util.function.@Nullable Consumer<ServerExplosion> configurator
++    ) {
++        if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return false;
++        }
++
++        final BoundingBox ownershipBox = shreddedpaper$explosionOwnershipBox(x, y, z, radius);
++        if (ShreddedPaper.isSync(this, ownershipBox)) {
++            return false;
++        }
++
++        ShreddedPaper.runSync(
++            this,
++            ownershipBox,
++            () -> this.explode0(source, damageSource, damageCalculator, x, y, z, radius, fire, explosionInteraction, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound, configurator)
++        );
++        return true;
++    }
++
++    private static BoundingBox shreddedpaper$explosionOwnershipBox(final double x, final double y, final double z, final float radius) {
++        final int reach = Mth.ceil(radius * 2.0F) + 2;
++        return BoundingBox.fromCorners(
++            BlockPos.containing(x - reach, y - reach, z - reach),
++            BlockPos.containing(x + reach, y + reach, z + reach)
++        );
++    }
++
+     private Explosion.BlockInteraction getDestroyType(GameRule<Boolean> decayGameRule) {
+         return this.getGameRules().get(decayGameRule) ? Explosion.BlockInteraction.DESTROY_WITH_DECAY : Explosion.BlockInteraction.DESTROY;
+     }
  
      @Override
      public void blockEvent(BlockPos pos, Block block, int eventId, int eventParam) {

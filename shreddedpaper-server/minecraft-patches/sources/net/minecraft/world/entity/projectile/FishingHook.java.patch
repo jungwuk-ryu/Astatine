@@ -9,6 +9,16 @@
  import net.minecraft.advancements.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleTypes;
+@@ -203,6 +_,9 @@
+                     return;
+                 }
+ 
++                if (this.shreddedpaper$shouldDeferProjectileMove(this.getDeltaMovement())) {
++                    return;
++                }
+                 this.checkCollision();
+             } else {
+                 if (this.currentState == FishingHook.FishHookState.HOOKED_IN_ENTITY) {
 @@ -210,7 +_,12 @@
                          if (!this.hookedIn.isRemoved() && this.hookedIn.canInteractWithLevel() && this.hookedIn.level().dimension() == this.level().dimension()
                              )

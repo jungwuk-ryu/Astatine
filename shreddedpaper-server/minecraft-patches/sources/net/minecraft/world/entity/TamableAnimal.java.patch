@@ -1,21 +1,79 @@
 --- a/net/minecraft/world/entity/TamableAnimal.java
 +++ b/net/minecraft/world/entity/TamableAnimal.java
-@@ -1,6 +_,8 @@
+@@ -1,6 +_,9 @@
  package net.minecraft.world.entity;
  
  import java.util.Optional;
 +
++import ca.spottedleaf.moonrise.common.util.TickThread;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
  import net.minecraft.advancements.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleOptions;
-@@ -242,7 +_,9 @@
+@@ -38,6 +_,7 @@
+         TamableAnimal.class, EntityDataSerializers.OPTIONAL_LIVING_ENTITY_REFERENCE
+     );
+     private boolean orderedToSit = false;
++    private volatile boolean shreddedpaper$pendingOwnerTeleport; // ShreddedPaper - avoid duplicate deferred owner-follow teleports
+ 
+     protected TamableAnimal(EntityType<? extends TamableAnimal> type, Level level) {
+         super(type, level);
+@@ -242,7 +_,10 @@
      public void tryToTeleportToOwner() {
          LivingEntity owner = this.getOwner();
          if (owner != null) {
 +            ShreddedPaper.ensureSync(this, owner, () -> { // ShreddedPaper - run on this and owner's thread
++            if (this.isRemoved() || owner.isRemoved() || this.getOwner() != owner) return; // ShreddedPaper - ignore stale owner handoff
              this.teleportToAroundBlockPos(owner.blockPosition());
 +            }); // ShreddedPaper - run on this and owner's thread
          }
      }
  
+@@ -265,7 +_,22 @@
+     }
+ 
+     private boolean maybeTeleportTo(int x, int y, int z) {
+-        if (!this.canTeleportTo(new BlockPos(x, y, z))) {
++        BlockPos targetPos = new BlockPos(x, y, z);
++        if (this.level() instanceof ServerLevel serverLevel
++            && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this)
++                || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, targetPos))) {
++            if (!this.shreddedpaper$pendingOwnerTeleport) {
++                this.shreddedpaper$pendingOwnerTeleport = true;
++                ShreddedPaper.ensureSync(this, serverLevel, net.minecraft.world.level.ChunkPos.of(targetPos), () -> {
++                    this.shreddedpaper$pendingOwnerTeleport = false;
++                    if (this.isAlive() && this.level() == serverLevel) {
++                        this.maybeTeleportTo(x, y, z);
++                    }
++                });
++            }
++            return false;
++        }
++        if (!this.canTeleportTo(targetPos)) {
+             return false;
+         } else {
+             // CraftBukkit start
+@@ -282,16 +_,21 @@
+     }
+ 
+     private boolean canTeleportTo(BlockPos pos) {
++        if (!TickThread.isTickThreadFor(this.level(), pos, 1)) return false; // ShreddedPaper - loaded-only teleport fallback
+         PathType pathTypeStatic = WalkNodeEvaluator.getPathTypeStatic(this, pos);
+         if (pathTypeStatic != PathType.WALKABLE) {
+             return false;
+         } else {
+-            BlockState blockState = this.level().getBlockState(pos.below());
++            BlockState blockState = this.level().getBlockStateIfLoaded(pos.below()); // ShreddedPaper - loaded-only teleport fallback
++            if (blockState == null) {
++                return false;
++            }
+             if (!this.canFlyToOwner() && blockState.getBlock() instanceof LeavesBlock) {
+                 return false;
+             } else {
+                 BlockPos blockPos = pos.subtract(this.blockPosition());
+-                return this.level().noCollision(this, this.getBoundingBox().move(blockPos));
++                net.minecraft.world.phys.AABB teleportBox = this.getBoundingBox().move(blockPos); // ShreddedPaper - loaded-only teleport fallback
++                return TickThread.isTickThreadFor(this.level(), teleportBox) && this.level().noCollision(this, teleportBox); // ShreddedPaper - loaded-only teleport fallback
+             }
+         }
+     }

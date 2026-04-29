@@ -1,0 +1,19 @@
+name: RegionLoadTest
+version: ${version}
+main: io.multipaper.regionloadtest.RegionLoadTestPlugin
+description: Local hostile-load test plugin for ShreddedPaper region testing
+author: ShreddedPaper
+api-version: "1.21"
+folia-supported: true
+load: POSTWORLD
+defaultPerm: false
+commands:
+  regionloadtest:
+    description: Hostile load test commands for ShreddedPaper
+    usage: /regionloadtest help
+    aliases: [rlt]
+    permission: regionloadtest.use
+permissions:
+  regionloadtest.use:
+    description: Allows use of hostile load test commands
+    default: op

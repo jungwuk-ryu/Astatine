@@ -1,0 +1,60 @@
+--- a/net/minecraft/world/entity/ai/sensing/NearestBedSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/NearestBedSensor.java
+@@ -26,6 +_,7 @@
+     private final Long2LongMap batchCache = new Long2LongOpenHashMap();
+     private int triedCount;
+     private long lastUpdate;
++    private long asyncPathGeneration; // DivineMC - Async Pathfinding
+ 
+     public NearestBedSensor() {
+         super(20);
+@@ -57,17 +_,36 @@
+             java.util.List<Pair<Holder<PoiType>, BlockPos>> poiposes = new java.util.ArrayList<>();
+             // don't ask me why it's unbounded. ask mojang.
+             io.papermc.paper.util.PoiAccess.findAnyPoiPositions(poiManager, type -> type.is(PoiTypes.HOME), predicate, entity.blockPosition(), level.purpurConfig.villagerNearestBedSensorSearchRadius, PoiManager.Occupancy.ANY, false, Integer.MAX_VALUE, poiposes); // Purpur - Configurable villager search radius
+-            Path path = AcquirePoi.findPathToPois(entity, new java.util.HashSet<>(poiposes));
+-            // Paper end - optimise POI access
+-            if (path != null && path.canReach()) {
+-                BlockPos target = path.getTarget();
+-                Optional<Holder<PoiType>> type = poiManager.getType(target);
+-                if (type.isPresent()) {
+-                    entity.getBrain().setMemory(MemoryModuleType.NEAREST_BED, target);
+-                }
+-            } else if (this.triedCount < 5) {
+-                this.batchCache.long2LongEntrySet().removeIf(entry -> entry.getLongValue() < this.lastUpdate);
+-            }
+-        }
+-    }
++            // DivineMC start - Async Pathfinding
++            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                Path possiblePath = AcquirePoi.findPathToPois(entity, new java.util.HashSet<>(poiposes));
++                long pathGeneration = ++this.asyncPathGeneration;
++                org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(possiblePath, level, entity, path -> {
++                    if (pathGeneration != this.asyncPathGeneration || entity.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_BED)) {
++                        return;
++                    }
++                    processPath(entity, poiManager, path);
++                });
++            } else {
++                Path path = AcquirePoi.findPathToPois(entity, new java.util.HashSet<>(poiposes));
++                // Paper end - optimise POI access
++                processPath(entity, poiManager, path);
++            }
++            // DivineMC end - Async Pathfinding
++        }
++    }
++
++    // DivineMC start - Async Pathfinding
++    private void processPath(Mob entity, PoiManager poiManager, @org.jetbrains.annotations.Nullable Path path) {
++        if (path != null && path.canReach()) {
++            BlockPos target = path.getTarget();
++            Optional<Holder<PoiType>> type = poiManager.getType(target);
++            if (type.isPresent()) {
++                entity.getBrain().setMemory(MemoryModuleType.NEAREST_BED, target);
++            }
++        } else if (this.triedCount < 5) {
++            this.batchCache.long2LongEntrySet().removeIf(entry -> entry.getLongValue() < this.lastUpdate);
++        }
++    }
++    // DivineMC end - Async Pathfinding
+ }

@@ -1,0 +1,24 @@
+--- a/net/minecraft/world/level/block/DetectorRailBlock.java
++++ b/net/minecraft/world/level/block/DetectorRailBlock.java
+@@ -128,7 +_,20 @@
+         RailState railState = new RailState(level, pos, state);
+ 
+         for (BlockPos blockPos : railState.getConnections()) {
+-            BlockState blockState = level.getBlockState(blockPos);
++            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) { // ShreddedPaper - owner handoff connected rail neighbor updates
++                final BlockPos neighborPos = blockPos.immutable(); // ShreddedPaper - owner handoff connected rail neighbor updates
++                io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, neighborPos, () -> { // ShreddedPaper - owner handoff connected rail neighbor updates
++                    BlockState neighborState = serverLevel.getBlockStateIfLoaded(neighborPos); // ShreddedPaper - owner handoff connected rail neighbor updates
++                    if (neighborState != null) { // ShreddedPaper - owner handoff connected rail neighbor updates
++                        serverLevel.neighborChanged(neighborState, neighborPos, neighborState.getBlock(), null, false); // ShreddedPaper - owner handoff connected rail neighbor updates
++                    } // ShreddedPaper - owner handoff connected rail neighbor updates
++                }); // ShreddedPaper - owner handoff connected rail neighbor updates
++                continue; // ShreddedPaper - owner handoff connected rail neighbor updates
++            }
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only detector rail probe
++            if (blockState == null) {
++                continue;
++            }
+             level.neighborChanged(blockState, blockPos, blockState.getBlock(), null, false);
+         }
+     }

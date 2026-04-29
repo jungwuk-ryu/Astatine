@@ -1,0 +1,88 @@
+--- a/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
++++ b/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
+@@ -54,6 +_,7 @@
+         int i = 5;
+         int i1 = 20;
+         MutableLong mutableLong = new MutableLong(0L);
++        MutableLong asyncPathGeneration = new MutableLong(0L); // DivineMC - Async Pathfinding
+         Long2ObjectMap<AcquirePoi.JitteredLinearRetry> map = new Long2ObjectOpenHashMap<>();
+         OneShot<PathfinderMob> oneShot = BehaviorBuilder.create(
+             instance -> instance.group(instance.absent(acquiringMemory))
+@@ -93,21 +_,30 @@
+                                 }
+                             }
+                             // Paper end - optimise POI access
+-                            Path path = findPathToPois(mob, set);
+-                            if (path != null && path.canReach()) {
+-                                BlockPos target = path.getTarget();
+-                                poiManager.getType(target).ifPresent(holder -> {
+-                                    poiManager.take(acquirablePois, (holder1, blockPos) -> blockPos.equals(target), target, 1);
+-                                    memoryAccessor.set(GlobalPos.of(level.dimension(), target));
+-                                    entityEventId.ifPresent(id -> level.broadcastEntityEvent(mob, id));
+-                                    map.clear();
+-                                    level.debugSynchronizers().updatePoi(target);
++                            // DivineMC start - Async Pathfinding
++                            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                                Path possiblePath = findPathToPois(mob, set);
++                                long pathGeneration = asyncPathGeneration.incrementAndGet();
++
++                                org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(possiblePath, level, mob, path -> {
++                                    if (pathGeneration != asyncPathGeneration.longValue() || mob.getBrain().hasMemoryValue(acquiringMemory)) {
++                                        return;
++                                    }
++                                    if (path == null || !path.canReach()) {
++                                        for (Pair<Holder<PoiType>, BlockPos> pair : set) {
++                                            AcquirePoi.JitteredLinearRetry retry = map.get(pair.getSecond().asLong());
++                                            if (retry != null) {
++                                                retry.markAttempt(time - 200L);
++                                            }
++                                        }
++                                    }
++                                    processPath(acquirablePois, entityEventId, (Long2ObjectMap<JitteredLinearRetry>) map, memoryAccessor, level, mob, time, poiManager, set, path);
+                                 });
+                             } else {
+-                                for (Pair<Holder<PoiType>, BlockPos> pair : set) {
+-                                    map.computeIfAbsent(pair.getSecond().asLong(), l -> new AcquirePoi.JitteredLinearRetry(level.random, time));
+-                                }
++                                Path path = findPathToPois(mob, set);
++                                processPath(acquirablePois, entityEventId, (Long2ObjectMap<JitteredLinearRetry>) map, memoryAccessor, level, mob, time, poiManager, set, path);
+                             }
++                            // DivineMC end - Async Pathfinding
+ 
+                             return true;
+                         }
+@@ -118,6 +_,34 @@
+             ? oneShot
+             : BehaviorBuilder.create(instance -> instance.group(instance.absent(existingAbsentMemory)).apply(instance, memoryAccessor -> oneShot));
+     }
++
++    // DivineMC start - Async Pathfinding
++    private static void processPath(Predicate<Holder<PoiType>> acquirablePois,
++                                    Optional<Byte> entityEventId,
++                                    Long2ObjectMap<JitteredLinearRetry> map,
++                                    net.minecraft.world.entity.ai.behavior.declarative.MemoryAccessor<com.mojang.datafixers.kinds.Const.Mu<com.mojang.datafixers.util.Unit>, GlobalPos> memoryAccessor,
++                                    ServerLevel level,
++                                    PathfinderMob mob,
++                                    long time,
++                                    PoiManager poiManager,
++                                    Set<Pair<Holder<PoiType>, BlockPos>> set,
++                                    Path path) {
++        if (path != null && path.canReach()) {
++            BlockPos target = path.getTarget();
++            poiManager.getType(target).ifPresent(holder -> {
++                poiManager.take(acquirablePois, (holder1, blockPos) -> blockPos.equals(target), target, 1);
++                memoryAccessor.set(GlobalPos.of(level.dimension(), target));
++                entityEventId.ifPresent(id -> level.broadcastEntityEvent(mob, id));
++                map.clear();
++                level.debugSynchronizers().updatePoi(target);
++            });
++        } else {
++            for (Pair<Holder<PoiType>, BlockPos> pair : set) {
++                map.computeIfAbsent(pair.getSecond().asLong(), l -> new JitteredLinearRetry(level.random, time));
++            }
++        }
++    }
++    // DivineMC end - Async Pathfinding
+ 
+     public static @Nullable Path findPathToPois(Mob mob, Set<Pair<Holder<PoiType>, BlockPos>> poiPositions) {
+         if (poiPositions.isEmpty()) {

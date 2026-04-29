@@ -1,0 +1,114 @@
+--- a/net/minecraft/world/level/levelgen/DensityFunctions.java
++++ b/net/minecraft/world/level/levelgen/DensityFunctions.java
+@@ -756,7 +_,91 @@
+         }
+     }
+ 
+-    public record Marker(@Override DensityFunctions.Marker.Type type, @Override DensityFunction wrapped) implements DensityFunctions.MarkerOrMarked {
++    // ShreddedPaper start - C2ME: Density Function Compiler
++    public static final class Marker implements com.ishland.c2me.opts.dfc.common.ducks.IFastCacheLike, com.ishland.c2me.opts.dfc.common.ducks.IEqualityOverriding, DensityFunctions.MarkerOrMarked {
++        private final Type type;
++        private final DensityFunction wrapped;
++        private Object c2me$optionalEquality;
++
++        public Marker(Type type, DensityFunction wrapped) {
++            this.type = type;
++            this.wrapped = wrapped;
++        }
++
++        @Override
++        public boolean equals(final Object that) {
++            if (that == this) {
++                return true;
++            }
++            if (that == null || that.getClass() != this.getClass()) {
++                return false;
++            }
++
++            Marker marker = (Marker)that;
++            return java.util.Objects.equals(this.type, marker.type) && java.util.Objects.equals(this.wrapped, marker.wrapped);
++        }
++
++        @Override
++        public int hashCode() {
++            return java.util.Objects.hash(this.type, this.wrapped);
++        }
++
++        @Override
++        public double c2me$getCached(int x, int y, int z, com.ishland.c2me.opts.dfc.common.ast.EvalType evalType) {
++            return Double.longBitsToDouble(CACHE_MISS_NAN_BITS);
++        }
++
++        @Override
++        public boolean c2me$getCached(double[] res, int[] x, int[] y, int[] z, com.ishland.c2me.opts.dfc.common.ast.EvalType evalType) {
++            return false;
++        }
++
++        @Override
++        public void c2me$cache(int x, int y, int z, com.ishland.c2me.opts.dfc.common.ast.EvalType evalType, double cached) {
++            // no-op marker cache
++        }
++
++        @Override
++        public void c2me$cache(double[] res, int[] x, int[] y, int[] z, com.ishland.c2me.opts.dfc.common.ast.EvalType evalType) {
++            // no-op marker cache
++        }
++
++        @Override
++        public DensityFunction c2me$getDelegate() {
++            return this.wrapped;
++        }
++
++        @Override
++        public DensityFunction c2me$withDelegate(DensityFunction delegate) {
++            DensityFunctions.Marker wrapping = new DensityFunctions.Marker(this.type(), delegate);
++            ((com.ishland.c2me.opts.dfc.common.ducks.IEqualityOverriding)(Object)wrapping).c2me$overrideEquality(this);
++            return wrapping;
++        }
++
++        @Override
++        public void c2me$overrideEquality(Object object) {
++            Object inner = object;
++            while (true) {
++                Object inner1 = inner instanceof com.ishland.c2me.opts.dfc.common.ducks.IEqualityOverriding equalityOverriding ? equalityOverriding.c2me$getOverriddenEquality() : null;
++                if (inner1 == null) {
++                    this.c2me$optionalEquality = inner;
++                    break;
++                }
++                inner = inner1;
++            }
++        }
++
++        @Override
++        public Object c2me$getOverriddenEquality() {
++            return this.c2me$optionalEquality;
++        }
++
++        @Override
++        public DensityFunction mapAll(DensityFunction.Visitor visitor) {
++            return visitor.apply(this.c2me$withDelegate(this.wrapped().mapAll(visitor)));
++        }
++        // ShreddedPaper end - C2ME: Density Function Compiler
++
+         @Override
+         public double compute(DensityFunction.FunctionContext context) {
+             return this.wrapped.compute(context);
+@@ -776,6 +_,18 @@
+         public double maxValue() {
+             return this.wrapped.maxValue();
+         }
++
++        // ShreddedPaper start - C2ME: Density Function Compiler
++        @Override
++        public Type type() {
++            return this.type;
++        }
++
++        @Override
++        public DensityFunction wrapped() {
++            return this.wrapped;
++        }
++        // ShreddedPaper end - C2ME: Density Function Compiler
+ 
+         public static enum Type implements StringRepresentable {
+             Interpolated("interpolated"),

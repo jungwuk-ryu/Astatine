@@ -1,0 +1,22 @@
+--- a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java
++++ b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkUpgradeGenericStatusTask.java
+@@ -6,6 +_,7 @@
+ import ca.spottedleaf.moonrise.common.util.WorldUtil;
+ import ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkSystemChunkStatus;
+ import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler;
++import io.multipaper.shreddedpaper.threading.region.RegionChunkExecutorLimiter;
+ import net.minecraft.server.level.ChunkMap;
+ import net.minecraft.server.level.GenerationChunkHolder;
+ import net.minecraft.server.level.ServerChunkCache;
+@@ -45,7 +_,10 @@
+         this.toStatus = toStatus;
+         this.neighbours = neighbours;
+         if (((ChunkSystemChunkStatus)this.toStatus).moonrise$isParallelCapable()) {
+-            this.generateTask = this.scheduler.parallelGenExecutor.createTask(this, priority);
++            this.generateTask = RegionChunkExecutorLimiter.createTask(
++                this.world, this.chunkX, this.chunkZ, this.scheduler.parallelGenExecutor, this, priority,
++                RegionChunkExecutorLimiter.WorkType.GENERATION
++            );
+         } else {
+             final int writeRadius = ((ChunkSystemChunkStatus)this.toStatus).moonrise$getWriteRadius();
+             if (writeRadius < 0) {

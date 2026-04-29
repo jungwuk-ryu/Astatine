@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/entity/projectile/LlamaSpit.java
++++ b/net/minecraft/world/entity/projectile/LlamaSpit.java
+@@ -48,6 +_,9 @@
+     public void tick() {
+         super.tick();
+         Vec3 deltaMovement = this.getDeltaMovement();
++        if (this.shreddedpaper$shouldDeferProjectileMove(deltaMovement)) {
++            return;
++        }
+         HitResult hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+         this.preHitTargetOrDeflectSelf(hitResultOnMoveVector); // CraftBukkit - projectile hit event
+         double d = this.getX() + deltaMovement.x;

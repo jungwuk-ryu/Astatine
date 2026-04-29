@@ -1,0 +1,12 @@
+--- /dev/null
++++ b/src/test/java/io/papermc/paper/pathfinding/AsyncPathfindingConfigTestSuite.java
+@@ -1,0 +_,9 @@
++package io.papermc.paper.pathfinding;
++
++import org.junit.platform.suite.api.SelectClasses;
++import org.junit.platform.suite.api.Suite;
++
++@Suite
++@SelectClasses(AsyncPathfindingConfigTest.class)
++public class AsyncPathfindingConfigTestSuite {
++}

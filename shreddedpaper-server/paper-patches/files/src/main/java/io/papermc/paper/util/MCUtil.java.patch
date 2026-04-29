@@ -1,0 +1,11 @@
+--- a/src/main/java/io/papermc/paper/util/MCUtil.java
++++ b/src/main/java/io/papermc/paper/util/MCUtil.java
+@@ -54,7 +_,7 @@
+             run.run();
+         }
+     };
+-    public static final ExecutorService ASYNC_EXECUTOR = Executors.newFixedThreadPool(2, new ThreadFactoryBuilder()
++    public static final ExecutorService ASYNC_EXECUTOR = org.bxteam.divinemc.config.DivineConfig.VirtualThreadsCategory.useAsyncExecutor() ? Executors.newVirtualThreadPerTaskExecutor() : Executors.newFixedThreadPool(2, new ThreadFactoryBuilder() // DivineMC - Virtual Threads
+         .setNameFormat("Paper Async Task Handler Thread - %1$d")
+         .setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(MinecraftServer.LOGGER))
+         .build()

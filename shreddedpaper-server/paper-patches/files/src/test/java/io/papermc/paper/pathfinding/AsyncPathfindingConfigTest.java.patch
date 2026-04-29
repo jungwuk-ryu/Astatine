@@ -1,0 +1,67 @@
+--- /dev/null
++++ b/src/test/java/io/papermc/paper/pathfinding/AsyncPathfindingConfigTest.java
+@@ -1,0 +_,64 @@
++package io.papermc.paper.pathfinding;
++
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import org.bxteam.divinemc.async.pathfinding.PathfindTaskRejectPolicy;
++import org.bxteam.divinemc.config.DivineConfig;
++import org.bukkit.support.environment.Normal;
++import org.junit.jupiter.api.Test;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++
++@Normal
++class AsyncPathfindingConfigTest {
++
++    @Test
++    void syncAppliesConfiguredAsyncPathfindingOptions() {
++        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
++        pathfinding.enable = true;
++        pathfinding.maxThreads = 2;
++        pathfinding.keepalive = 45;
++        pathfinding.queueSize = 123;
++        pathfinding.rejectPolicy = "FLUSH_ALL";
++
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        assertEquals(true, DivineConfig.AsyncCategory.asyncPathfinding);
++        assertEquals(2, DivineConfig.AsyncCategory.asyncPathfindingMaxThreads);
++        assertEquals(45, DivineConfig.AsyncCategory.asyncPathfindingKeepalive);
++        assertEquals(123, DivineConfig.AsyncCategory.asyncPathfindingQueueSize);
++        assertEquals(PathfindTaskRejectPolicy.FLUSH_ALL, DivineConfig.AsyncCategory.asyncPathfindingRejectPolicy);
++    }
++
++    @Test
++    void syncNormalizesAutomaticThreadAndQueueOptions() {
++        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
++        pathfinding.enable = true;
++        pathfinding.maxThreads = 0;
++        pathfinding.keepalive = 0;
++        pathfinding.queueSize = 0;
++        pathfinding.rejectPolicy = "invalid";
++
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        int expectedThreads = Math.max(Runtime.getRuntime().availableProcessors() / 4, 1);
++        assertEquals(expectedThreads, DivineConfig.AsyncCategory.asyncPathfindingMaxThreads);
++        assertEquals(1, DivineConfig.AsyncCategory.asyncPathfindingKeepalive);
++        assertEquals(expectedThreads * 256, DivineConfig.AsyncCategory.asyncPathfindingQueueSize);
++        assertEquals(PathfindTaskRejectPolicy.CALLER_RUNS, DivineConfig.AsyncCategory.asyncPathfindingRejectPolicy);
++    }
++
++    @Test
++    void disablingAsyncPathfindingPreventsWorkerAllocation() {
++        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
++        pathfinding.enable = false;
++        pathfinding.maxThreads = 8;
++
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        assertEquals(false, DivineConfig.AsyncCategory.asyncPathfinding);
++        assertEquals(0, DivineConfig.AsyncCategory.asyncPathfindingMaxThreads);
++    }
++}

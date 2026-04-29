@@ -1,116 +1,181 @@
 # ShreddedPaper
 
-[![Discord](https://img.shields.io/discord/937309618743427113.svg?color=738ad6&label=Join%20the%20Discord%20server&logo=discord&logoColor=ffffff)](https://discord.gg/dN3WCZkSRV)
+ShreddedPaper is a 1.21.11 [Purpur](https://github.com/PurpurMC/Purpur)
+fork focused on vertical scaling: one Minecraft server process can tick
+different loaded regions independently while preserving explicit ownership for
+world, chunk, entity, and plugin mutations.
 
-**ShreddedPaper is in public beta.** Most features work for most players most of
-the time, however things can occasionally break.
+This branch is the Astatine 1.21.11 integration branch. The working remote is:
 
-1.21.11 [Purpur](https://github.com/PurpurMC/Purpur) fork that brings vertical scaling to Minecraft.
-
-ShreddedPaper:
-
-- Allows multiple threads to work together to run a single world
-  - When ticking a chunk on one thread, all other chunks in a certain radius
-    are locked so that only this thread has access to them, preventing any
-    race conditions between threads.
-
-See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for more information on how ShreddedPaper
-works.
-
-### Developing a plugin for a multi-threaded server
-
-In summary, a plugin must be careful of:
-
-- Different threads updating certain data at the same time.
-- One thread reading data while it is being updated by another thread.
-- Code is to be executed on the chunk's thread, not simply the main thread.
-
-[See here for a more detailed tutorial](DEVELOPING_A_MULTITHREAD_PLUGIN.md)
-
-If your plugin already has support for Folia it is highly likely that it will already work with ShreddedPaper without any changes.  
-If you have a Folia check similar to the following:  
-```java
-try {
-    Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-    return true;
-} catch (ClassNotFoundException e) {
-    return false;
-}
+```bash
+https://github.com/jungwuk-ryu/Astatine.git
 ```
-You should remove it and instead check of the existence of Paper's region api:  
+
+## What This Branch Adds
+
+- Independent deadline-based region ticking, with normal and degraded worker
+  lanes so one overloaded area does not automatically stall unrelated regions.
+- Dynamic region ownership over fixed region cells. Neighboring cells are
+  merged, split, or serialized when required to keep unsafe access from running
+  concurrently.
+- Exact-cell region lock APIs, region owner epochs, stale-owner retirement, and
+  cross-owner handoff queues for block, fluid, redstone, piston, portal,
+  entity, player, and chunk mutations.
+- Async ownership guards in hot game paths. Region workers avoid hidden sync
+  chunk loads and defer unsafe writes through `ShreddedPaperAccess` instead of
+  taking global locks.
+- Bounded per-region mailboxes for player actions, plugin tasks, tracker
+  broadcasts, chunk IO, autosave work, owner handoffs, and explosion/physics
+  work.
+- Per-region chunk IO and chunk worker QoS, including backlog, overflow,
+  backpressure, downgrade, and emergency counters.
+- Region-aware lag compensation for low local TPS/MSPT, including movement
+  check suppression only when the player's own region is measurably behind.
+- DivineMC, C2ME, and Lithium-derived optimizations wired through
+  `shreddedpaper.yml`, including async tracker/pathfinding controls, virtual
+  threads, chunk generation caches, End biome caching, DAB, and projectile
+  chunk-load limits.
+- Operator diagnostics through `/region`, TPS bar region metrics, JFR events,
+  watchdog dumps, and region load-test tooling.
+
+See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the architecture and
+[SHREDDEDPAPER_YAML.md](SHREDDEDPAPER_YAML.md) for configuration.
+
+## Current Stability Expectations
+
+The branch is intended for pre-PR validation against 1.21.11, not as a generic
+drop-in replacement for every Paper plugin stack. The server is designed to
+fail closed when an access path would violate region ownership. Unsupported
+plugins can be run through the synchronous compatibility path, but plugins that
+move entities, teleport players, load chunks, or mutate blocks should still use
+Paper's region-aware APIs.
+
+Important residual risks to validate on every release candidate:
+
+- plugin teleports and disconnect handling under live player churn
+- high-load End/Nether region behavior with unrelated Overworld regions active
+- chunk generation throughput under QoS limits
+- async ownership scanner regressions after upstream or DivineMC merges
+- watchdog behavior when the main thread is blocked by plugin sync APIs
+
+## Building
+
+Requirements:
+
+- Git with a configured user name and email.
+- GNU `diff` on macOS. Install with `brew install diffutils` if
+  `diff --version` reports Apple diff.
+- JDK 25. This branch sets the Gradle Java toolchain and compiler release to 25
+  and enables preview features for compile and test tasks.
+
+Useful commands:
+
+```bash
+./gradlew applyAllPatches --no-configuration-cache
+./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache --stacktrace
+./gradlew :shreddedpaper-server:createMojmapPaperclipJar --no-configuration-cache --stacktrace
+```
+
+The runnable jar is written to:
+
+```text
+shreddedpaper-server/build/libs/shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar
+```
+
+## Release Validation
+
+At minimum, run these before cutting a PR or copying a jar into a live
+`worldgen` server:
+
+```bash
+./gradlew applyAllPatches --no-configuration-cache --stacktrace
+./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache --stacktrace
+./gradlew :shreddedpaper-server:test --no-configuration-cache --stacktrace
+```
+
+When the local-only validation tooling is present in your checkout, also run
+the async ownership scanner and runtime gates under an isolated server root:
+
+```bash
+node tools/async-audit/scan-async-ownership.mjs --fail-on-critical
+node tools/runtime/invoke-async-release-gates.mjs --isolated-worldgen
+```
+
+For hostile-load testing, build the region load-test plugin and run the
+benchmark or MCC chaos harness from `tools/` against the candidate jar.
+
+## Runtime Operations
+
+Primary operator commands:
+
+- `/region` or `/region top` shows the worst active independent regions by
+  MSPT, schedule lag, mailbox pressure, and chunk IO pressure.
+- `/region inspect <world> <regionX> <regionZ>` shows full counters for one
+  region, including mailbox, chunk request, executor, backlog, overflow,
+  emergency, and waiter pressure.
+- `/region dump` prints all active region snapshots.
+- `/region ownership` prints async ownership fallback and handoff counters.
+
+The command permission is `shreddedpaper.command.region` and defaults to
+operators.
+
+## Plugin Development
+
+Plugins should use Paper's region scheduler, entity scheduler, and
+`teleportAsync` APIs. A task scheduled on the global scheduler is not
+automatically safe for world access.
+
+If a plugin is Folia-compatible, declare `folia-supported: true` and avoid
+hard-coded checks for `io.papermc.paper.threadedregions.RegionizedServer`.
+Prefer checking for Paper's region scheduler API:
+
 ```java
 try {
     Bukkit.class.getMethod("getRegionScheduler");
     return true;
-} catch (NoSuchMethodException e) {
+} catch (NoSuchMethodException ex) {
     return false;
 }
 ```
 
-### Using the ShreddedPaper API as a dependency
+See [DEVELOPING_A_MULTITHREAD_PLUGIN.md](DEVELOPING_A_MULTITHREAD_PLUGIN.md)
+for concrete examples.
 
-[![Clojars Project](https://img.shields.io/clojars/v/com.github.puregero/shreddedpaper-api.svg)](https://clojars.org/com.github.puregero/shreddedpaper-api)
+## API Dependency
 
-Add the following into your build.gradle:
+For local plugin development, publish the API to your local Maven repository:
 
+```bash
+./gradlew publishToMavenLocal
 ```
-repositories {
-  maven {
-    url "https://repo.clojars.org/"
-  }
-}
 
+Then depend on:
+
+```kotlin
 dependencies {
-  compile "com.github.puregero:shreddedpaper-api:1.21.11-R0.1-SNAPSHOT"
+    compileOnly("com.github.puregero:shreddedpaper-api:1.21.11-R0.1-SNAPSHOT")
 }
 ```
 
-Or in your pom.xml:
+## Related Documents
 
-```
-<repositories>
-    <repository>
-        <id>clojars</id>
-        <url>https://repo.clojars.org/</url>
-    </repository>
-</repositories>
-<dependencies>
-    <dependency>
-        <groupId>com.github.puregero</groupId>
-        <artifactId>shreddedpaper-api</artifactId>
-        <version>1.21.11-R0.1-SNAPSHOT</version>
-    </dependency>
-</dependencies>
-```
+- [HOW_IT_WORKS.md](HOW_IT_WORKS.md): current architecture.
+- [SHREDDEDPAPER_YAML.md](SHREDDEDPAPER_YAML.md): configuration reference.
+- [DEVELOPING_A_MULTITHREAD_PLUGIN.md](DEVELOPING_A_MULTITHREAD_PLUGIN.md):
+  plugin compatibility guide.
+- [REGIONIZED_ENGINE_MILESTONES.md](REGIONIZED_ENGINE_MILESTONES.md):
+  historical implementation and release-readiness ledger.
+- [ASYNC_OWNERSHIP_AUDIT_2026-04-27.md](ASYNC_OWNERSHIP_AUDIT_2026-04-27.md):
+  ownership audit notes.
+- [BENCHMARK_PLAN_2026-04-26.md](BENCHMARK_PLAN_2026-04-26.md) and
+  [BENCHMARK_RESULTS_2026-04-27.md](BENCHMARK_RESULTS_2026-04-27.md):
+  historical benchmark plan and first comparative results.
 
-## Building
-Requirements:
-- You need `git` installed, with a configured user name and email. 
-   On windows you need to run from git bash.
-- You need `jdk` 21+ installed to compile (and `jre` 21+ to run)
-
-Build instructions:
-1. Patch paper with: `./gradlew applyAllPatches`
-2. Build the shreddedpaper jar with: `./gradlew createMojmapPaperclipJar`
-3. Get the shreddedpaper jar from `shreddedpaper-server/build/libs/shreddedpaper-paperclip-*-mojmap.jar`
-
-## Publishing to maven local
-Publish to your local maven repository with: `./gradlew publishToMavenLocal`
-
-Note for mac users: The latest macOS version includes an incompatible version of
-diff and you'll need to install a compatible one. Use `brew install diffutils`
-to install it, and then reopen the terminal window.
-
-If `diff --version` returns the following, it is incompatible and will not work:
-```
-Apple diff (based on FreeBSD diff)
-```
-
-### Licensing
+## Licensing
 
 All code is licensed under [GPLv3](LICENSE.txt).
 
-### Acknowledgements
+## Acknowledgements
 
-ShreddedPaper uses PaperMC's paperweight framework found
-[here](https://github.com/PaperMC/paperweight).
+ShreddedPaper uses PaperMC's paperweight framework:
+<https://github.com/PaperMC/paperweight>.

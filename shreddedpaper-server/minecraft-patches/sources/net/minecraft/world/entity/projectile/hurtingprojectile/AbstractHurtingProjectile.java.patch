@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/entity/projectile/hurtingprojectile/AbstractHurtingProjectile.java
++++ b/net/minecraft/world/entity/projectile/hurtingprojectile/AbstractHurtingProjectile.java
+@@ -71,6 +_,9 @@
+         Entity owner = this.getOwner();
+         this.applyInertia();
+         if (this.level().isClientSide() || (owner == null || !owner.isRemoved()) && this.level().hasChunkAt(this.blockPosition())) {
++            if (this.shreddedpaper$shouldDeferProjectileMove(this.getDeltaMovement())) {
++                return;
++            }
+             HitResult hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity, this.getClipType());
+             Vec3 location;
+             if (hitResultOnMoveVector.getType() != HitResult.Type.MISS) {

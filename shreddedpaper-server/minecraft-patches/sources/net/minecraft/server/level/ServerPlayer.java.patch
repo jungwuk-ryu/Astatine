@@ -26,11 +26,12 @@
      private final ServerRecipeBook recipeBook;
      private @Nullable Vec3 levitationStartPos;
      private int levitationStartTime;
-@@ -259,6 +_,7 @@
+@@ -259,6 +_,8 @@
      private @Nullable Vec3 enteredLavaOnVehiclePosition;
      private SectionPos lastSectionPos = SectionPos.of(0, 0, 0);
      private ChunkTrackingView chunkTrackingView = ChunkTrackingView.EMPTY;
 +    public ChunkPos previousChunkPosRegion; // ShreddedPaper
++    public volatile io.multipaper.shreddedpaper.region.LevelChunkRegion currentRegion; // ShreddedPaper
      private ServerPlayer.@Nullable RespawnConfig respawnConfig;
      private final TextFilter textFilter;
      private boolean textFilteringEnabled;
@@ -118,7 +119,7 @@
 +            future = TeleportTransition.createDefaultAsync(this, postTeleportTransition); // ShreddedPaper - respawn async
          }
  
-+        return future.thenApply(teleportTransition -> { // ShreddedPaper - respawn async
++        return future.thenCompose(teleportTransition -> CompletableFuture.supplyAsync(() -> { // ShreddedPaper - respawn async
          org.bukkit.entity.Player respawnPlayer = this.getBukkitEntity();
          org.bukkit.Location location = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(
              teleportTransition.position(),
@@ -154,7 +155,7 @@
 +            isAnchorSpawn.get() // ShreddedPaper - respawn async
          );
          // CraftBukkit end
-+        }); // ShreddedPaper - respawn async
++        }, r -> ShreddedPaper.ensureSync(this, teleportTransition.newLevel(), new ChunkPos(BlockPos.containing(teleportTransition.position())), r))); // ShreddedPaper - respawn async
      }
  
      public boolean isReceivingWaypoints() {

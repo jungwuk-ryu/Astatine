@@ -11,7 +11,8 @@ public class ShreddedPaperCommands {
     private static final Map<String, Command> COMMANDS = new HashMap<>();
     static {
         for (Command command : new Command[] {
-                new MPMapCommand("mpmap")
+                new MPMapCommand("mpmap"),
+                new RegionCommand("region")
         }) {
             COMMANDS.put(command.getName(), command);
         }

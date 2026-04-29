@@ -1,0 +1,153 @@
+--- /dev/null
++++ b/src/test/java/io/multipaper/shreddedpaper/region/LevelTicksRegionProxyTest.java
+@@ -1,0 +_,150 @@
++package io.multipaper.shreddedpaper.region;
++
++import net.minecraft.SharedConstants;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.Vec3i;
++import net.minecraft.server.Bootstrap;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
++import net.minecraft.world.ticks.LevelChunkTicks;
++import net.minecraft.world.ticks.SavedTick;
++import net.minecraft.world.ticks.ScheduledTick;
++import net.minecraft.world.ticks.TickPriority;
++import org.junit.jupiter.api.BeforeAll;
++import org.junit.jupiter.api.Test;
++
++import java.util.ArrayList;
++import java.util.List;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++class LevelTicksRegionProxyTest {
++
++    @BeforeAll
++    static void bootstrap() {
++        SharedConstants.tryDetectVersion();
++        Bootstrap.bootStrap();
++    }
++
++    private enum TickType {
++        FIRST,
++        SECOND,
++        OUTSIDE,
++        HANDOFF
++    }
++
++    @Test
++    void countIncludesPendingTicksAcrossRegions() {
++        LevelTicksRegionProxy<TickType> proxy = new LevelTicksRegionProxy<>(chunk -> true);
++        BlockPos first = new BlockPos(1, 64, 1);
++        BlockPos second = new BlockPos((RegionPos.REGION_SIZE * 16) + 1, 64, 1);
++
++        proxy.addContainer(new ChunkPos(first), new LevelChunkTicks<>(List.of(new SavedTick<>(TickType.FIRST, first, 10, TickPriority.NORMAL))));
++        proxy.addContainer(new ChunkPos(second), new LevelChunkTicks<>(List.of(new SavedTick<>(TickType.SECOND, second, 20, TickPriority.HIGH))));
++
++        assertEquals(2, proxy.count());
++    }
++
++    @Test
++    void clearAreaRemovesTicksFromAllOverlappedRegions() {
++        LevelTicksRegionProxy<TickType> proxy = new LevelTicksRegionProxy<>(chunk -> true);
++        BlockPos first = new BlockPos(1, 64, 1);
++        BlockPos second = new BlockPos((RegionPos.REGION_SIZE * 16) + 1, 64, 1);
++        BlockPos outside = new BlockPos((RegionPos.REGION_SIZE * 32) + 1, 64, 1);
++
++        proxy.addContainer(new ChunkPos(first), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(second), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(outside), new LevelChunkTicks<>());
++        proxy.schedule(new ScheduledTick<>(TickType.FIRST, first, 30, TickPriority.NORMAL, 1));
++        proxy.schedule(new ScheduledTick<>(TickType.SECOND, second, 30, TickPriority.NORMAL, 2));
++        proxy.schedule(new ScheduledTick<>(TickType.OUTSIDE, outside, 30, TickPriority.NORMAL, 3));
++
++        proxy.clearArea(new BoundingBox(0, 0, 0, RegionPos.REGION_SIZE * 16 + 15, 255, 15));
++
++        assertFalse(proxy.hasScheduledTick(first, TickType.FIRST));
++        assertFalse(proxy.hasScheduledTick(second, TickType.SECOND));
++        assertTrue(proxy.hasScheduledTick(outside, TickType.OUTSIDE));
++        assertEquals(1, proxy.count());
++    }
++
++    @Test
++    void copyAreaPreservesGlobalSubTickOrderAcrossRegions() {
++        LevelTicksRegionProxy<TickType> proxy = new LevelTicksRegionProxy<>(chunk -> true);
++        BlockPos first = new BlockPos(1, 64, 1);
++        BlockPos second = new BlockPos((RegionPos.REGION_SIZE * 16) + 1, 64, 1);
++        Vec3i offset = new Vec3i(RegionPos.REGION_SIZE * 32, 0, 0);
++        BlockPos copiedFirst = first.offset(offset);
++        BlockPos copiedSecond = second.offset(offset);
++
++        proxy.addContainer(new ChunkPos(first), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(second), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(copiedFirst), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(copiedSecond), new LevelChunkTicks<>());
++        proxy.schedule(new ScheduledTick<>(TickType.FIRST, first, 30, TickPriority.NORMAL, 5));
++        proxy.schedule(new ScheduledTick<>(TickType.SECOND, second, 30, TickPriority.NORMAL, 10));
++
++        proxy.copyArea(new BoundingBox(0, 0, 0, RegionPos.REGION_SIZE * 16 + 15, 255, 15), offset);
++
++        List<ScheduledTick<TickType>> copied = new ArrayList<>();
++        proxy.shreddedpaper$collectTicksInArea(
++            new BoundingBox(copiedFirst.getX(), 0, 0, copiedSecond.getX(), 255, 15),
++            copied
++        );
++
++        assertEquals(2, copied.size());
++        assertTrue(copied.stream().anyMatch(tick -> tick.pos().equals(copiedFirst) && tick.subTickOrder() == 11));
++        assertTrue(copied.stream().anyMatch(tick -> tick.pos().equals(copiedSecond) && tick.subTickOrder() == 16));
++    }
++
++    @Test
++    void regionTickCanScheduleFutureTickInAdjacentRegionWithoutRunningItImmediately() {
++        LevelTicksRegionProxy<TickType> proxy = new LevelTicksRegionProxy<>(chunk -> true);
++        BlockPos source = new BlockPos(RegionPos.REGION_SIZE * 16 - 1, 64, 1);
++        BlockPos target = new BlockPos(RegionPos.REGION_SIZE * 16, 64, 1);
++        RegionPos sourceRegion = RegionPos.forBlockPos(source);
++        RegionPos targetRegion = RegionPos.forBlockPos(target);
++        List<TickType> ran = new ArrayList<>();
++
++        proxy.addContainer(new ChunkPos(source), new LevelChunkTicks<>());
++        proxy.addContainer(new ChunkPos(target), new LevelChunkTicks<>());
++        proxy.schedule(new ScheduledTick<>(TickType.FIRST, source, 10, TickPriority.NORMAL, 1));
++
++        proxy.tick(sourceRegion, 10, 10, (pos, type) -> {
++            ran.add(type);
++            proxy.schedule(new ScheduledTick<>(TickType.HANDOFF, target, 11, TickPriority.NORMAL, 2));
++        });
++
++        assertEquals(List.of(TickType.FIRST), ran);
++        assertTrue(proxy.hasScheduledTick(target, TickType.HANDOFF));
++
++        ran.clear();
++        proxy.tick(sourceRegion, 11, 10, (pos, type) -> ran.add(type));
++        assertTrue(ran.isEmpty());
++        assertTrue(proxy.hasScheduledTick(target, TickType.HANDOFF));
++
++        proxy.tick(targetRegion, 11, 10, (pos, type) -> ran.add(type));
++        assertEquals(List.of(TickType.HANDOFF), ran);
++        assertFalse(proxy.hasScheduledTick(target, TickType.HANDOFF));
++    }
++
++    @Test
++    void tickingMissingRegionDoesNotDrainScheduledTicksFromOtherRegions() {
++        LevelTicksRegionProxy<TickType> proxy = new LevelTicksRegionProxy<>(chunk -> true);
++        BlockPos target = new BlockPos(RegionPos.REGION_SIZE * 16, 64, 1);
++        RegionPos missingRegion = new RegionPos(0, 0);
++        RegionPos targetRegion = RegionPos.forBlockPos(target);
++        List<TickType> ran = new ArrayList<>();
++
++        proxy.addContainer(new ChunkPos(target), new LevelChunkTicks<>());
++        proxy.schedule(new ScheduledTick<>(TickType.HANDOFF, target, 10, TickPriority.NORMAL, 1));
++
++        proxy.tick(missingRegion, 10, 10, (pos, type) -> ran.add(type));
++        assertTrue(ran.isEmpty());
++        assertTrue(proxy.hasScheduledTick(target, TickType.HANDOFF));
++
++        proxy.tick(targetRegion, 10, 10, (pos, type) -> ran.add(type));
++        assertEquals(List.of(TickType.HANDOFF), ran);
++    }
++}

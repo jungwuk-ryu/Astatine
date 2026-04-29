@@ -9,8 +9,126 @@
          if (this.isVillageCenter(section)) {
              this.villageDistanceTracker.setSource(section, POI_DATA_SOURCE);
          } else {
-@@ -347,7 +_,7 @@
-         return this.getOrLoad(SectionPos.asLong(pos)).flatMap(poiSection -> poiSection.getDebugPoiInfo(pos)).orElse(null);
+@@ -67,18 +_,37 @@
+         }
+     }
+ 
+-    @Override
+-    public Optional<PoiSection> get(final long pos) {
+-        final int chunkX = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionX(pos);
+-        final int chunkY = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionY(pos);
+-        final int chunkZ = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionZ(pos);
+-
+-        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Accessing poi chunk off-main");
+-
+-        final ca.spottedleaf.moonrise.patches.chunk_system.level.poi.PoiChunk ret = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager.getPoiChunkIfLoaded(chunkX, chunkZ, true);
+-
++    // ShreddedPaper start - independent region POI ownership
++    private ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager chunkHolderManager() {
++        return ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager;
++    }
++
++    private boolean canReadPoiChunk(final int chunkX, final int chunkZ) {
++        final io.multipaper.shreddedpaper.region.RegionPos regionPos = io.multipaper.shreddedpaper.region.RegionPos.forChunk(chunkX, chunkZ);
++        return this.world.chunkScheduler.getRegionLocker().hasLock(regionPos)
++            || io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, regionPos);
++    }
++
++    private Optional<PoiSection> getLoadedPoiSection(final int chunkX, final int chunkY, final int chunkZ) {
++        final ca.spottedleaf.moonrise.patches.chunk_system.level.poi.PoiChunk ret = this.chunkHolderManager().getPoiChunkIfLoaded(chunkX, chunkZ, true);
+         return ret == null ? Optional.empty() : ret.getSectionForVanilla(chunkY);
+     }
++    // ShreddedPaper end - independent region POI ownership
++
++    @Override
++    public Optional<PoiSection> get(final long pos) {
++        final int chunkX = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionX(pos);
++        final int chunkY = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionY(pos);
++        final int chunkZ = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionZ(pos);
++
++        // ShreddedPaper start - independent region POI ownership
++        if (!this.canReadPoiChunk(chunkX, chunkZ)) {
++            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Accessing poi chunk off-main");
++        }
++
++        return this.getLoadedPoiSection(chunkX, chunkY, chunkZ);
++        // ShreddedPaper end - independent region POI ownership
++    }
+ 
+     @Override
+     public Optional<PoiSection> getOrLoad(final long pos) {
+@@ -86,9 +_,19 @@
+         final int chunkY = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionY(pos);
+         final int chunkZ = ca.spottedleaf.moonrise.common.util.CoordinateUtils.getChunkSectionZ(pos);
+ 
+-        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Accessing poi chunk off-main");
++        // ShreddedPaper start - independent region POI ownership
++        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.world, chunkX, chunkZ)) {
++            if (chunkY < ca.spottedleaf.moonrise.common.util.WorldUtil.getMinSection(this.world) || chunkY > ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(this.world)) {
++                return Optional.empty();
++            }
++            if (this.canReadPoiChunk(chunkX, chunkZ)) {
++                return this.getLoadedPoiSection(chunkX, chunkY, chunkZ);
++            }
++            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Accessing poi chunk off-main");
++        }
++        // ShreddedPaper end - independent region POI ownership
+ 
+-        final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager manager = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager;
++        final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager manager = this.chunkHolderManager(); // ShreddedPaper - independent region POI ownership
+ 
+         if (chunkY >= ca.spottedleaf.moonrise.common.util.WorldUtil.getMinSection(this.world) && chunkY <= ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(this.world)) {
+             final ca.spottedleaf.moonrise.patches.chunk_system.level.poi.PoiChunk ret = manager.getPoiChunkIfLoaded(chunkX, chunkZ, true);
+@@ -110,7 +_,7 @@
+ 
+         ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Accessing poi chunk off-main");
+ 
+-        final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager manager = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.world).moonrise$getChunkTaskScheduler().chunkHolderManager;
++        final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager manager = this.chunkHolderManager(); // ShreddedPaper - independent region POI ownership
+ 
+         final ca.spottedleaf.moonrise.patches.chunk_system.level.poi.PoiChunk ret = manager.getPoiChunkIfLoaded(chunkX, chunkZ, true);
+         if (ret != null) {
+@@ -227,7 +_,7 @@
+     public Stream<PoiRecord> getInChunk(Predicate<Holder<PoiType>> typePredicate, ChunkPos posChunk, PoiManager.Occupancy status) {
+         return IntStream.rangeClosed(this.levelHeightAccessor.getMinSectionY(), this.levelHeightAccessor.getMaxSectionY())
+             .boxed()
+-            .map(integer -> this.getOrLoad(SectionPos.of(posChunk, integer).asLong()))
++            .map(integer -> this.get(SectionPos.of(posChunk, integer).asLong())) // ShreddedPaper - independent region POI ownership: loaded-only scan
+             .filter(Optional::isPresent)
+             .flatMap(optional -> optional.get().getRecords(typePredicate, status));
+     }
+@@ -297,6 +_,7 @@
+         );
+         return Optional.ofNullable(closest)
+             // Paper end - re-route to faster logic
++            .filter(poiRecord -> ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.world, poiRecord.getPos())) // ShreddedPaper - independent region POI ownership
+             .map(poiRecord -> {
+                 poiRecord.acquireTicket();
+                 return poiRecord.getPos();
+@@ -329,25 +_,26 @@
+     }
+ 
+     public boolean release(BlockPos pos) {
++        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.world, pos)) return false; // ShreddedPaper - independent region POI ownership
+         return this.getOrLoad(SectionPos.asLong(pos))
+             .map(poiSection -> poiSection.release(pos))
+             .orElseThrow(() -> Util.pauseInIde(new IllegalStateException("POI never registered at " + pos)));
+     }
+ 
+     public boolean exists(BlockPos pos, Predicate<Holder<PoiType>> typePredicate) {
+-        return this.getOrLoad(SectionPos.asLong(pos)).map(poiSection -> poiSection.exists(pos, typePredicate)).orElse(false);
++        return this.get(SectionPos.asLong(pos)).map(poiSection -> poiSection.exists(pos, typePredicate)).orElse(false); // ShreddedPaper - independent region POI ownership
+     }
+ 
+     public Optional<Holder<PoiType>> getType(BlockPos pos) {
+-        return this.getOrLoad(SectionPos.asLong(pos)).flatMap(poiSection -> poiSection.getType(pos));
++        return this.get(SectionPos.asLong(pos)).flatMap(poiSection -> poiSection.getType(pos)); // ShreddedPaper - independent region POI ownership
+     }
+ 
+     @VisibleForDebug
+     public @Nullable DebugPoiInfo getDebugPoiInfo(BlockPos pos) {
+-        return this.getOrLoad(SectionPos.asLong(pos)).flatMap(poiSection -> poiSection.getDebugPoiInfo(pos)).orElse(null);
++        return this.get(SectionPos.asLong(pos)).flatMap(poiSection -> poiSection.getDebugPoiInfo(pos)).orElse(null); // ShreddedPaper - independent region POI ownership
      }
  
 -    public int sectionsToVillage(SectionPos sectionPos) {

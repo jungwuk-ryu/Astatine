@@ -1,0 +1,138 @@
+--- /dev/null
++++ b/src/test/java/io/multipaper/shreddedpaper/threading/SynchronousPluginExecutionTest.java
+@@ -1,0 +_,135 @@
++package io.multipaper.shreddedpaper.threading;
++
++import org.bukkit.plugin.Plugin;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.Test;
++
++import java.lang.ref.WeakReference;
++import java.lang.reflect.Field;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.UUID;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.concurrent.Future;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.locks.ReentrantLock;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertNull;
++import static org.junit.jupiter.api.Assertions.assertSame;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++import static org.mockito.Mockito.mock;
++
++class SynchronousPluginExecutionTest {
++
++    private final List<String> pluginNames = new ArrayList<>();
++
++    @AfterEach
++    void cleanup() throws Exception {
++        Map<String, ReentrantLock> locks = locks();
++        for (String pluginName : this.pluginNames) {
++            ReentrantLock lock = locks.remove(pluginName);
++            while (lock != null && lock.isHeldByCurrentThread()) {
++                lock.unlock();
++            }
++        }
++
++        heldPluginLocks().remove();
++        currentPlugin().remove();
++    }
++
++    @Test
++    void runWithoutCurrentPluginLocksReleasesLocksAndRestoresAfterCheckedFailure() throws Exception {
++        String firstPlugin = "test-a-" + UUID.randomUUID();
++        String secondPlugin = "test-b-" + UUID.randomUUID();
++        this.pluginNames.add(firstPlugin);
++        this.pluginNames.add(secondPlugin);
++
++        Map<String, ReentrantLock> locks = locks();
++        ReentrantLock firstLock = locks.computeIfAbsent(firstPlugin, ignored -> new ReentrantLock());
++        ReentrantLock secondLock = locks.computeIfAbsent(secondPlugin, ignored -> new ReentrantLock());
++        ThreadLocal<List<String>> heldPluginLocks = heldPluginLocks();
++        heldPluginLocks.get().clear();
++
++        lockAndRecord(heldPluginLocks.get(), secondPlugin, secondLock);
++        lockAndRecord(heldPluginLocks.get(), firstPlugin, firstLock);
++        lockAndRecord(heldPluginLocks.get(), secondPlugin, secondLock);
++
++        Plugin plugin = mock(Plugin.class);
++        currentPlugin().set(new WeakReference<>(plugin));
++
++        assertThrows(CheckedFailure.class, () -> SynchronousPluginExecution.runWithoutCurrentPluginLocks(() -> {
++            assertNull(SynchronousPluginExecution.getCurrentPlugin());
++            assertTrue(heldPluginLocks.get().isEmpty());
++            assertFalse(firstLock.isHeldByCurrentThread());
++            assertFalse(secondLock.isHeldByCurrentThread());
++            assertLocksAvailableFromOtherThread(firstLock, secondLock);
++            throw new CheckedFailure();
++        }));
++
++        assertSame(plugin, SynchronousPluginExecution.getCurrentPlugin());
++        assertEquals(List.of(firstPlugin, secondPlugin, secondPlugin), heldPluginLocks.get());
++        assertTrue(firstLock.isHeldByCurrentThread());
++        assertTrue(secondLock.isHeldByCurrentThread());
++        assertEquals(1, firstLock.getHoldCount());
++        assertEquals(2, secondLock.getHoldCount());
++    }
++
++    private static void lockAndRecord(List<String> heldPluginLocks, String pluginName, ReentrantLock lock) {
++        lock.lock();
++        heldPluginLocks.add(pluginName);
++    }
++
++    private static void assertLocksAvailableFromOtherThread(ReentrantLock firstLock, ReentrantLock secondLock) throws Exception {
++        ExecutorService executor = Executors.newSingleThreadExecutor();
++        try {
++            Future<Boolean> result = executor.submit(() -> {
++                boolean firstAcquired = false;
++                boolean secondAcquired = false;
++                try {
++                    firstAcquired = firstLock.tryLock(1, TimeUnit.SECONDS);
++                    secondAcquired = secondLock.tryLock(1, TimeUnit.SECONDS);
++                    return firstAcquired && secondAcquired;
++                } finally {
++                    if (secondAcquired) {
++                        secondLock.unlock();
++                    }
++                    if (firstAcquired) {
++                        firstLock.unlock();
++                    }
++                }
++            });
++
++            assertTrue(result.get(2, TimeUnit.SECONDS));
++        } finally {
++            executor.shutdownNow();
++        }
++    }
++
++    @SuppressWarnings("unchecked")
++    private static Map<String, ReentrantLock> locks() throws ReflectiveOperationException {
++        return (Map<String, ReentrantLock>) field("locks").get(null);
++    }
++
++    @SuppressWarnings("unchecked")
++    private static ThreadLocal<List<String>> heldPluginLocks() throws ReflectiveOperationException {
++        return (ThreadLocal<List<String>>) field("heldPluginLocks").get(null);
++    }
++
++    @SuppressWarnings("unchecked")
++    private static ThreadLocal<WeakReference<Plugin>> currentPlugin() throws ReflectiveOperationException {
++        return (ThreadLocal<WeakReference<Plugin>>) field("currentPlugin").get(null);
++    }
++
++    private static Field field(String name) throws ReflectiveOperationException {
++        Field field = SynchronousPluginExecution.class.getDeclaredField(name);
++        field.setAccessible(true);
++        return field;
++    }
++
++    private static final class CheckedFailure extends Exception {}
++}

@@ -1,0 +1,72 @@
+--- a/net/minecraft/world/entity/ai/behavior/SetClosestHomeAsWalkTarget.java
++++ b/net/minecraft/world/entity/ai/behavior/SetClosestHomeAsWalkTarget.java
+@@ -29,6 +_,7 @@
+     public static BehaviorControl<PathfinderMob> create(float speedModifier) {
+         Long2LongMap map = new Long2LongOpenHashMap();
+         MutableLong mutableLong = new MutableLong(0L);
++        MutableLong asyncPathGeneration = new MutableLong(0L); // DivineMC - Async Pathfinding
+         return BehaviorBuilder.create(
+             instance -> instance.group(instance.absent(MemoryModuleType.WALK_TARGET), instance.absent(MemoryModuleType.HOME))
+                 .apply(
+@@ -59,17 +_,24 @@
+                                         poi -> poi.is(PoiTypes.HOME), predicate, mob.blockPosition(), 48, PoiManager.Occupancy.ANY
+                                     )
+                                     .collect(Collectors.toSet());
+-                                Path path = AcquirePoi.findPathToPois(mob, set);
+-                                if (path != null && path.canReach()) {
+-                                    BlockPos target = path.getTarget();
+-                                    Optional<Holder<PoiType>> type = poiManager.getType(target);
+-                                    if (type.isPresent()) {
+-                                        walkTarget.set(new WalkTarget(target, speedModifier, 1));
+-                                        level.debugSynchronizers().updatePoi(target);
+-                                    }
+-                                } else if (mutableInt.intValue() < 5) {
+-                                    map.long2LongEntrySet().removeIf(entry -> entry.getLongValue() < mutableLong.longValue());
++                                // DivineMC start - Async Pathfinding
++                                if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                                    Path possiblePath = AcquirePoi.findPathToPois(mob, set);
++                                    long pathGeneration = asyncPathGeneration.incrementAndGet();
++
++                                    org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(possiblePath, level, mob, path -> {
++                                        if (pathGeneration != asyncPathGeneration.longValue()
++                                            || mob.getBrain().hasMemoryValue(MemoryModuleType.WALK_TARGET)
++                                            || mob.getBrain().hasMemoryValue(MemoryModuleType.HOME)) {
++                                            return;
++                                        }
++                                        processPath(speedModifier, map, mutableLong, walkTarget, level, poiManager, mutableInt, path);
++                                    });
++                                } else {
++                                    Path path = AcquirePoi.findPathToPois(mob, set);
++                                        processPath(speedModifier, map, mutableLong, walkTarget, level, poiManager, mutableInt, path);
+                                 }
++                                // DivineMC end - Async Pathfinding
+ 
+                                 return true;
+                             } else {
+@@ -80,4 +_,26 @@
+                 )
+         );
+     }
++
++    // DivineMC start - Async Pathfinding
++    private static void processPath(float speedModifier,
++                                    Long2LongMap map,
++                                    MutableLong mutableLong,
++                                    net.minecraft.world.entity.ai.behavior.declarative.MemoryAccessor<com.mojang.datafixers.kinds.Const.Mu<com.mojang.datafixers.util.Unit>, WalkTarget> walkTarget,
++                                    net.minecraft.server.level.ServerLevel level,
++                                    PoiManager poiManager,
++                                    MutableInt mutableInt,
++                                    @org.jetbrains.annotations.Nullable Path path) {
++        if (path != null && path.canReach()) {
++            BlockPos target = path.getTarget();
++            Optional<Holder<PoiType>> type = poiManager.getType(target);
++            if (type.isPresent()) {
++                walkTarget.set(new WalkTarget(target, speedModifier, 1));
++                level.debugSynchronizers().updatePoi(target);
++            }
++        } else if (mutableInt.intValue() < 5) {
++            map.long2LongEntrySet().removeIf(entry -> entry.getLongValue() < mutableLong.longValue());
++        }
++    }
++    // DivineMC end - Async Pathfinding
+ }

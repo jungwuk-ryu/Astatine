@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/entity/ai/goal/DoorInteractGoal.java
++++ b/net/minecraft/world/entity/ai/goal/DoorInteractGoal.java
+@@ -54,7 +_,7 @@
+             return false;
+         } else {
+             Path path = this.mob.getNavigation().getPath();
+-            if (path != null && !path.isDone()) {
++            if (path != null && path.isProcessed() && !path.isDone()) { // DivineMC - Async Pathfinding
+                 for (int i = 0; i < Math.min(path.getNextNodeIndex() + 2, path.getNodeCount()); i++) {
+                     Node node = path.getNode(i);
+                     this.doorPos = new BlockPos(node.x, node.y + 1, node.z);

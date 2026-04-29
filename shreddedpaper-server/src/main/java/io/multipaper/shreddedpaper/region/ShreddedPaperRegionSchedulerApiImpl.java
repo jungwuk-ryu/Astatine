@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.region;
 
 import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import org.apache.commons.lang3.Validate;
@@ -11,12 +12,15 @@ import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
 
+    private static final LongAdder PLUGIN_SCHEDULE_REJECTIONS = new LongAdder();
 
     @Override
     public void execute(@NotNull Plugin plugin, @NotNull World world, int chunkX, int chunkZ, @NotNull Runnable run) {
@@ -72,7 +76,13 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
         }
 
         private void schedule(long delayTicks) {
-            serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks);
+            if (serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks, RegionTaskClass.PLUGIN)) {
+                return;
+            }
+
+            PLUGIN_SCHEDULE_REJECTIONS.increment();
+            executionState.set(ExecutionState.CANCELLED);
+            throw new RejectedExecutionException("Region plugin mailbox is full for " + regionPos);
         }
 
         @Override
@@ -129,11 +139,23 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
             } catch (Throwable throwable) {
                 this.plugin.getLogger().log(Level.WARNING, "Region task for " + this.plugin.getDescription().getFullName() + " generated an exception", throwable);
             } finally {
-                executionState.compareAndSet(ExecutionState.RUNNING, isRepeatingTask() ? ExecutionState.IDLE : ExecutionState.FINISHED);
+                final boolean shouldReschedule = isRepeatingTask() && executionState.compareAndSet(ExecutionState.RUNNING, ExecutionState.IDLE);
+                if (!shouldReschedule) {
+                    executionState.compareAndSet(ExecutionState.RUNNING, ExecutionState.FINISHED);
+                }
                 executionState.compareAndSet(ExecutionState.CANCELLED_RUNNING, ExecutionState.CANCELLED);
 
-                if (isRepeatingTask()) {
-                    schedule(periodTicks);
+                if (shouldReschedule) {
+                    try {
+                        schedule(periodTicks);
+                    } catch (final RejectedExecutionException rejectedExecutionException) {
+                        executionState.compareAndSet(ExecutionState.IDLE, ExecutionState.CANCELLED);
+                        this.plugin.getLogger().log(
+                                Level.WARNING,
+                                "Region task for " + this.plugin.getDescription().getFullName() + " was cancelled because the target region mailbox rejected the next run",
+                                rejectedExecutionException
+                        );
+                    }
                 }
             }
         }

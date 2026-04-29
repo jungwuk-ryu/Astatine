@@ -1,0 +1,19 @@
+--- a/net/minecraft/world/entity/monster/warden/Warden.java
++++ b/net/minecraft/world/entity/monster/warden/Warden.java
+@@ -571,6 +_,16 @@
+             @Override
+             protected PathFinder createPathFinder(int maxVisitedNodes) {
+                 this.nodeEvaluator = new WalkNodeEvaluator();
++                // DivineMC start - Async Pathfinding
++                if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                    return new PathFinder(this.nodeEvaluator, maxVisitedNodes, GroundPathNavigation.nodeEvaluatorGenerator) {
++                        @Override
++                        protected float distance(Node first, Node second) {
++                            return first.distanceToXZ(second);
++                        }
++                    };
++                }
++                // DivineMC end - Async Pathfinding
+                 return new PathFinder(this.nodeEvaluator, maxVisitedNodes) {
+                     @Override
+                     protected float distance(Node first, Node second) {

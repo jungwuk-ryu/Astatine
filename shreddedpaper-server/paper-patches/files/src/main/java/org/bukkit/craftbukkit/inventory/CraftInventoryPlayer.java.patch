@@ -1,17 +1,84 @@
 --- a/src/main/java/org/bukkit/craftbukkit/inventory/CraftInventoryPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/inventory/CraftInventoryPlayer.java
-@@ -1,5 +_,6 @@
+@@ -1,6 +_,8 @@
  package org.bukkit.craftbukkit.inventory;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.base.Preconditions;
++import io.multipaper.shreddedpaper.threading.SynchronousPluginExecution;
  import java.util.List;
  import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-@@ -71,6 +_,7 @@
+ import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
+@@ -13,6 +_,7 @@
+ import org.bukkit.inventory.EntityEquipment;
+ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.ItemStack;
++import org.bukkit.plugin.Plugin;
+ 
+ public class CraftInventoryPlayer extends CraftInventory implements org.bukkit.inventory.PlayerInventory, EntityEquipment {
+     public CraftInventoryPlayer(net.minecraft.world.entity.player.Inventory inventory) {
+@@ -51,6 +_,8 @@
  
      @Override
-     public void setItem(int index, ItemStack item) {
-+        TickThread.ensureTickThread(getInventory().player, "Player inventory modification"); // ShreddedPaper
-         // Paper start - Validate setItem index
-         if (index < 0 || index > 42) {
+     public void setItemInOffHand(ItemStack item) {
++        final ItemStack itemCopy = item == null ? null : item.clone();
++        if (this.rescheduleUnsupportedPluginMutationIfNeeded("Player inventory modification", () -> CraftInventoryPlayer.this.setItemInOffHand(itemCopy))) return; // ShreddedPaper
+         this.getInventory().equipment.set(net.minecraft.world.entity.EquipmentSlot.OFFHAND, CraftItemStack.asNMSCopy(item));
+     }
+ 
+@@ -76,6 +_,11 @@
              throw new ArrayIndexOutOfBoundsException("Index must be between 0 and 42");
+         }
+         // Paper end - Validate setItem index
++        // ShreddedPaper start - run unsupported Bukkit scheduler/event inventory mutations on the player owner
++        final int targetIndex = index;
++        final ItemStack itemCopy = item == null ? null : item.clone();
++        if (this.rescheduleUnsupportedPluginMutationIfNeeded("Player inventory modification", () -> CraftInventoryPlayer.this.setItem(targetIndex, itemCopy))) return;
++        // ShreddedPaper end - run unsupported Bukkit scheduler/event inventory mutations on the player owner
+         super.setItem(index, item);
+         if (this.getHolder() == null) return;
+ 
+@@ -132,6 +_,10 @@
+     @Override
+     public void setItem(EquipmentSlot slot, ItemStack item) {
+         Preconditions.checkArgument(slot != null, "slot must not be null");
++        // ShreddedPaper start - run unsupported Bukkit scheduler/event inventory mutations on the player owner
++        final ItemStack itemCopy = item == null ? null : item.clone();
++        if (this.rescheduleUnsupportedPluginMutationIfNeeded("Player inventory modification", () -> CraftInventoryPlayer.this.setItem(slot, itemCopy))) return;
++        // ShreddedPaper end - run unsupported Bukkit scheduler/event inventory mutations on the player owner
+ 
+         switch (slot) {
+             case HAND -> this.setItemInMainHand(item);
+@@ -163,9 +_,32 @@
+     @Override
+     public void setHeldItemSlot(int slot) {
+         Preconditions.checkArgument(slot >= 0 && slot < Inventory.getSelectionSize(), "Slot (%s) is not between 0 and %s inclusive", slot, Inventory.getSelectionSize() - 1);
++        if (this.rescheduleUnsupportedPluginMutationIfNeeded("Player inventory modification", () -> CraftInventoryPlayer.this.setHeldItemSlot(slot))) return; // ShreddedPaper
+         this.getInventory().setSelectedSlot(slot);
+         ((CraftPlayer) this.getHolder()).getHandle().connection.send(new ClientboundSetHeldSlotPacket(slot));
+     }
++
++    // ShreddedPaper start - run unsupported Bukkit scheduler/event inventory mutations on the player owner
++    private boolean rescheduleUnsupportedPluginMutationIfNeeded(final String reason, final Runnable mutation) {
++        if (TickThread.isTickThreadFor(this.getInventory().player)) {
++            return false;
++        }
++
++        final Plugin plugin = SynchronousPluginExecution.getCurrentPlugin();
++        if (plugin != null && this.getInventory().player instanceof ServerPlayer player) {
++            if (player.getBukkitEntity().taskScheduler.schedule(ignored -> {
++                if (plugin.isEnabled()) {
++                    SynchronousPluginExecution.executeNoException(plugin, mutation::run);
++                }
++            }, null, 1)) {
++                return true;
++            }
++        }
++
++        TickThread.ensureTickThread(this.getInventory().player, reason);
++        return false;
++    }
++    // ShreddedPaper end - run unsupported Bukkit scheduler/event inventory mutations on the player owner
+ 
+     @Override
+     public ItemStack getHelmet() {

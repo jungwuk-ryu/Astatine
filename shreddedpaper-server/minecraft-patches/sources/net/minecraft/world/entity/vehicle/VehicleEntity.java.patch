@@ -1,0 +1,77 @@
+--- a/net/minecraft/world/entity/vehicle/VehicleEntity.java
++++ b/net/minecraft/world/entity/vehicle/VehicleEntity.java
+@@ -21,6 +_,7 @@
+     protected static final EntityDataAccessor<Integer> DATA_ID_HURT = SynchedEntityData.defineId(VehicleEntity.class, EntityDataSerializers.INT);
+     protected static final EntityDataAccessor<Integer> DATA_ID_HURTDIR = SynchedEntityData.defineId(VehicleEntity.class, EntityDataSerializers.INT);
+     protected static final EntityDataAccessor<Float> DATA_ID_DAMAGE = SynchedEntityData.defineId(VehicleEntity.class, EntityDataSerializers.FLOAT);
++    private boolean shreddedpaper$vehicleDamageScheduled; // ShreddedPaper - defer cross-owner vehicle damage
+ 
+     public VehicleEntity(EntityType<?> type, Level level) {
+         super(type, level);
+@@ -33,6 +_,7 @@
+ 
+     @Override
+     public boolean hurtServer(ServerLevel level, DamageSource damageSource, float amount) {
++        if (this.shreddedpaper$shouldDeferVehicleDamage(level, damageSource, amount)) return true; // ShreddedPaper - defer cross-owner vehicle damage
+         if (this.isRemoved()) {
+             return true;
+         } else if (this.isInvulnerableToBase(damageSource)) {
+@@ -130,6 +_,58 @@
+     protected void destroy(ServerLevel level, DamageSource damageSource) {
+         this.destroy(level, this.getDropItem());
+     }
++
++    // ShreddedPaper start - defer cross-owner vehicle damage
++    private boolean shreddedpaper$shouldDeferVehicleDamage(ServerLevel level, DamageSource damageSource, float amount) {
++        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                || this.isRemoved()) {
++            return false;
++        }
++
++        final net.minecraft.world.level.levelgen.structure.BoundingBox ownershipBox = this.shreddedpaper$vehicleDamageOwnershipBox(damageSource);
++        if (io.multipaper.shreddedpaper.ShreddedPaper.isSync(level, ownershipBox)) {
++            return false;
++        }
++
++        if (this.shreddedpaper$vehicleDamageScheduled) {
++            return true;
++        }
++        this.shreddedpaper$vehicleDamageScheduled = true;
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(level, ownershipBox, () -> {
++            this.shreddedpaper$vehicleDamageScheduled = false;
++            if (!this.isRemoved() && this.level() == level) {
++                this.hurtServer(level, damageSource, amount);
++            }
++        });
++        return true;
++    }
++
++    private net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$vehicleDamageOwnershipBox(DamageSource damageSource) {
++        final net.minecraft.world.level.levelgen.structure.BoundingBox box = new net.minecraft.world.level.levelgen.structure.BoundingBox(this.blockPosition());
++        shreddedpaper$encapsulateEntityAndPassengers(box, this);
++        final Entity directEntity = damageSource.getDirectEntity();
++        if (directEntity != null && directEntity.level() == this.level()) {
++            shreddedpaper$encapsulateEntityAndPassengers(box, directEntity);
++        }
++        final Entity causingEntity = damageSource.getEntity();
++        if (causingEntity != null && causingEntity.level() == this.level()) {
++            shreddedpaper$encapsulateEntityAndPassengers(box, causingEntity);
++        }
++        return box.inflatedBy(4, 4, 4);
++    }
++
++    private static void shreddedpaper$encapsulateEntityAndPassengers(net.minecraft.world.level.levelgen.structure.BoundingBox box, Entity entity) {
++        entity.getSelfAndPassengers().forEach(passenger -> shreddedpaper$encapsulateEntity(box, passenger));
++    }
++
++    private static void shreddedpaper$encapsulateEntity(net.minecraft.world.level.levelgen.structure.BoundingBox box, Entity entity) {
++        final net.minecraft.world.phys.AABB bounds = entity.getBoundingBox();
++        box.encapsulate(net.minecraft.core.BlockPos.containing(bounds.minX, bounds.minY, bounds.minZ));
++        box.encapsulate(net.minecraft.core.BlockPos.containing(bounds.maxX, bounds.maxY, bounds.maxZ));
++        box.encapsulate(entity.blockPosition());
++    }
++    // ShreddedPaper end - defer cross-owner vehicle damage
+ 
+     @Override
+     public int getDimensionChangingDelay() {

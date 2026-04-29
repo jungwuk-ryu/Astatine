@@ -1,53 +1,51 @@
 --- a/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
 +++ b/src/main/java/org/bukkit/craftbukkit/block/CraftBlock.java
-@@ -1,5 +_,6 @@
- package org.bukkit.craftbukkit.block;
- 
-+import ca.spottedleaf.moonrise.common.util.TickThread;
- import com.google.common.base.Preconditions;
- import java.util.ArrayList;
- import java.util.Collection;
-@@ -75,6 +_,7 @@
-     }
- 
-     public net.minecraft.world.level.block.state.BlockState getNMS() {
-+        if (this.world instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, this.position, "Cannot get block asynchronously!");
-         return this.world.getBlockState(this.position);
-     }
- 
-@@ -160,6 +_,7 @@
+@@ -39,6 +_,7 @@
+ import org.bukkit.block.BlockState;
+ import org.bukkit.block.PistonMoveReaction;
+ import org.bukkit.block.data.BlockData;
++import org.bukkit.craftbukkit.CraftChunk;
+ import org.bukkit.craftbukkit.CraftFluidCollisionMode;
+ import org.bukkit.craftbukkit.CraftWorld;
+ import org.bukkit.craftbukkit.block.data.CraftBlockData;
+@@ -139,7 +_,7 @@
  
      @Override
-     public byte getData() {
-+        if (this.world instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, this.position, "Cannot get block asynchronously!");
-         net.minecraft.world.level.block.state.BlockState state = this.world.getBlockState(this.position);
-         return CraftMagicNumbers.toLegacyData(state);
-     }
-@@ -192,6 +_,7 @@
+     public Chunk getChunk() {
+-        return this.getWorld().getChunkAt(this);
++        return new CraftChunk(this.getCraftWorld().getHandle(), this.getX() >> 4, this.getZ() >> 4); // ShreddedPaper - do not sync-load from Block#getChunk
      }
  
-     boolean setBlockState(final net.minecraft.world.level.block.state.BlockState state, final boolean applyPhysics) {
-+        if (this.world instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, this.position, "Cannot set block asynchronously!");
-         return CraftBlock.setBlockState(this.world, this.position, this.getNMS(), state, applyPhysics);
-     }
- 
-@@ -227,6 +_,7 @@
+     public void setData(final byte data) {
+@@ -332,7 +_,7 @@
  
      @Override
-     public Material getType() {
-+        if (this.world instanceof ServerLevel serverLevel) TickThread.ensureTickThread(serverLevel, this.position, "Cannot get block asynchronously!");
-         return this.world.getBlockState(this.position).getBukkitMaterial(); // Paper - optimise getType calls
+     public BlockState getState() {
+-        return CraftBlockStates.getBlockState(this);
++        return CraftBlockStates.getBlockState(this, org.bxteam.divinemc.config.DivineConfig.PerformanceCategory.createSnapshotOnRetrievingBlockState); // DivineMC - EMC: Don't use snapshots for acquiring blockstate
      }
  
-@@ -554,15 +_,15 @@
+     // Paper start
+@@ -554,15 +_,25 @@
          UseOnContext context = new UseOnContext(world, null, InteractionHand.MAIN_HAND, Items.BONE_MEAL.getDefaultInstance(), new BlockHitResult(Vec3.ZERO, direction, this.getPosition(), false));
  
          // SPIGOT-6895: Call StructureGrowEvent and BlockFertilizeEvent
 -        world.captureTreeGeneration = true;
-+        world.captureTreeGenerationThreadLocal.set(true); // ShreddedPaper - use thread local
-         InteractionResult result = BoneMealItem.applyBonemeal(context);
+-        InteractionResult result = BoneMealItem.applyBonemeal(context);
 -        world.captureTreeGeneration = false;
-+        world.captureTreeGenerationThreadLocal.set(false); // ShreddedPaper - use thread local
++        boolean bonemealSucceeded = false; // ShreddedPaper - use thread local
++        InteractionResult result; // ShreddedPaper - use thread local
++        try { // ShreddedPaper - use thread local
++            world.captureTreeGenerationThreadLocal.set(true); // ShreddedPaper - use thread local
++            result = BoneMealItem.applyBonemeal(context);
++            bonemealSucceeded = true; // ShreddedPaper - use thread local
++        } finally { // ShreddedPaper - use thread local
++            world.captureTreeGenerationThreadLocal.set(false); // ShreddedPaper - use thread local
++            if (!bonemealSucceeded) { // ShreddedPaper - use thread local
++                SaplingBlock.treeTypeThreadLocal.remove(); // ShreddedPaper - use thread local
++                world.capturedBlockStatesThreadLocal.get().clear(); // ShreddedPaper - use thread local
++            }
++        }
  
 -        if (!world.capturedBlockStates.isEmpty()) {
 -            TreeType treeType = SaplingBlock.treeType;

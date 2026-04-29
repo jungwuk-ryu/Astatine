@@ -1,0 +1,20 @@
+--- a/net/minecraft/world/level/chunk/storage/RegionFile.java
++++ b/net/minecraft/world/level/chunk/storage/RegionFile.java
+@@ -22,7 +_,7 @@
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+ 
+-public class RegionFile implements AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.storage.ChunkSystemRegionFile { // Paper - rewrite chunk system
++public class RegionFile implements AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.storage.ChunkSystemRegionFile, org.bxteam.divinemc.region.IRegionFile { // Paper - rewrite chunk system
+     private static final Logger LOGGER = LogUtils.getLogger();
+     public static final int MAX_CHUNK_SIZE = 500 * 1024 * 1024; // Paper - don't write garbage data to disk if writing serialization fails
+     private static final int SECTOR_BYTES = 4096;
+@@ -909,7 +_,7 @@
+         }
+ 
+         @Override
+-        public final void moonrise$write(final RegionFile regionFile) throws IOException {
++        public final void moonrise$write(final org.bxteam.divinemc.region.IRegionFile regionFile) throws IOException {
+             regionFile.write(this.pos, ByteBuffer.wrap(this.buf, 0, this.count));
+         }
+         // Paper end - rewrite chunk system
