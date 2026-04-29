@@ -5,11 +5,12 @@ import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ChunkResult;
@@ -29,12 +30,17 @@ public final class ShreddedPaperAccess {
 
     private static final int MAX_OWNER_HANDOFF_REQUEUES = 8;
     private static final int MAX_LOADED_READ_FALLBACK_SAMPLES = 8;
+    private static final int LOADED_READ_FALLBACK_SAMPLE_MASK = MAX_LOADED_READ_FALLBACK_SAMPLES - 1;
+    private static final int LOADED_READ_FALLBACK_SAMPLE_INTERVAL = 256;
     private static final LongAdder LOADED_READ_FALLBACKS = new LongAdder();
     private static final LongAdder OWNER_HANDOFFS = new LongAdder();
     private static final LongAdder OWNER_HANDOFF_REQUEUES = new LongAdder();
     private static final LongAdder OWNER_HANDOFF_REJECTIONS = new LongAdder();
     private static final LongAdder PREFETCH_FAILURES = new LongAdder();
-    private static final ArrayDeque<String> LOADED_READ_FALLBACK_SAMPLES = new ArrayDeque<>(MAX_LOADED_READ_FALLBACK_SAMPLES);
+    private static final AtomicLong LOADED_READ_FALLBACK_SAMPLE_ORDINAL = new AtomicLong();
+    private static final AtomicLong LOADED_READ_FALLBACK_SAMPLE_SEQUENCE = new AtomicLong();
+    private static final AtomicReferenceArray<LoadedReadFallbackSample> LOADED_READ_FALLBACK_SAMPLES =
+            new AtomicReferenceArray<>(MAX_LOADED_READ_FALLBACK_SAMPLES);
 
     private ShreddedPaperAccess() {
     }
@@ -260,9 +266,16 @@ public final class ShreddedPaperAccess {
     }
 
     public static List<String> loadedReadFallbackSamples() {
-        synchronized (LOADED_READ_FALLBACK_SAMPLES) {
-            return List.copyOf(LOADED_READ_FALLBACK_SAMPLES);
+        final long nextSequence = LOADED_READ_FALLBACK_SAMPLE_SEQUENCE.get();
+        final long startSequence = Math.max(0L, nextSequence - MAX_LOADED_READ_FALLBACK_SAMPLES);
+        final List<String> samples = new ArrayList<>((int) Math.min(MAX_LOADED_READ_FALLBACK_SAMPLES, nextSequence));
+        for (long sequence = startSequence; sequence < nextSequence; sequence++) {
+            final LoadedReadFallbackSample sample = LOADED_READ_FALLBACK_SAMPLES.get(sampleIndex(sequence));
+            if (sample != null && sample.sequence == sequence) {
+                samples.add(sample.value);
+            }
         }
+        return List.copyOf(samples);
     }
 
     public static long ownerHandoffs() {
@@ -297,26 +310,49 @@ public final class ShreddedPaperAccess {
     private static void recordLoadedReadFallback(final String reason, final Level level, final BlockPos pos) {
         if (ShreddedPaperTickThread.isShreddedPaperTickThread()) {
             LOADED_READ_FALLBACKS.increment();
-            recordLoadedReadFallbackSample(reason, level, pos);
+            final long fallbackCount = LOADED_READ_FALLBACK_SAMPLE_ORDINAL.incrementAndGet();
+            if (shouldRecordLoadedReadFallbackSample(fallbackCount)) {
+                recordLoadedReadFallbackSample(fallbackCount, reason, level, pos);
+            }
         }
     }
 
-    private static void recordLoadedReadFallbackSample(final String reason, final Level level, final BlockPos pos) {
+    static boolean shouldRecordLoadedReadFallbackSample(final long fallbackCount) {
+        return fallbackCount <= MAX_LOADED_READ_FALLBACK_SAMPLES
+                || (fallbackCount % LOADED_READ_FALLBACK_SAMPLE_INTERVAL) == 0L;
+    }
+
+    private static void recordLoadedReadFallbackSample(final long fallbackCount, final String reason, final Level level, final BlockPos pos) {
         final String world = level instanceof ServerLevel serverLevel ? serverLevel.getWorld().getName() : level.dimension().toString();
         final ChunkPos chunkPos = ChunkPos.of(pos);
         final String stack = firstRelevantCaller();
         final String sample = reason
+                + " count=" + fallbackCount
                 + " world=" + world
                 + " pos=[" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "]"
                 + " chunk=[" + chunkPos.x + "," + chunkPos.z + "]"
                 + " thread=" + Thread.currentThread().getName()
                 + " caller=" + stack;
-        synchronized (LOADED_READ_FALLBACK_SAMPLES) {
-            while (LOADED_READ_FALLBACK_SAMPLES.size() >= MAX_LOADED_READ_FALLBACK_SAMPLES) {
-                LOADED_READ_FALLBACK_SAMPLES.removeFirst();
+        final long sequence = LOADED_READ_FALLBACK_SAMPLE_SEQUENCE.getAndIncrement();
+        publishLoadedReadFallbackSample(new LoadedReadFallbackSample(sequence, sample));
+    }
+
+    private static void publishLoadedReadFallbackSample(final LoadedReadFallbackSample sample) {
+        final int index = sampleIndex(sample.sequence);
+        LoadedReadFallbackSample current;
+        do {
+            current = LOADED_READ_FALLBACK_SAMPLES.get(index);
+            if (current != null && current.sequence > sample.sequence) {
+                return;
             }
-            LOADED_READ_FALLBACK_SAMPLES.addLast(sample);
-        }
+        } while (!LOADED_READ_FALLBACK_SAMPLES.compareAndSet(index, current, sample));
+    }
+
+    private static int sampleIndex(final long sequence) {
+        return (int) sequence & LOADED_READ_FALLBACK_SAMPLE_MASK;
+    }
+
+    private record LoadedReadFallbackSample(long sequence, String value) {
     }
 
     private static String firstRelevantCaller() {
