@@ -104,6 +104,28 @@ node tools/runtime/invoke-async-release-gates.mjs --isolated-worldgen
 For hostile-load testing, build the region load-test plugin and run the
 benchmark or MCC chaos harness from `tools/` against the candidate jar.
 
+### Java 25 Network Profiles
+
+Java 25 Compact Object Headers are supported as an opt-in benchmark/runtime
+profile, not as a default server flag. Generate a reproducible command line and
+metadata before comparing throughput, latency tails, heap, RSS, or GC behavior:
+
+```bash
+node tools/runtime/java25-network-profile.mjs \
+  --profile compact-object-headers \
+  --heap 8G \
+  --jar shreddedpaper-server/build/libs/astatine-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar \
+  --scenario boundary-torture \
+  --repeat 3 \
+  --verify \
+  --print-command \
+  --metadata run/java25-network-profile.json
+```
+
+Use `--profile baseline` with the same heap, GC, scenario, and repeat count as
+the control run. The compact profile intentionally uses
+`-XX:+UseCompactObjectHeaders` without changing production defaults.
+
 ## Runtime Operations
 
 Primary operator commands:
