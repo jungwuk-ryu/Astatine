@@ -17,6 +17,54 @@
  import net.minecraft.world.level.portal.TeleportTransition;
  import net.minecraft.world.level.storage.TagValueOutput;
  import net.minecraft.world.level.storage.ValueInput;
+@@ -316,7 +_,44 @@
+         Preconditions.checkState(!this.entity.generation, "Cannot teleport entity to an other world during world generation");
+         location.checkFinite();
+-
+-        return this.teleport0(location, cause, flags);
++
++        final Location locationClone = location.clone();
++        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                && !this.shreddedpaper$canTeleportImmediately(locationClone)) {
++            final Plugin plugin = SynchronousPluginExecution.getCurrentPlugin();
++            if (plugin != null && Thread.currentThread() == MinecraftServer.getServer().getRunningThread()) {
++                this.teleportAsync(locationClone, cause, flags).exceptionally(throwable -> {
++                    MinecraftServer.LOGGER.error("Failed asynchronous compatibility teleport for entity {} from plugin {}", CraftEntity.this, plugin.getName(), throwable);
++                    return Boolean.FALSE;
++                });
++                return true;
++            }
++            if (io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++                MinecraftServer.LOGGER.warn("Refusing synchronous cross-region teleport for {} from region thread {}; use teleportAsync", CraftEntity.this, Thread.currentThread().getName());
++                return false;
++            }
++            try {
++                return Boolean.TRUE.equals(this.teleportAsync(locationClone, cause, flags).join());
++            } catch (java.util.concurrent.CompletionException ex) {
++                if (ex.getCause() instanceof RuntimeException runtime) {
++                    throw runtime;
++                }
++                throw ex;
++            }
++        }
++
++        return this.teleport0(locationClone, cause, flags);
+     }
+-
++
++    private boolean shreddedpaper$canTeleportImmediately(Location location) {
++        final Entity handle = this.getHandle();
++        final ServerLevel fromLevel = (ServerLevel) handle.level();
++        final ServerLevel toLevel = ((CraftWorld) location.getWorld()).getHandle();
++        final ChunkPos fromChunkPos = handle.chunkPosition();
++        final ChunkPos toChunkPos = CraftLocation.toChunkPosition(location);
++        return ShreddedPaper.isSync(fromLevel, fromChunkPos)
++                && ShreddedPaper.isSync(toLevel, toChunkPos)
++                && fromLevel.hasChunk(fromChunkPos.x, fromChunkPos.z)
++                && toLevel.hasChunk(toChunkPos.x, toChunkPos.z);
++    }
++
+     protected boolean teleport0(Location location, TeleportCause cause, TeleportFlag... flags) {
 @@ -753,7 +_,7 @@
          ImmutableSet.Builder<Player> players = ImmutableSet.builder();
  
