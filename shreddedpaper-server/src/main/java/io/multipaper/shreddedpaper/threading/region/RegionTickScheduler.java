@@ -627,6 +627,9 @@ public final class RegionTickScheduler {
                 final int mailboxDepth,
                 final double mailboxClassPressure
         ) {
+            if (!RegionTickEvent.isEventEnabled()) {
+                return;
+            }
             final RegionTickEvent event = new RegionTickEvent();
             event.world = this.level.getWorld().getName();
             event.regionX = this.state.regionPos().x;

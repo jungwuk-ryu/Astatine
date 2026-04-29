@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.threading.region.events;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 
@@ -9,6 +10,12 @@ import jdk.jfr.Name;
 @Category({"Astatine", "Region"})
 @Label("Cross Region Task")
 public final class CrossRegionTaskEvent extends Event {
+
+    private static final EventType EVENT_TYPE = EventType.getEventType(CrossRegionTaskEvent.class);
+
+    public static boolean isEventEnabled() {
+        return EVENT_TYPE.isEnabled();
+    }
 
     public String world;
     public String sourceWorld;

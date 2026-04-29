@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.threading.region.events;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 
@@ -12,7 +13,12 @@ import java.util.concurrent.atomic.AtomicLong;
 @Category({"Astatine", "Region"})
 public final class ChunkRequestEvent extends Event {
 
+    private static final EventType EVENT_TYPE = EventType.getEventType(ChunkRequestEvent.class);
     private static final AtomicLong SYNC_LOAD_REJECTIONS = new AtomicLong();
+
+    public static boolean isEventEnabled() {
+        return EVENT_TYPE.isEnabled();
+    }
 
     public static long recordSyncLoadRejection() {
         return SYNC_LOAD_REJECTIONS.incrementAndGet();

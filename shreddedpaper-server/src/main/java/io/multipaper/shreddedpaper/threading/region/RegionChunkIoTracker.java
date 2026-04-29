@@ -144,7 +144,7 @@ public final class RegionChunkIoTracker {
             final Priority admittedPriority = this.adjustExecutorPriority(requestedPriority, loadClass, config);
             this.recordExecutorDowngradeIfNeeded(chunkX, chunkZ, workType, requestedPriority, admittedPriority);
             if (this.shouldSamplePressure(current, cap, count)) {
-                this.commitExecutorEvent("executor-" + workType + "-admitted", chunkX, chunkZ, workType, count, false, current, cap, admittedPriority);
+                this.commitExecutorEvent("-admitted", chunkX, chunkZ, workType, count, false, current, cap, admittedPriority);
             }
             return Admission.acquired(admittedPriority);
         }
@@ -176,7 +176,7 @@ public final class RegionChunkIoTracker {
         this.executorDeferredWaiters.offer(retry);
 
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitExecutorEvent("executor-" + workType + "-deferred", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), priority);
+            this.commitExecutorEvent("-deferred", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), priority);
         }
         this.scheduleExecutorDeferredDrain(0L);
         return true;
@@ -212,7 +212,7 @@ public final class RegionChunkIoTracker {
         final long count = this.executorBacklogBackpressure.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-backlog-backpressure",
+                    "-backlog-backpressure",
                     chunkX,
                     chunkZ,
                     workType,
@@ -262,7 +262,7 @@ public final class RegionChunkIoTracker {
         }
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-backlog-deferred",
+                    "-backlog-deferred",
                     chunkX,
                     chunkZ,
                     workType,
@@ -301,7 +301,7 @@ public final class RegionChunkIoTracker {
         final long count = this.executorBacklogEmergency.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-backlog-emergency",
+                    "-backlog-emergency",
                     chunkX,
                     chunkZ,
                     workType,
@@ -345,7 +345,7 @@ public final class RegionChunkIoTracker {
         final int queued = this.executorBacklogEmergencyRetries.incrementAndGet();
         final long count = this.executorBacklogEmergencyRejected.incrementAndGet();
         this.commitExecutorEvent(
-                "executor-" + workType + "-backlog-emergency-retry",
+                "-backlog-emergency-retry",
                 chunkX,
                 chunkZ,
                 workType,
@@ -442,7 +442,7 @@ public final class RegionChunkIoTracker {
         final long count = this.executorRejected.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-fallback",
+                    "-fallback",
                     chunkX,
                     chunkZ,
                     workType,
@@ -500,7 +500,7 @@ public final class RegionChunkIoTracker {
         final long fallback = this.executorRejected.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(fallback)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-overflow-fallback",
+                    "-overflow-fallback",
                     chunkX,
                     chunkZ,
                     workType,
@@ -557,7 +557,7 @@ public final class RegionChunkIoTracker {
         this.enqueueExecutorBackpressureRetry(retry, EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-overflow-backpressure",
+                    "-overflow-backpressure",
                     chunkX,
                     chunkZ,
                     workType,
@@ -602,7 +602,7 @@ public final class RegionChunkIoTracker {
     ) {
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
-                    "executor-" + workType + "-backpressure-saturated",
+                    "-backpressure-saturated",
                     chunkX,
                     chunkZ,
                     workType,
@@ -915,7 +915,7 @@ public final class RegionChunkIoTracker {
         }
         final long count = this.executorDowngraded.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitExecutorEvent("executor-" + workType + "-downgraded", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), admittedPriority);
+            this.commitExecutorEvent("-downgraded", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), admittedPriority);
         }
     }
 
@@ -940,6 +940,9 @@ public final class RegionChunkIoTracker {
         if (!ChunkRequestEvent.shouldCommitSample(count)) {
             return;
         }
+        if (!ChunkRequestEvent.isEventEnabled()) {
+            return;
+        }
         final ChunkRequestEvent event = new ChunkRequestEvent();
         event.world = ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level);
         event.regionX = this.regionPos.x;
@@ -959,7 +962,7 @@ public final class RegionChunkIoTracker {
     }
 
     private void commitExecutorEvent(
-            final String action,
+            final String actionSuffix,
             final int chunkX,
             final int chunkZ,
             final String workType,
@@ -972,6 +975,9 @@ public final class RegionChunkIoTracker {
         if (!ChunkRequestEvent.shouldCommitSample(count)) {
             return;
         }
+        if (!ChunkRequestEvent.isEventEnabled()) {
+            return;
+        }
         final ChunkRequestEvent event = new ChunkRequestEvent();
         event.world = ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level);
         event.regionX = this.regionPos.x;
@@ -979,7 +985,7 @@ public final class RegionChunkIoTracker {
         event.chunkX = chunkX;
         event.chunkZ = chunkZ;
         event.status = "executor:" + workType;
-        event.action = action;
+        event.action = "executor-" + workType + actionSuffix;
         event.count = count;
         event.thread = Thread.currentThread().getName();
         event.sync = false;

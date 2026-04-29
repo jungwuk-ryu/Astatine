@@ -303,7 +303,7 @@ public final class RegionMailbox {
         final int current = queued.incrementAndGet();
         if (current > capacity) {
             if (current == capacity + 1 || ((current - capacity) & 255) == 0) {
-                this.commitQueueEvent("transfer-over-reserve", taskClass, this.depth());
+                this.commitQueueEvent("transfer-over-reserve", taskClass);
                 LOGGER.warn(
                         "Transferred {} region task exceeded mailbox reserve for {} {} (queued={} reserve={}); admitted tasks are non-dropping",
                         taskClass,
@@ -329,7 +329,7 @@ public final class RegionMailbox {
         final long rejectedForClass = this.rejectedByClass.get(taskClass).incrementAndGet();
         final long rejectedTotal = this.rejected.incrementAndGet();
         if (rejectedForClass == 1L || (rejectedForClass & 255L) == 0L) {
-            this.commitQueueEvent("rejected", taskClass, this.depth());
+            this.commitQueueEvent("rejected", taskClass);
             LOGGER.warn(
                     "Rejected {} region task for {} {} because {} (queued={}/{} rejectedClass={} rejectedTotal={})",
                     taskClass,
@@ -347,7 +347,7 @@ public final class RegionMailbox {
     private void recordCriticalOverReserve(final int queued, final int capacity) {
         final int overReserve = queued - capacity;
         if (overReserve == 1 || (overReserve & 255) == 0) {
-            this.commitQueueEvent("critical-over-reserve", RegionTaskClass.CRITICAL_SYSTEM, this.depth());
+            this.commitQueueEvent("critical-over-reserve", RegionTaskClass.CRITICAL_SYSTEM);
             LOGGER.warn(
                     "Critical region mailbox reserve exceeded for {} {} (queued={} reserve={}); critical work remains non-dropping",
                     this.worldName,
@@ -528,14 +528,17 @@ public final class RegionMailbox {
         return this.executed.get();
     }
 
-    private void commitQueueEvent(final String action, final RegionTaskClass taskClass, final int depth) {
+    private void commitQueueEvent(final String action, final RegionTaskClass taskClass) {
+        if (!RegionQueueEvent.isEventEnabled()) {
+            return;
+        }
         final RegionQueueEvent event = new RegionQueueEvent();
         event.world = this.worldName;
         event.regionX = this.regionPos.x;
         event.regionZ = this.regionPos.z;
         event.action = action;
         event.taskClass = taskClass.name();
-        event.depth = depth;
+        event.depth = this.depth();
         event.queuedForClass = this.queuedByClass.get(taskClass).get();
         event.capacity = this.capacityByClass.get(taskClass);
         event.rejected = this.rejected.get();
@@ -562,6 +565,9 @@ public final class RegionMailbox {
             final int queuedAfter,
             final int capacity
     ) {
+        if (!CrossRegionTaskEvent.isEventEnabled()) {
+            return;
+        }
         final CrossRegionTaskEvent event = new CrossRegionTaskEvent();
         event.world = this.worldName;
         event.sourceWorld = sourceWorld;
