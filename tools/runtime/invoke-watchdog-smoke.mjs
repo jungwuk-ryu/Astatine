@@ -19,6 +19,7 @@ const options = {
   maxTickTimeMs: 3000,
   timeoutTimeSec: 10,
   stallMs: 25000,
+  stallStyle: "uninterruptible",
   shutdownGraceMs: 5000,
   mode: "global",
 };
@@ -44,6 +45,9 @@ try {
   if (!/Queued watchdog stall/i.test(response)) {
     throw new Error(`Watchdog stall command did not queue cleanly:\n${response}`);
   }
+  if (!new RegExp(`style=${escapeRegExp(options.stallStyle)}`, "i").test(response)) {
+    throw new Error(`Watchdog stall command did not use ${options.stallStyle} style:\n${response}`);
+  }
 
   const exited = await waitForExitWithTimeout(child, Math.max(60000, options.stallMs + options.shutdownGraceMs + 30000));
   if (!exited) {
@@ -56,7 +60,7 @@ try {
   if (!/The server has (?:not responded|stopped responding)|Server thread dump/i.test(log)) {
     throw new Error("Watchdog smoke did not emit the expected watchdog thread-dump marker.");
   }
-  if (!/Watchdog emergency shutdown|Watchdog Server Shutdown|Stopping server/i.test(log)) {
+  if (!/Watchdog emergency shutdown|Watchdog Server Shutdown/i.test(log)) {
     throw new Error("Watchdog smoke did not exercise the emergency shutdown path.");
   }
   if (options.mode === "region") {
@@ -126,6 +130,12 @@ function parseArgs(args) {
       case "--stall-ms":
         options.stallMs = Number.parseInt(next(), 10);
         break;
+      case "--stall-style":
+        options.stallStyle = next();
+        if (!["interruptible", "uninterruptible"].includes(options.stallStyle)) {
+          throw new Error("--stall-style must be interruptible or uninterruptible");
+        }
+        break;
       case "--shutdown-grace-ms":
         options.shutdownGraceMs = Number.parseInt(next(), 10);
         break;
@@ -137,7 +147,7 @@ function parseArgs(args) {
         break;
       case "--help":
       case "-h":
-        console.log("Usage: node tools/runtime/invoke-watchdog-smoke.mjs [--mode global|region] [--server-port n] [--rcon-port n] [--stall-ms n]");
+        console.log("Usage: node tools/runtime/invoke-watchdog-smoke.mjs [--mode global|region] [--server-port n] [--rcon-port n] [--stall-ms n] [--stall-style interruptible|uninterruptible]");
         process.exit(0);
       default:
         throw new Error(`Unknown option: ${arg}`);
@@ -147,9 +157,13 @@ function parseArgs(args) {
 
 function watchdogStallCommand() {
   if (options.mode === "region") {
-    return `rlt at world 0 8 0 watchdogstall region ${options.stallMs}`;
+    return `rlt at world 0 8 0 watchdogstall region ${options.stallMs} ${options.stallStyle}`;
   }
-  return `rlt watchdogstall global ${options.stallMs}`;
+  return `rlt watchdogstall global ${options.stallMs} ${options.stallStyle}`;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function prepareServerDir() {

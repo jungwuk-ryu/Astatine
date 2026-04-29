@@ -229,6 +229,8 @@ class MccClient {
     this.actionLog = [];
     this.lastKnownLocation = null;
     this.lastAction = null;
+    this.lastOkAt = null;
+    this.lastFailedAt = null;
     this.commandStats = {
       sent: 0,
       ok: 0,
@@ -343,6 +345,7 @@ class MccClient {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         this.commandStats.timedOut++;
+        this.lastFailedAt = new Date().toISOString();
         reject(new Error(`${command} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
@@ -351,12 +354,15 @@ class MccClient {
     }).then((response) => {
       if (response.success) {
         this.commandStats.ok++;
+        this.lastOkAt = new Date().toISOString();
       } else {
         this.commandStats.failed++;
+        this.lastFailedAt = new Date().toISOString();
       }
       return response;
     }).catch((error) => {
       this.commandStats.failed++;
+      this.lastFailedAt = this.lastFailedAt ?? new Date().toISOString();
       throw error;
     });
   }
@@ -453,41 +459,151 @@ function recordAction(summary, client, action, details = {}) {
   return entry;
 }
 
+function recordSuccessfulScenario(summary, actionEntry) {
+  if (!actionEntry?.scenario) {
+    return;
+  }
+  incrementCounter(summary.successfulScenarioCounts, actionEntry.scenario);
+}
+
 function recordCommandError(summary, client, command, parameters, message) {
   summary.commandErrors.push({
     at: new Date().toISOString(),
     bot: client.name,
     command,
     parameters,
-    message,
+    message: normalizeCommandErrorMessage(message),
     lastKnownLocation: client.lastKnownLocation,
     lastAction: client.lastAction,
   });
+}
+
+function normalizeCommandErrorMessage(message) {
+  if (message == null) {
+    return "";
+  }
+  if (typeof message === "string") {
+    return message;
+  }
+  try {
+    return JSON.stringify(message);
+  } catch {
+    return String(message);
+  }
+}
+
+function isExpectedCommandError(error) {
+  const command = `${error.command ?? ""}`;
+  const message = normalizeCommandErrorMessage(error.message).trim();
+  if (command === "MoveToLocation" && message === "") {
+    return true;
+  }
+  if (command === "Respawn" && message === "") {
+    return true;
+  }
+  if (command === "InteractEntity" && message === "") {
+    return true;
+  }
+  if (command === "GetEntities" && /Collection was modified; enumeration operation may not execute/i.test(message)) {
+    return true;
+  }
+  if (/\btimed out after \d+ms$/i.test(message)) {
+    return true;
+  }
+  if (command === "DigBlock" && /^Block is air$/i.test(message)) {
+    return true;
+  }
+  if (command === "DigBlock" && /^Block too far away\b/i.test(message)) {
+    return true;
+  }
+  return false;
+}
+
+function commandErrorSummary(errors) {
+  const byCommand = {};
+  let expected = 0;
+  let unexpected = 0;
+  let timedOut = 0;
+  for (const error of errors) {
+    const command = `${error.command ?? "unknown"}`;
+    byCommand[command] = (byCommand[command] ?? 0) + 1;
+    const message = normalizeCommandErrorMessage(error.message);
+    if (/\btimed out after \d+ms$/i.test(message)) {
+      timedOut++;
+    }
+    if (isExpectedCommandError(error)) {
+      expected++;
+    } else {
+      unexpected++;
+    }
+  }
+
+  return {
+    total: errors.length,
+    expected,
+    unexpected,
+    timedOut,
+    byCommand,
+    unexpectedExamples: errors
+      .filter((error) => !isExpectedCommandError(error))
+      .slice(0, 5)
+      .map((error) => ({
+        bot: error.bot,
+        command: error.command,
+        message: normalizeCommandErrorMessage(error.message),
+      })),
+  };
+}
+
+function isReconnectableCommandIssue(command, message) {
+  if (command === "ReconnectToTheServer") {
+    return false;
+  }
+  return /WebSocket closed|not open|Not connected to any server|Connection has been lost|\btimed out after \d+ms$/i.test(message ?? "");
+}
+
+async function reconnectAndRetry(client, command, parameters, summary, options, reason) {
+  try {
+    if (!client.ws || client.ws.readyState !== WebSocket.OPEN) {
+      client.close();
+      await client.connect(20);
+    } else {
+      await client.command("ReconnectToTheServer", [3, 1], { timeoutMs: 5000 });
+      await sleep(3500);
+    }
+    summary.recoveries = (summary.recoveries ?? 0) + 1;
+    const probe = await client.command("GetCurrentLocation", [], { timeoutMs: 5000 }).catch((error) => ({
+      success: false,
+      message: error.message,
+    }));
+    if (!probe?.success) {
+      throw new Error(`post-reconnect heartbeat failed: ${normalizeCommandErrorMessage(probe?.message)}`);
+    }
+    const response = await client.command(command, parameters, { ...options, noReconnectRetry: true });
+    if (!response.success) {
+      recordCommandError(summary, client, command, parameters, response.message ?? "");
+    }
+    return response;
+  } catch (retryError) {
+    recordCommandError(summary, client, command, parameters, `${reason}; reconnect retry failed: ${retryError.message}`);
+    return null;
+  }
 }
 
 async function bestEffort(client, command, parameters, summary, options = {}) {
   try {
     const response = await client.command(command, parameters, options);
     if (!response.success) {
+      const message = normalizeCommandErrorMessage(response.message);
+      if (!options.noReconnectRetry && isReconnectableCommandIssue(command, message)) {
+        return await reconnectAndRetry(client, command, parameters, summary, options, message);
+      }
       recordCommandError(summary, client, command, parameters, response.message ?? "");
     }
     return response;
   } catch (error) {
-    const recoverable = /WebSocket closed|not open/i.test(error.message ?? "");
-    if (recoverable && !options.noReconnectRetry) {
-      try {
-        client.close();
-        await client.connect(20);
-        summary.recoveries = (summary.recoveries ?? 0) + 1;
-        const response = await client.command(command, parameters, { ...options, noReconnectRetry: true });
-        if (!response.success) {
-          recordCommandError(summary, client, command, parameters, response.message ?? "");
-        }
-        return response;
-      } catch (retryError) {
-        recordCommandError(summary, client, command, parameters, `${error.message}; reconnect retry failed: ${retryError.message}`);
-        return null;
-      }
+    if (!options.noReconnectRetry && isReconnectableCommandIssue(command, error.message ?? "")) {
+      return await reconnectAndRetry(client, command, parameters, summary, options, error.message);
     }
 
     recordCommandError(summary, client, command, parameters, error.message);
@@ -645,7 +761,7 @@ async function combatAction(client, args, summary, rng, actionEntry, includePlay
   actionEntry.entityCount = Object.keys(entities).length;
   actionEntry.candidateEntityCount = candidates.length;
   if (candidates.length === 0) {
-    return;
+    return false;
   }
   const [entityId, entity] = candidates[0];
   const target = entityLocation(entity);
@@ -659,7 +775,8 @@ async function combatAction(client, args, summary, rng, actionEntry, includePlay
     await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 4, 1], summary, "combat", { timeoutMs: 20000 }, actionEntry);
   }
   await bestEffort(client, "SendAnimation", ["MainHand"], summary);
-  await bestEffort(client, "InteractEntity", [actionEntry.entityId, "Attack", "MainHand"], summary);
+  const attack = await bestEffort(client, "InteractEntity", [actionEntry.entityId, "Attack", "MainHand"], summary);
+  return attack?.success === true;
 }
 
 async function vandalizeAction(client, args, summary, rng, home, actionEntry) {
@@ -671,14 +788,16 @@ async function vandalizeAction(client, args, summary, rng, home, actionEntry) {
     z: Math.floor(loc.z) + randomInt(rng, -3, 3),
   };
   actionEntry.target = target;
+  let response;
   if (!args.disableTerrainDuringController && rng() > 0.45) {
-    await bestEffort(client, "DigBlock", [target.x, target.y, target.z, "Up"], summary);
+    response = await bestEffort(client, "DigBlock", [target.x, target.y, target.z, "Up"], summary);
   } else {
-    await bestEffort(client, "SendPlaceBlock", [target.x, target.y, target.z, "Up", "MainHand"], summary);
+    response = await bestEffort(client, "SendPlaceBlock", [target.x, target.y, target.z, "Up", "MainHand"], summary);
   }
   if (rng() > 0.7) {
     await bestEffort(client, "UseItemInHand", [], summary);
   }
+  return response?.success === true;
 }
 
 async function runBot(client, args, summary, index) {
@@ -734,7 +853,10 @@ async function runBot(client, args, summary, index) {
         actionEntry.scenario = target.scenario;
         actionEntry.target = target;
         incrementCounter(summary.scenarioCounts, target.scenario);
-        await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 6, 0], summary, "move", { timeoutMs: 30000 }, actionEntry);
+        const response = await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 6, 0], summary, "move", { timeoutMs: 30000 }, actionEntry);
+        if (response?.success === true) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
       } else if (action === "boundary") {
         const nearFluidLeafFixture = Math.abs(home.x - 128) <= args.radius * 2 && Math.abs(home.z) <= args.radius * 2;
         const boundaryBase = nearFluidLeafFixture ? 128 : Math.round(home.x / 128) * 128;
@@ -746,7 +868,10 @@ async function runBot(client, args, summary, index) {
         actionEntry.scenario = nearFluidLeafFixture ? "fluid-leaf-boundary" : "region-boundary";
         actionEntry.target = target;
         incrementCounter(summary.scenarioCounts, actionEntry.scenario);
-        await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 5, 0], summary, "boundary", { timeoutMs: 30000 }, actionEntry);
+        const response = await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 5, 0], summary, "boundary", { timeoutMs: 30000 }, actionEntry);
+        if (response?.success === true) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
       } else if (action === "look") {
         const target = {
           x: home.x + randomInt(rng, -32, 32),
@@ -822,18 +947,25 @@ async function runBot(client, args, summary, index) {
         actionEntry.target = target;
         incrementCounter(summary.scenarioCounts, target.scenario);
         await bestEffort(client, "SendEntityAction", ["StartSprinting"], summary);
-        await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 5, 0], summary, "skirmish", { timeoutMs: 30000 }, actionEntry);
+        const response = await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 5, 0], summary, "skirmish", { timeoutMs: 30000 }, actionEntry);
+        if (response?.success === true) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
         if (rng() > 0.35) {
           await combatAction(client, args, summary, rng, actionEntry, true);
         }
       } else if (action === "combat") {
         actionEntry.scenario = "pvp-arena";
         incrementCounter(summary.scenarioCounts, actionEntry.scenario);
-        await combatAction(client, args, summary, rng, actionEntry, true);
+        if (await combatAction(client, args, summary, rng, actionEntry, true)) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
       } else if (action === "vandalize") {
         actionEntry.scenario = "base-grief";
         incrementCounter(summary.scenarioCounts, actionEntry.scenario);
-        await vandalizeAction(client, args, summary, rng, home, actionEntry);
+        if (await vandalizeAction(client, args, summary, rng, home, actionEntry)) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
       } else if (action === "panic") {
         const loc = await getLocation(client, home, summary, "panic-poll", args).catch(() => home);
         const target = {
@@ -846,7 +978,10 @@ async function runBot(client, args, summary, index) {
         incrementCounter(summary.scenarioCounts, actionEntry.scenario);
         await bestEffort(client, "SendEntityAction", ["StartSprinting"], summary);
         await bestEffort(client, "LookAtLocation", [target.x + randomInt(rng, -8, 8), target.y + 2, target.z + randomInt(rng, -8, 8)], summary);
-        await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 8, 0], summary, "panic", { timeoutMs: 20000 }, actionEntry);
+        const response = await moveToAndSettle(client, args, target, [target.x, target.y, target.z, true, false, 8, 0], summary, "panic", { timeoutMs: 20000 }, actionEntry);
+        if (response?.success === true) {
+          recordSuccessfulScenario(summary, actionEntry);
+        }
         await bestEffort(client, "SendAnimation", ["MainHand"], summary);
         if (rng() > 0.8) {
           await bestEffort(client, "Respawn", [], summary, { timeoutMs: 5000 });
@@ -878,6 +1013,7 @@ async function main() {
     recoveries: 0,
     actionCounts: {},
     scenarioCounts: {},
+    successfulScenarioCounts: {},
     roleCounts: {},
     commandErrors: [],
     bots: [],
@@ -902,6 +1038,8 @@ async function main() {
         name: client.name,
         port: client.port,
         stats: client.commandStats,
+        lastOkAt: client.lastOkAt,
+        lastFailedAt: client.lastFailedAt,
         lastKnownLocation: client.lastKnownLocation,
         lastAction: client.lastAction,
         recentActions: client.actionLog.slice(-40),
@@ -910,23 +1048,24 @@ async function main() {
       client.close();
     }
     summary.finishedAt = new Date().toISOString();
+    summary.commandErrorSummary = commandErrorSummary(summary.commandErrors);
     if (args.out) {
       await fs.writeFile(args.out, JSON.stringify(summary, null, 2), "utf8");
     }
   }
 
-  const hardErrors = summary.commandErrors.filter((error) => {
-    const text = `${error.message ?? ""}`.toLowerCase();
-    return text.includes("websocket closed") || text.includes("not open") || text.includes("timed out");
-  });
+  const commandErrors = summary.commandErrorSummary ?? commandErrorSummary(summary.commandErrors);
 
-  if (hardErrors.length > 0 || (args.failOnCommandError && summary.commandErrors.length > 0)) {
-    const message = `MCC chaos completed with ${summary.commandErrors.length} command errors (${hardErrors.length} hard).`;
+  if (commandErrors.total > 0 || (args.failOnCommandError && summary.commandErrors.length > 0)) {
+    const message = `MCC chaos completed with ${commandErrors.total} command errors (${commandErrors.expected} expected, ${commandErrors.unexpected} unexpected, ${commandErrors.timedOut} timed out).`;
     if (args.failOnCommandError) {
       console.error(message);
       process.exitCode = 2;
+    } else if (commandErrors.unexpected > 0) {
+      console.warn(`${message} Unexpected controller errors are recorded in the summary; server-side failure signatures still decide pass/fail by default.`);
+      process.exitCode = 0;
     } else {
-      console.warn(`${message} Server-side failure signatures decide pass/fail by default.`);
+      console.log(`${message} All controller command errors matched expected MCC harness noise.`);
       process.exitCode = 0;
     }
   } else {

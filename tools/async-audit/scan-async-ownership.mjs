@@ -380,6 +380,30 @@ const TRACKED_FIXES = [
     evidence: 'Release runner now fails on active critical scanner findings, checks a root-covered critical baseline, builds RLT plugin artifacts, labels skipped runs as non-release, prepares isolated worldgen state itself, scans jcmd/result artifacts, asserts RLT cleanup counters, makes MCC RCON setup failures hard failures, includes join/setup log windows, checks MCC shutdown resources, marks MinecraftServer.hasFullyShutdown at successful shutdown completion, and dumps ShreddedPaper region worker threads in watchdog output.',
     verification: './gradlew applyAllPatches --no-configuration-cache; node tools/runtime/verify-async-root-baseline.mjs; node tools/runtime/invoke-async-release-gates.mjs --skip-build --skip-mcc --isolated-worldgen.',
   },
+  {
+    id: 'AO-FIX-026',
+    title: 'Player interaction and spawn probes avoid region-worker sync loads',
+    category: 'entity movement/teleport/player tick',
+    location: 'shreddedpaper-server/minecraft-patches/sources/net/minecraft/server/network/ServerGamePacketListenerImpl.java.patch; shreddedpaper-server/minecraft-patches/sources/net/minecraft/world/level/Level.java.patch; shreddedpaper-server/minecraft-patches/sources/net/minecraft/world/entity/SpawnPlacementTypes.java.patch',
+    evidence: 'Player item/block interaction ray traces and fast clip paths use owner handoff or loaded-only chunk access on ShreddedPaper workers, and natural spawn placement probes use loaded-only block-state reads instead of forcing sync loads.',
+    verification: './gradlew applyAllPatches --no-configuration-cache; ./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache; ./gradlew :shreddedpaper-server:createMojmapPaperclipJar --rerun-tasks --no-configuration-cache; Gate38 MCC targeted regression; full async release gate.',
+  },
+  {
+    id: 'AO-FIX-027',
+    title: 'Starlight live lighting tasks run under the owning region lock',
+    category: 'lighting/chunk lifecycle ownership',
+    location: 'shreddedpaper-server/minecraft-patches/sources/ca/spottedleaf/moonrise/patches/starlight/light/StarLightInterface.java.patch',
+    evidence: 'Live block/section/edge lighting tasks defer until the relevant ShreddedPaper region lock is available, preventing palette/container reads from racing region-owned block mutations while avoiding broad locking for chunk-generation startup lighting.',
+    verification: './gradlew applyAllPatches --no-configuration-cache; ./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache; targeted MCC lightfix smoke with 4 bots and natural spawns; full async release gate.',
+  },
+  {
+    id: 'AO-FIX-028',
+    title: 'Worldgen smoke validates player lifecycle and pathfinding evidence robustly',
+    category: 'validation/release gate',
+    location: 'tools/runtime/invoke-worldgen-smoke.mjs',
+    evidence: 'The managed worldgen smoke explicitly teleports back to the overworld after End lifecycle coverage so first-time credits UI cannot stall MCC automation, and pathfinding completion evidence tolerates additional RLT counters such as `progressed` while still requiring queued/completed/spawned/pathStarted/crossChunkMoves health.',
+    verification: 'node --check tools/runtime/invoke-worldgen-smoke.mjs; node tools/runtime/invoke-worldgen-smoke.mjs --server-dir /Users/jungwuk/Documents/works/ShreddedPaper/run/worldgen-smoke-isolated/server --java /opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java --heap 4G --server-port 25567 --rcon-port 25577 --require-cached-mcc; full async release gate.',
+  },
 ];
 
 const MANUAL_CANDIDATES = [
@@ -928,7 +952,9 @@ function renderTodo(repoRoot, candidates, existing) {
     lines.push(formatTrackedFix(fix, existing));
   }
   lines.push('## Active Candidates');
-  lines.push('');
+  if (candidates.length > 0) {
+    lines.push('');
+  }
   for (const candidate of candidates) {
     lines.push(formatCandidate(candidate, existing));
   }

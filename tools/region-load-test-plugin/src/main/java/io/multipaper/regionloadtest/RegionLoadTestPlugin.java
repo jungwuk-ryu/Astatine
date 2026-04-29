@@ -19,15 +19,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RegionLoadTestPlugin extends JavaPlugin {
 
     public static final String MANAGED_ENTITY_TAG = "shreddedpaper_rlt";
-    private static final long FIRST_TAGGED_ENTITY_PURGE_DELAY_TICKS = 40L;
-    private static final long SECOND_TAGGED_ENTITY_PURGE_DELAY_TICKS = 80L;
-    private static final long CLEANUP_TICKET_RELEASE_DELAY_TICKS = 140L;
+    private static final long[] TAGGED_ENTITY_PURGE_DELAYS_TICKS = {1L, 20L, 40L, 80L, 140L, 200L, 300L, 400L, 560L};
+    private static final long CLEANUP_TICKET_RELEASE_DELAY_TICKS = 620L;
 
     private final Map<UUID, ManagedEntity> managedEntities = new ConcurrentHashMap<>();
     private final Set<ScheduledTask> managedTasks = ConcurrentHashMap.newKeySet();
     private final Set<ManagedChunkTicket> managedChunkTickets = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean cleanupRequested = new AtomicBoolean();
     private final AtomicLong batchGeneration = new AtomicLong();
+    private final AtomicLong cleanupPurgeTasks = new AtomicLong();
     private final AtomicLong busySink = new AtomicLong();
     private final AtomicLong activeChunkBatches = new AtomicLong();
 
@@ -48,15 +48,8 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
 
     public void trackEntity(final Entity entity) {
         entity.addScoreboardTag(MANAGED_ENTITY_TAG);
-        if (this.cleanupRequested.get()) {
-            this.managedEntities.put(entity.getUniqueId(), new ManagedEntity(entity));
-            if (this.managedEntities.remove(entity.getUniqueId()) != null) {
-                this.queueEntityRemoval(entity);
-            }
-            return;
-        }
         this.managedEntities.put(entity.getUniqueId(), new ManagedEntity(entity));
-        if (this.cleanupRequested.get() && this.managedEntities.remove(entity.getUniqueId()) != null) {
+        if (this.cleanupRequested.get()) {
             this.queueEntityRemoval(entity);
         }
     }
@@ -90,9 +83,10 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
 
     private void cleanupAll(final CommandSender sender, final boolean scheduleEntityRemovals) {
         this.cleanupRequested.set(true);
-        this.batchGeneration.incrementAndGet();
+        final long cleanupBatch = this.batchGeneration.incrementAndGet();
         this.getServer().getGlobalRegionScheduler().cancelTasks(this);
         this.getServer().getAsyncScheduler().cancelTasks(this);
+        this.cleanupPurgeTasks.set(0L);
 
         int cancelledTasks = 0;
         for (final ScheduledTask task : new ArrayList<>(this.managedTasks)) {
@@ -110,7 +104,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
         for (final ManagedEntity entity : entities) {
             final UUID entityId = entity.entityId();
             if (scheduleEntityRemovals) {
-                if (this.managedEntities.remove(entityId, entity)) {
+                if (this.managedEntities.containsKey(entityId)) {
                     queuedEntityRemovals++;
                     this.queueEntityRemoval(entity.entity());
                 }
@@ -121,9 +115,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
 
         int queuedPurgeTasks = 0;
         if (scheduleEntityRemovals) {
-            this.scheduleTaggedEntityPurge(FIRST_TAGGED_ENTITY_PURGE_DELAY_TICKS);
-            this.scheduleTaggedEntityPurge(SECOND_TAGGED_ENTITY_PURGE_DELAY_TICKS);
-            queuedPurgeTasks = 2;
+            queuedPurgeTasks = this.scheduleTaggedEntityPurges(cleanupBatch);
         }
 
         final int removedChunkTickets = scheduleEntityRemovals
@@ -199,11 +191,24 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
         return 0;
     }
 
-    private void scheduleTaggedEntityPurge(final long delayTicks) {
+    private int scheduleTaggedEntityPurges(final long cleanupBatch) {
+        int scheduled = 0;
+        for (final long delayTicks : TAGGED_ENTITY_PURGE_DELAYS_TICKS) {
+            this.scheduleTaggedEntityPurge(cleanupBatch, delayTicks);
+            scheduled++;
+        }
+        return scheduled;
+    }
+
+    private void scheduleTaggedEntityPurge(final long cleanupBatch, final long delayTicks) {
+        this.cleanupPurgeTasks.incrementAndGet();
         this.getServer().getGlobalRegionScheduler().runDelayed(this, scheduledTask -> {
             try {
-                this.dispatchTaggedEntityPurge();
+                if (this.cleanupRequested.get() && this.batchGeneration.get() == cleanupBatch) {
+                    this.dispatchTaggedEntityPurge();
+                }
             } finally {
+                this.cleanupPurgeTasks.decrementAndGet();
                 this.untrackTask(scheduledTask);
             }
         }, delayTicks);
@@ -267,6 +272,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
             this.managedTasks.size(),
             this.managedEntities.size(),
             this.managedChunkTickets.size(),
+            Math.max(0L, this.cleanupPurgeTasks.get()),
             Math.max(0L, this.activeChunkBatches.get())
         );
     }
@@ -286,6 +292,7 @@ public final class RegionLoadTestPlugin extends JavaPlugin {
         int managedTasks,
         int managedEntities,
         int managedChunkTickets,
+        long cleanupPurgeTasks,
         long activeChunkBatches
     ) {
     }

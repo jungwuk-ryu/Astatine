@@ -37,6 +37,10 @@ const DEFAULT_COMMANDS = [
   "forceload add 304 -80 464 80",
   ...arenaPlatformCommands({ x: 384, y: 8, z: 0 }, 80, 8),
   "rlt at world 384 8 0 redstone 3 80 48 1",
+  "rlt at world 512 8 0 chunkgen 5 false",
+  "forceload add 432 -80 592 80",
+  ...arenaPlatformCommands({ x: 512, y: 8, z: 0 }, 80, 8),
+  "rlt at world 512 8 0 lighting 48 240 2",
   "rlt at world 2048 8 0 scenario load 2 64 3 false 120 1",
   "rlt at world 200000 8 0 scenario gen 2 96 3 false 120 1",
   "rlt status",
@@ -45,6 +49,7 @@ const DEFAULT_COMMANDS = [
   "forceload remove 16 -80 176 80",
   "forceload remove -192 -64 -64 64",
   "forceload remove 304 -80 464 80",
+  "forceload remove 432 -80 592 80",
   "tps",
   "mspt",
 ];
@@ -269,6 +274,11 @@ async function runRconCommands(commandList) {
     if (redstoneMatch) {
       const ticks = Number(redstoneMatch[1]);
       await waitForLatestLogMatch(/redstone boundary load finished:/, Math.max(30000, ticks * 50 + 15000));
+    }
+    const lightingMatch = /\blighting\s+\d+\s+(\d+)\s+\d+/i.exec(command);
+    if (lightingMatch) {
+      const ticks = Number(lightingMatch[1]);
+      await waitForLatestLogMatch(/lighting load finished:/, Math.max(30000, ticks * 50 + 15000));
     }
     await sleep(250);
   }
@@ -738,6 +748,25 @@ async function assertRltRuntimeEvidence() {
       const skipped = Number(skippedRaw);
       if (tasks <= 0 || completed !== tasks || rejected !== 0 || writes <= 0) {
         issues.push(`Bad redstone/piston boundary completion: tasks=${tasks} completed=${completed} rejected=${rejected} writes=${writes} skippedUnloaded=${skipped}`);
+      }
+    }
+  }
+  if (commands.some(command => /^rlt\b.*\blighting\b/i.test(command))) {
+    const lightingMatches = [...text.matchAll(/lighting load finished: .*?queued=(\d+), rejected=(\d+), writes=(\d+), lightReads=(\d+), brightSamples=(\d+), darkSamples=(\d+), skippedUnloaded=(\d+)/g)];
+    if (lightingMatches.length === 0) {
+      issues.push("Missing lighting completion evidence");
+    }
+    for (const match of lightingMatches) {
+      const [, queuedRaw, rejectedRaw, writesRaw, readsRaw, brightSamplesRaw, darkSamplesRaw, skippedRaw] = match;
+      const queued = Number(queuedRaw);
+      const rejected = Number(rejectedRaw);
+      const writes = Number(writesRaw);
+      const reads = Number(readsRaw);
+      const brightSamples = Number(brightSamplesRaw);
+      const darkSamples = Number(darkSamplesRaw);
+      const skipped = Number(skippedRaw);
+      if (queued <= 0 || rejected !== 0 || writes <= 0 || reads <= 0 || brightSamples <= 0 || darkSamples <= 0 || skipped !== 0) {
+        issues.push(`Bad lighting completion: queued=${queued} rejected=${rejected} writes=${writes} lightReads=${reads} brightSamples=${brightSamples} darkSamples=${darkSamples} skippedUnloaded=${skipped}`);
       }
     }
   }

@@ -56,11 +56,9 @@ const FAILURE_BUCKETS = [
       "LiquidBlock",
       "LeavesBlock",
       "RedStoneWireBlock",
-      "redstone",
-      "fluid",
-      "leaf",
-      "lava",
-      "water",
+      "redstone boundary",
+      "fluid-leaf-boundary",
+      "fluid leaf boundary",
     ],
   },
   {
@@ -112,6 +110,7 @@ const FAILURE_BUCKETS = [
 ];
 
 const RLT_ENTITY_TAG = "shreddedpaper_rlt";
+const WEBSOCKET_BOT_RELOG_FIX_MARKER = "// ShreddedPaper mcc-chaos relog fix v3";
 const ANARCHY_BOT_ARENAS = [
   { x: 384, y: 8, z: 0, label: "redstone-raid" },
   { x: -384, y: 8, z: 0, label: "mobfarm-cram" },
@@ -319,6 +318,109 @@ function assertUnderRoot(rootPath, candidate) {
   const full = path.resolve(candidate);
   if (!full.startsWith(fullRoot)) {
     throw new Error(`Refusing to operate outside chaos root: ${full}`);
+  }
+}
+
+function isPathUnder(candidate, parent) {
+  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function pidsListeningOnPort(port) {
+  const output = await commandOutput("lsof", ["-tiTCP:" + port, "-sTCP:LISTEN"]);
+  return [...new Set(output
+    .split(/\r?\n/)
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter(Number.isInteger))];
+}
+
+async function pidCwd(pid) {
+  const output = await commandOutput("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"]);
+  const nameLine = output.split(/\r?\n/).find((line) => line.startsWith("n"));
+  return nameLine ? nameLine.slice(1) : "";
+}
+
+function mccWebSocketPorts(args) {
+  return Array.from({ length: args.botCount }, (_, index) => args.webSocketBasePort + index);
+}
+
+async function cleanupStaleCycleResources(args, cycleRunDir) {
+  const serverPids = new Set([
+    ...await pidsListeningOnPort(args.serverPort),
+    ...await pidsListeningOnPort(args.rconPort),
+  ]);
+  const webSocketPids = new Set();
+  for (const port of mccWebSocketPorts(args)) {
+    for (const pid of await pidsListeningOnPort(port)) {
+      webSocketPids.add(pid);
+    }
+  }
+  const candidatePids = new Set([...serverPids, ...webSocketPids]);
+  const ownedPids = [];
+  const ownedServerPids = [];
+  const externalOwners = [];
+
+  for (const pid of candidatePids) {
+    const cwd = await pidCwd(pid);
+    if (cwd && isPathUnder(cwd, cycleRunDir)) {
+      ownedPids.push(pid);
+      if (serverPids.has(pid)) {
+        ownedServerPids.push(pid);
+      }
+    } else {
+      externalOwners.push({ pid, cwd });
+    }
+  }
+
+  if (externalOwners.length > 0) {
+    const details = externalOwners
+      .map(({ pid, cwd }) => `pid=${pid} cwd=${cwd || "(unknown)"}`)
+      .join("\n");
+    throw new Error(`MCC chaos ports are held by a process outside this cycle root; refusing to kill it:\n${details}`);
+  }
+
+  if (ownedPids.length === 0) {
+    return;
+  }
+
+  console.warn(`Found stale MCC process(es) from ${cycleRunDir}: ${ownedPids.join(", ")}; stopping before rerun.`);
+  if (ownedServerPids.length > 0) {
+    try {
+      await sendRconCommand(args, "stop", 5000);
+    } catch (error) {
+      console.warn(`Could not stop stale MCC server over RCON: ${error.message}`);
+    }
+  }
+  if (await waitForPidsExit(ownedPids, 30000)) {
+    return;
+  }
+
+  await signalPids(ownedPids, "SIGTERM");
+  if (await waitForPidsExit(ownedPids, 5000)) {
+    return;
+  }
+  await signalPids(ownedPids, "SIGKILL");
+  if (!await waitForPidsExit(ownedPids, 5000)) {
+    throw new Error(`Could not stop stale MCC process(es): ${ownedPids.join(", ")}`);
+  }
+}
+
+async function waitForPidsExit(pids, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (pids.every((pid) => !isProcessAlive(pid))) {
+      return true;
+    }
+    await sleep(250);
+  }
+  return pids.every((pid) => !isProcessAlive(pid));
+}
+
+async function signalPids(pids, signal) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch {}
   }
 }
 
@@ -577,6 +679,33 @@ async function waitForPlayers(args, names, processes = [], botInfos = [], timeou
   throw new Error(`Timed out waiting for MCC players to join: required=${minBots}/${names.length}, joined=${lastJoined.join(",") || "(none)"}, exited=${namesExited || "(none)"}. Diagnostics: ${diagnostics}`);
 }
 
+async function refreshActiveMccBots(args, activeBotInfos, mccProcesses, rconLog, context, timeoutSec = 90) {
+  if (activeBotInfos.length === 0) {
+    return activeBotInfos;
+  }
+  const joinedNames = await waitForPlayers(
+    args,
+    activeBotInfos.map((bot) => bot.name),
+    activeBotInfos.map((bot) => mccProcesses[bot.index]),
+    activeBotInfos,
+    timeoutSec,
+    Math.min(args.minBots || activeBotInfos.length, activeBotInfos.length),
+    {
+      restartExited: true,
+      maxRestarts: 2,
+      onRestart: (index, child, bot) => {
+        mccProcesses[bot.index] = child;
+      },
+    }
+  );
+  const refreshed = activeBotInfos.filter((bot) => joinedNames.includes(bot.name));
+  await fs.appendFile(rconLog, `# ${context}: active MCC bots ${refreshed.length}/${activeBotInfos.length}: ${refreshed.map((bot) => bot.name).join(", ") || "(none)"}\n\n`, "utf8");
+  if (refreshed.length < (args.minBots || 0)) {
+    throw new Error(`${context}: active MCC bot count below minBots after restart attempts: ${refreshed.length}/${args.minBots}`);
+  }
+  return refreshed;
+}
+
 function isChildExited(child) {
   if (!child) {
     return true;
@@ -652,7 +781,7 @@ function parseRltStatus(text) {
 function parseRegionLoadTestStatus(text) {
   const plain = stripMinecraftColors(text);
   const counters = {};
-  for (const key of ["managedTasks", "managedEntities", "managedChunkTickets", "activeChunkBatches"]) {
+  for (const key of ["managedTasks", "managedEntities", "managedChunkTickets", "cleanupPurgeTasks", "activeChunkBatches"]) {
     const match = new RegExp(`${key}=([0-9]+)`).exec(plain);
     if (!match) {
       throw new Error(`Could not parse RegionLoadTest status counter ${key}: ${plain.trim()}`);
@@ -1211,6 +1340,93 @@ async function getWebSocketBotTemplate(cacheDir) {
   return fs.readFile(template, "utf8");
 }
 
+function applyWebSocketBotRelogFix(template) {
+  const hasModernRelogFix =
+    template.includes("ActiveServerKey") &&
+    template.includes("ReclaimPortListener(int port)") &&
+    template.includes("existing.GetType().GetMethod(\"Stop\", System.Type.EmptyTypes)") &&
+    template.includes("RegisterPortListener(int port, object? server)") &&
+    template.includes("RegisterPortListener(_port, _server);") &&
+    !template.includes("RegisterPortListener(_port, null);");
+
+  if (hasModernRelogFix) {
+    return finalizeWebSocketBotTemplate(template);
+  }
+
+  if (template.includes("ActiveServerKey")) {
+    const patched = template
+      .replace(
+        '        var existing = System.AppDomain.CurrentDomain.GetData(key) as WebSocketServer;',
+        '        var existing = System.AppDomain.CurrentDomain.GetData(key);',
+      )
+      .replace(
+        '                existing.Stop();',
+        '                existing.GetType().GetMethod("Stop", System.Type.EmptyTypes)?.Invoke(existing, null);\n                System.Threading.Thread.Sleep(250);',
+      )
+      .replace(
+        '    private static void RegisterPortListener(int port, WebSocketServer? server)',
+        '    private static void RegisterPortListener(int port, object? server)',
+      )
+      .replace(
+        '        RegisterPortListener(_port, null);\n',
+        '',
+      );
+    return finalizeWebSocketBotTemplate(patched);
+  }
+
+  const patched = template
+    .replace(
+      'public class WebSocketBot : ChatBot\n{\n    private readonly string _ip;',
+      'public class WebSocketBot : ChatBot\n{\n    private static string ActiveServerKey(int port) => "mcc-chaos.websocket-server." + port;\n\n    private static void ReclaimPortListener(int port)\n    {\n        var key = ActiveServerKey(port);\n        var existing = System.AppDomain.CurrentDomain.GetData(key);\n        if (existing is not null)\n        {\n            try\n            {\n                existing.GetType().GetMethod("Stop", System.Type.EmptyTypes)?.Invoke(existing, null);\n                System.Threading.Thread.Sleep(250);\n            }\n            catch\n            {\n                // ignore stale listener teardown errors\n            }\n        }\n\n        System.AppDomain.CurrentDomain.SetData(key, null);\n    }\n\n    private static void RegisterPortListener(int port, object? server)\n    {\n        System.AppDomain.CurrentDomain.SetData(ActiveServerKey(port), server);\n    }\n\n    private readonly string _ip;',
+    )
+    .replace(
+      '        _server = new WebSocketServer();',
+      '        ReclaimPortListener(_port);\n\n        _server = new WebSocketServer();\n        RegisterPortListener(_port, _server);',
+    )
+    .replace(
+      '    public override void OnUnload()\n    {\n        BroadcastEvent("OnWsConnectionClose", "N/A");\n        _server?.Stop();\n    }',
+      '    public override void OnUnload()\n    {\n        BroadcastEvent("OnWsConnectionClose", "N/A");\n        _server?.Stop();\n    }',
+    );
+  return finalizeWebSocketBotTemplate(patched);
+}
+
+function finalizeWebSocketBotTemplate(template) {
+  if (template.startsWith(`${WEBSOCKET_BOT_RELOG_FIX_MARKER}\n//MCCScript 1.0`)) {
+    template = template.replace(
+      `${WEBSOCKET_BOT_RELOG_FIX_MARKER}\n//MCCScript 1.0`,
+      `//MCCScript 1.0\n${WEBSOCKET_BOT_RELOG_FIX_MARKER}`,
+    );
+  }
+
+  const missing = [];
+  for (const [label, needle] of [
+    ["ActiveServerKey", "ActiveServerKey"],
+    ["ReclaimPortListener", "ReclaimPortListener(int port)"],
+    ["reflective Stop", "existing.GetType().GetMethod(\"Stop\", System.Type.EmptyTypes)"],
+    ["object listener registry", "RegisterPortListener(int port, object? server)"],
+    ["new listener registry", "RegisterPortListener(_port, _server);"],
+  ]) {
+    if (!template.includes(needle)) {
+      missing.push(label);
+    }
+  }
+  if (template.includes("RegisterPortListener(_port, null);")) {
+    missing.push("stale OnUnload listener clear");
+  }
+  if (template.includes("GetData(key) as WebSocketServer")) {
+    missing.push("stale typed AppDomain listener lookup");
+  }
+  if (!template.startsWith("//MCCScript 1.0")) {
+    missing.push("valid MCCScript header");
+  }
+  if (missing.length > 0) {
+    throw new Error(`WebSocketBot relog patch did not produce a safe template. Missing/stale checks: ${missing.join(", ")}`);
+  }
+  return template.includes(WEBSOCKET_BOT_RELOG_FIX_MARKER)
+    ? template
+    : template.replace("//MCCScript 1.0", `//MCCScript 1.0\n${WEBSOCKET_BOT_RELOG_FIX_MARKER}`);
+}
+
 function serverProperties(args) {
   const spawnEnabled = args.enableNaturalSpawns ? "true" : "false";
   const defaultGameMode = args.chaosProfile === "anarchy-smp" ? "survival" : "creative";
@@ -1326,6 +1542,13 @@ AutoRespawn = true
 ExitOnFailure = false
 Timestamps = true
 ResolveSrvRecords = "no"
+
+[ChatBot.AutoRelog]
+Enabled = true
+Delay = { min = 5.0, max = 7.0 }
+Retries = -1
+Ignore_Kick_Message = true
+Kick_Messages = [ "Connection has been lost", "Server is restarting", "Server is full", "Too Many people", "qa-rejoin-churn", ]
 
 [Logging]
 DebugMessages = false
@@ -1497,7 +1720,7 @@ async function invokeSetupCommands(args, botNames, rconLog) {
 }
 
 async function invokeFluidLeafBoundaryFixture(args, rconLog) {
-  await invokeRconCommands(args, [
+  await invokeForceloadedRconCommands(args, rconLog, { minX: 112, minZ: -32, maxX: 144, maxZ: 32 }, [
     "fill 112 4 -32 144 4 32 minecraft:stone",
     "fill 112 5 -32 144 8 32 minecraft:air",
     "fill 126 5 -24 126 5 24 minecraft:water",
@@ -1508,7 +1731,7 @@ async function invokeFluidLeafBoundaryFixture(args, rconLog) {
     "setblock 128 7 0 minecraft:oak_leaves[persistent=false]",
     "setblock 127 6 0 minecraft:air",
     "setblock 126 6 0 minecraft:lava",
-  ], rconLog, 20000, 150);
+  ], 20000, 150);
 }
 
 async function invokeTeleportHooks(args, botNames, rconLog, pluginJar) {
@@ -1671,7 +1894,7 @@ async function invokeNaturalSpawnHook(args, botNames, rconLog, pluginJar) {
   await ensureRltChunks(args, rconLog, pluginJar, [{ x: 328, y: 8, z: 328 }], 4);
   const bounds = { minX: 288, minZ: 288, maxX: 368, maxZ: 368 };
   const commands = [
-    "gamerule minecraft:spawn_mobs true",
+    "gamerule spawn_mobs true",
     "time set midnight",
     "fill 288 3 288 368 3 368 minecraft:grass_block",
     "fill 288 4 288 328 18 328 minecraft:air",
@@ -1858,13 +2081,13 @@ async function invokeReconnectChurnHook(args, activeBotInfos, mccProcesses, life
       { x: 0, y: 8, z: 0 },
       { x: 128, y: 8, z: 0 },
       { x: 384, y: 8, z: 128 },
-    ], 4);
+    ], 8);
     await invokeRconCommands(args, [
       `rlt at world 0 8 0 tracker 120 ${lifeTicks} 16`,
       `rlt at world 128 8 0 crossqueue 16 64 96`,
       "say mcc-chaos reconnect-churn-background-load",
     ], rconLog, 30000, 400);
-    await invokeForceloadedRconCommands(args, rconLog, { minX: 384, minZ: 128, maxX: 447, maxZ: 159 }, [
+    await invokeForceloadedRconCommands(args, rconLog, { minX: 384, minZ: 128, maxX: 511, maxZ: 159 }, [
       `rlt at world 384 8 128 broadcast 8 96 ${lifeTicks}`,
     ], 30000, 400);
   }
@@ -2001,7 +2224,7 @@ async function invokeController(args, botInfos, cycleResultDir) {
     "--out", out,
   ];
   if (args.chaosProfile === "anarchy-smp") {
-    controllerArgs.push("--movement-mode", "rcon-teleport", "--disable-terrain-during-controller");
+    controllerArgs.push("--movement-mode", "rcon-teleport");
   }
   const controllerTimeoutSec = args.durationSec + 180 + Math.max(0, botInfos.length - 1) * 10;
   const exitCode = await runLogged("node", controllerArgs, repoRoot, log, { allowFailure: true, timeoutMs: controllerTimeoutSec * 1000 });
@@ -2077,6 +2300,23 @@ function controllerHealthIssues(args, summary) {
   if (bots.length > 0 && totals.ok < bots.length * 8) {
     issues.push(`Controller made too little positive progress: ok=${totals.ok}, bots=${bots.length}`);
   }
+  const finishedAt = Date.parse(summary.finishedAt ?? "");
+  const hasPerBotOkTimes = bots.some((bot) => Number.isFinite(Date.parse(bot.lastOkAt ?? "")));
+  if (Number.isFinite(finishedAt) && hasPerBotOkTimes) {
+    const livenessWindowMs = Math.max(30_000, Math.min(60_000, Math.floor((args.durationSec || 180) * 250)));
+    const activeRecentBots = bots.filter((bot) => {
+      const lastOkAt = Date.parse(bot.lastOkAt ?? "");
+      return Number.isFinite(lastOkAt) && finishedAt - lastOkAt <= livenessWindowMs;
+    });
+    if (activeRecentBots.length < args.minBots) {
+      const staleBots = bots
+        .filter((bot) => !activeRecentBots.includes(bot))
+        .map((bot) => `${bot.name}:lastOkAt=${bot.lastOkAt ?? "never"}`)
+        .slice(0, 8)
+        .join(", ");
+      issues.push(`Controller active-bot liveness dropped below minBots: activeRecent=${activeRecentBots.length}/${args.minBots} within ${livenessWindowMs}ms; stale=${staleBots}`);
+    }
+  }
   const timeoutRatio = totals.sent === 0 ? 0 : totals.timedOut / totals.sent;
   if (totals.sent > 0 && timeoutRatio > 0.5) {
     issues.push(`Controller timeout ratio too high: timedOut=${totals.timedOut}, sent=${totals.sent}`);
@@ -2101,7 +2341,7 @@ function controllerHealthIssues(args, summary) {
   }
 
   if (args.chaosProfile === "anarchy-smp") {
-    const scenarios = summary.scenarioCounts ?? {};
+    const scenarios = summary.successfulScenarioCounts ?? {};
     const requiredArenaCount = Math.min(
       Math.max(args.minBots || 0, bots.length),
       ANARCHY_BOT_ARENAS.length
@@ -2135,6 +2375,9 @@ function isExpectedControllerCommandError(error) {
     return true;
   }
   if (command === "DigBlock" && /^Block is air$/i.test(message)) {
+    return true;
+  }
+  if (command === "DigBlock" && /^Block too far away\b/i.test(message)) {
     return true;
   }
   return false;
@@ -2183,6 +2426,8 @@ async function formatControllerDetail(controllerSummaryPath) {
       `Chaos profile: ${summary.chaosProfile ?? "unknown"} intensity=${summary.chaosIntensity ?? "unknown"}`,
       `Action counts: ${JSON.stringify(summary.actionCounts ?? {})}`,
       `Scenario counts: ${JSON.stringify(summary.scenarioCounts ?? {})}`,
+      `Successful scenario counts: ${JSON.stringify(summary.successfulScenarioCounts ?? {})}`,
+      `Command error summary: ${JSON.stringify(summary.commandErrorSummary ?? {})}`,
       `Role counts: ${JSON.stringify(summary.roleCounts ?? {})}`,
     ];
     for (const bot of summary.bots ?? []) {
@@ -2412,6 +2657,9 @@ async function captureServerThreadDump(args, child, serverDir, label) {
 async function assertServerResourcesReleased(args, serverDir) {
   await assertNoLsof(`TCP:${args.serverPort}`, ["-Pan", `-iTCP:${args.serverPort}`, "-sTCP:LISTEN"]);
   await assertNoLsof(`TCP:${args.rconPort}`, ["-Pan", `-iTCP:${args.rconPort}`, "-sTCP:LISTEN"]);
+  for (const port of mccWebSocketPorts(args)) {
+    await assertNoLsof(`MCC WebSocket TCP:${port}`, ["-Pan", `-iTCP:${port}`, "-sTCP:LISTEN"]);
+  }
   await assertNoLsof("world/session.lock", [path.join(serverDir, "world", "session.lock")]);
 }
 
@@ -2461,6 +2709,7 @@ async function invokeOneCycle(args, cycleNumber, mccExe, webSocketTemplate, serv
   const cycleResultDir = path.join(args.resultRoot, cycleName);
   assertUnderRoot(args.rootPath, cycleRunDir);
   assertUnderRoot(args.rootPath, cycleResultDir);
+  await cleanupStaleCycleResources(args, cycleRunDir);
   await fs.rm(cycleRunDir, { recursive: true, force: true });
   await fs.rm(cycleResultDir, { recursive: true, force: true });
   await ensureDir(cycleRunDir);
@@ -2518,12 +2767,14 @@ async function invokeOneCycle(args, cycleNumber, mccExe, webSocketTemplate, serv
 
     const rconLog = path.join(cycleResultDir, "rcon.log");
     await writeUtf8(rconLog, "");
+    activeBotInfos = await refreshActiveMccBots(args, activeBotInfos, mccProcesses, rconLog, "pre-setup liveness check");
     await invokeSetupCommands(args, activeBotInfos.map((bot) => bot.name), rconLog);
     const lifeTicks = Math.max(1200, (args.durationSec + 30) * 20);
     await invokeChaosScenarioHooks(args, activeBotInfos.map((bot) => bot.name), lifeTicks, rconLog, pluginJar);
+    const reconnectEvidenceBotInfos = activeBotInfos.map((bot) => ({ ...bot }));
     activeBotInfos = await invokeReconnectChurnHook(args, activeBotInfos, mccProcesses, lifeTicks, rconLog, pluginJar);
     await assertMccBotArenaReadiness(args, activeBotInfos, rconLog, mccProcesses, pluginJar);
-    await assertRconScenarioEvidence(args, rconLog, activeBotInfos);
+    await assertRconScenarioEvidence(args, rconLog, reconnectEvidenceBotInfos);
     controllerSummary = await invokeController(args, activeBotInfos, cycleResultDir);
     await sleep(5000);
     await assertRegionLoadTestClean(args, rconLog, pluginJar);
@@ -2556,7 +2807,21 @@ async function invokeOneCycle(args, cycleNumber, mccExe, webSocketTemplate, serv
   } finally {
     await stopProcesses(mccProcesses);
     if (!args.noStop) {
-      await stopServer(args, serverProcess, serverDir);
+      try {
+        await stopServer(args, serverProcess, serverDir);
+      } catch (error) {
+        const serverLogSegment = `${await readMaybe(path.join(serverDir, "logs", "latest.log"))}\nMCC shutdown failure: ${error?.stack ?? error}\n`;
+        await writeUtf8(path.join(cycleResultDir, "server-test-segment.log"), serverLogSegment);
+        const failure = {
+          failed: true,
+          patternMatches: ["mcc-shutdown-failure"],
+          crashReports: (await listCrashReports(crashDir)).filter((crash) => !beforeCrashReports.includes(crash)),
+          controllerHardErrors: [{ message: error?.message ?? String(error) }],
+          controllerExitCode: 1,
+        };
+        const failureReport = await newFailureReport(args, cycleResultDir, serverLogSegment, failure, controllerSummary);
+        return { passed: false, cycle: cycleNumber, resultDir: cycleResultDir, failureReport, agentPrompt: "" };
+      }
     }
   }
 }
@@ -2585,6 +2850,7 @@ async function main() {
   await ensureDir(args.resultRoot);
 
   if (args.dryRun) {
+    const webSocketTemplate = applyWebSocketBotRelogFix(await getWebSocketBotTemplate(args.cacheDir));
     console.log(JSON.stringify({
       repoRoot,
       serverJar,
@@ -2599,12 +2865,14 @@ async function main() {
       serverPort: args.serverPort,
       rconPort: args.rconPort,
       onlineMode: false,
+      webSocketBotHeader: webSocketTemplate.split(/\r?\n/, 2),
+      webSocketBotRelogFixMarker: webSocketTemplate.includes(WEBSOCKET_BOT_RELOG_FIX_MARKER),
     }, null, 2));
     return;
   }
 
   const mccExe = await installMcc(args, args.cacheDir);
-  const webSocketTemplate = await getWebSocketBotTemplate(args.cacheDir);
+  const webSocketTemplate = applyWebSocketBotRelogFix(await getWebSocketBotTemplate(args.cacheDir));
   let lastResult = null;
 
   for (let cycle = 1; cycle <= args.maxCycles; cycle++) {

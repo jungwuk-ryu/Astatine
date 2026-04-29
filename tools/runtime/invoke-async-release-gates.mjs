@@ -274,6 +274,7 @@ async function main() {
       options.rconPort,
       "--websocket-base-port",
       options.websocketBasePort,
+      "--enable-natural-spawns",
       "--skip-build",
       "--agent-mode",
       "ReportOnly",

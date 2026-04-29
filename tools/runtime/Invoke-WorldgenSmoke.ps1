@@ -230,6 +230,9 @@ try {
     @(
         "rlt at world 0 120 0 chunkload 4 false",
         "rlt at world 0 120 0 syncload 64 4",
+        "rlt at world 96 120 0 path 8 32 120",
+        "rlt at world 128 120 0 boundary 2 80 32 1",
+        "rlt at world 192 120 0 lighting 16 80 2",
         "rlt cleanup",
         "tps",
         "region"

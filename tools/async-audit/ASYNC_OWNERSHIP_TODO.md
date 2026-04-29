@@ -2,7 +2,7 @@
 
 This is the shared backlog for independent region ticking hazards. Keep statuses in the metadata comment and the visible Status line in sync when assigning or closing work.
 
-Generated: 2026-04-28T12:59:52.980Z
+Generated: 2026-04-29T00:43:50.264Z
 Scanner: `node tools/async-audit/scan-async-ownership.mjs --write-todo`
 
 Status values: `todo`, `investigating`, `fixing`, `blocked`, `done`, `false-positive`.

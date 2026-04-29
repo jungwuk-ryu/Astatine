@@ -52,7 +52,9 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tntspread",
         "villagers",
         "path",
+        "boundary",
         "redstone",
+        "lighting",
         "mobfarm",
         "pvp",
         "vehicles",
@@ -149,12 +151,19 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
                 return this.handlePathfindingLoad(sender, anchor, effectiveArgs, commandBatch);
             }
-            case "redstone" -> {
+            case "boundary", "redstone" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
                 if (anchor == null) {
                     return true;
                 }
                 return this.handleRedstoneBoundaryLoad(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "lighting" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleLightingLoad(sender, anchor, effectiveArgs, commandBatch);
             }
             case "mobfarm" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
@@ -264,6 +273,12 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }
         if (args.length == 2 && equalsAny(args[0], "scheduler")) {
             return this.filter(List.of("region", "regionlocal", "global", "async"), args[1]);
+        }
+        if (args.length == 2 && equalsAny(args[0], "watchdogstall")) {
+            return this.filter(List.of("global", "region"), args[1]);
+        }
+        if (args.length == 4 && equalsAny(args[0], "watchdogstall")) {
+            return this.filter(List.of("interruptible", "uninterruptible"), args[3]);
         }
         return Collections.emptyList();
     }
@@ -810,6 +825,100 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 + ", pulseTasks=" + expected + ", completed=" + completed + ", rejected=" + rejectedTasks.get()
                 + ", writes=" + pulseWrites.get() + ", skippedUnloaded=" + skippedUnloaded.get());
         }
+    }
+
+    private boolean handleLightingLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt lighting <cells> [ticks=160] [periodTicks=2]");
+            return true;
+        }
+
+        final Integer cells = this.parseInt(sender, args[1], "cells");
+        final Integer ticks = args.length >= 3 ? this.parseInt(sender, args[2], "ticks") : 160;
+        final Integer periodTicks = args.length >= 4 ? this.parseInt(sender, args[3], "periodTicks") : 2;
+        if (cells == null || ticks == null || periodTicks == null) {
+            return true;
+        }
+        if (cells < 1 || cells > 128 || ticks < 1 || periodTicks < 1) {
+            sender.sendMessage("cells must be 1..128, ticks and periodTicks must be positive.");
+            return true;
+        }
+
+        final World world = Objects.requireNonNull(base.getWorld());
+        final int baseX = base.getBlockX() - cells / 2;
+        final int baseY = Math.max(world.getMinHeight() + 3, Math.min(world.getMaxHeight() - 3, base.getBlockY()));
+        final int baseZ = base.getBlockZ();
+        final AtomicInteger queued = new AtomicInteger();
+        final AtomicInteger rejected = new AtomicInteger();
+        final AtomicInteger writes = new AtomicInteger();
+        final AtomicInteger lightReads = new AtomicInteger();
+        final AtomicInteger brightSamples = new AtomicInteger();
+        final AtomicInteger darkSamples = new AtomicInteger();
+        final AtomicInteger skippedUnloaded = new AtomicInteger();
+        for (int i = 0; i < cells; i++) {
+            final Location cell = new Location(world, baseX + i, baseY, baseZ + (i & 1));
+            final AtomicInteger remaining = new AtomicInteger(ticks);
+            try {
+                final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, cell, task -> {
+                    if (this.plugin.shouldAbortBatch(commandBatch) || remaining.addAndGet(-periodTicks) < 0) {
+                        task.cancel();
+                        this.plugin.untrackTask(task);
+                        return;
+                    }
+                    final int x = cell.getBlockX();
+                    final int y = cell.getBlockY();
+                    final int z = cell.getBlockZ();
+                    if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                        skippedUnloaded.incrementAndGet();
+                        return;
+                    }
+                    this.setBlockTypeIfLoaded(world, x, y - 1, z, Material.STONE, false);
+                    final boolean bright = (remaining.get() & 4) == 0;
+                    if (this.setBlockTypeIfLoaded(world, x, y, z, bright ? Material.SEA_LANTERN : Material.AIR, true)) {
+                        writes.incrementAndGet();
+                        final int light = world.getBlockAt(x, y, z).getLightLevel();
+                        lightReads.incrementAndGet();
+                        if (bright && light > 0) {
+                            brightSamples.incrementAndGet();
+                        }
+                        if (!bright && light == 0) {
+                            darkSamples.incrementAndGet();
+                        }
+                    } else {
+                        skippedUnloaded.incrementAndGet();
+                    }
+                }, 1L, periodTicks);
+                this.plugin.trackTask(scheduledTask);
+                queued.incrementAndGet();
+            } catch (final RejectedExecutionException rejectedExecutionException) {
+                rejected.incrementAndGet();
+            }
+        }
+
+        final int summaryDelayTicks = Math.max(20, ticks + periodTicks + 2);
+        this.plugin.trackTask(Bukkit.getGlobalRegionScheduler().runDelayed(this.plugin, task -> {
+            try {
+                this.replyLater(sender, "lighting load finished: cells=" + cells
+                    + ", ticks=" + ticks
+                    + ", periodTicks=" + periodTicks
+                    + ", queued=" + queued.get()
+                    + ", rejected=" + rejected.get()
+                    + ", writes=" + writes.get()
+                    + ", lightReads=" + lightReads.get()
+                    + ", brightSamples=" + brightSamples.get()
+                    + ", darkSamples=" + darkSamples.get()
+                    + ", skippedUnloaded=" + skippedUnloaded.get());
+            } finally {
+                this.plugin.untrackTask(task);
+            }
+        }, summaryDelayTicks));
+
+        sender.sendMessage("Queued lighting load: cells=" + cells
+            + ", ticks=" + ticks
+            + ", periodTicks=" + periodTicks
+            + ", queued=" + queued.get()
+            + ", rejected=" + rejected.get());
+        return true;
     }
 
     private boolean handleMobFarmLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
@@ -1558,7 +1667,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
     private boolean handleWatchdogStall(final CommandSender sender, final Location anchorOverride, final String[] args) {
         if (args.length < 3) {
-            sender.sendMessage("Usage: /rlt watchdogstall <global|region> <millis>");
+            sender.sendMessage("Usage: /rlt watchdogstall <global|region> <millis> [interruptible|uninterruptible]");
             return true;
         }
 
@@ -1571,11 +1680,21 @@ public final class RegionLoadTestCommand implements TabExecutor {
             sender.sendMessage("millis must be 1..120000.");
             return true;
         }
+        final String stallStyle = args.length >= 4 ? args[3].toLowerCase(Locale.ROOT) : "interruptible";
+        final boolean interruptible;
+        if ("interruptible".equals(stallStyle)) {
+            interruptible = true;
+        } else if ("uninterruptible".equals(stallStyle)) {
+            interruptible = false;
+        } else {
+            sender.sendMessage("Unknown watchdogstall style. Use interruptible or uninterruptible.");
+            return true;
+        }
 
         switch (mode) {
             case "global" -> {
                 final ScheduledTask task = Bukkit.getGlobalRegionScheduler().run(this.plugin,
-                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis));
+                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis, interruptible));
                 this.plugin.trackTask(task);
             }
             case "region" -> {
@@ -1584,7 +1703,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
                     return true;
                 }
                 final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, anchor,
-                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis));
+                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis, interruptible));
                 this.plugin.trackTask(task);
             }
             default -> {
@@ -1593,16 +1712,32 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
         }
 
-        sender.sendMessage("Queued watchdog stall: mode=" + mode + ", millis=" + millis);
+        sender.sendMessage("Queued watchdog stall: mode=" + mode + ", millis=" + millis + ", style=" + stallStyle);
         return true;
     }
 
-    private void blockForWatchdog(final ScheduledTask task, final int millis) {
+    private void blockForWatchdog(final ScheduledTask task, final int millis, final boolean interruptible) {
+        final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        boolean interrupted = false;
         try {
-            Thread.sleep(millis);
-        } catch (final InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
+            while (true) {
+                final long remainingNanos = deadline - System.nanoTime();
+                if (remainingNanos <= 0L) {
+                    return;
+                }
+                try {
+                    TimeUnit.NANOSECONDS.sleep(Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(250L)));
+                } catch (final InterruptedException interruptedException) {
+                    interrupted = true;
+                    if (interruptible) {
+                        return;
+                    }
+                }
+            }
         } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
             this.plugin.untrackTask(task);
         }
     }
@@ -1972,6 +2107,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             + ", managedTasks=" + status.managedTasks()
             + ", managedEntities=" + status.managedEntities()
             + ", managedChunkTickets=" + status.managedChunkTickets()
+            + ", cleanupPurgeTasks=" + status.cleanupPurgeTasks()
             + ", activeChunkBatches=" + status.activeChunkBatches());
         return true;
     }
@@ -2203,13 +2339,15 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " villagers <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " path <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " redstone <lanes> [ticks] [length] [periodTicks]");
+        sender.sendMessage("/" + label + " boundary <lanes> [ticks] [length] [periodTicks]");
+        sender.sendMessage("/" + label + " lighting <cells> [ticks] [periodTicks]");
         sender.sendMessage("/" + label + " mobfarm <spawners> [mobsPerWave] [lifeTicks] [periodTicks] [spread]");
         sender.sendMessage("/" + label + " pvp <launchers> [projectilesPerBurst] [lifeTicks] [periodTicks] [spread] [tntEvery]");
         sender.sendMessage("/" + label + " vehicles <count> [lifeTicks] [spread]");
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
         sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");
         sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
-        sender.sendMessage("/" + label + " watchdogstall <global|region> <millis>");
+        sender.sendMessage("/" + label + " watchdogstall <global|region> <millis> [interruptible|uninterruptible]");
         sender.sendMessage("/" + label + " crossqueue <chunkOffsetX> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " syncload <chunkOffsetX> [attempts]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");

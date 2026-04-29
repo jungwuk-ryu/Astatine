@@ -71,3 +71,29 @@ The report also writes `failure-classification.json` beside the markdown for scr
 - Use `-MccPath C:\path\to\MinecraftClient.exe` to avoid downloading MCC.
 - Use `-SkipBuild` only when the paperclip jar already exists.
 - `AutoFix` intentionally uses Codex's non-interactive CLI. Keep it on a disposable branch/worktree when possible.
+
+## Agent Validation Lane
+
+This lane uses `run/agent-validation-mcc`, server port `25640`, RCON port `25641`,
+and MCC/WebSocket base port `8460`.
+
+Run against an already-started local server with `RegionLoadTest` installed:
+
+```bash
+node tools/mcc-chaos/agent-validation-mcc.mjs \
+  --root run/agent-validation-mcc \
+  --server-dir run/agent-validation-mcc/server \
+  --server-port 25640 \
+  --rcon-port 25641 \
+  --websocket-base-port 8460
+```
+
+The harness drives RCON fixtures for scanner-blind runtime coverage: sync-load
+rejection, pathfinding movement, redstone/fluid boundaries, live lighting
+updates, stale chunk-send pressure, natural-spawn exposure, and cleanup of
+tagged RLT entities. If MCC WebSocket bots are running, pass `--bot-count <n>`
+and it records reachability for ports starting at `8460`.
+
+Fixture gap: natural spawning is exposed by enabling mob spawning and preparing
+pads, but spawn-count success is intentionally not deterministic because vanilla
+spawning depends on player positions, caps, and random ticks.
