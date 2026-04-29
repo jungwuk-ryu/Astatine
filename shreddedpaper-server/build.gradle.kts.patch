@@ -50,8 +50,12 @@
 +    implementation("org.jctools:jctools-core:4.0.6") // ShreddedPaper - bounded region mailboxes
      implementation("org.jline:jline-terminal-ffm:3.27.1") // use ffm on java 22+
      implementation("org.jline:jline-terminal-jni:3.27.1") // fall back to jni on java 21
-@@ -175,10 +_,13 @@
+@@ -175,10 +_,17 @@
 +    implementation(platform("io.netty:netty-bom:4.2.12.Final")) // ShreddedPaper - align Netty 4.2 patch line
++    implementation("io.netty:netty-transport-classes-io_uring") // ShreddedPaper - optional Linux io_uring transport
++    runtimeOnly("io.netty:netty-transport-native-io_uring:4.2.12.Final:linux-x86_64") // ShreddedPaper - optional Linux io_uring transport
++    runtimeOnly("io.netty:netty-transport-native-io_uring:4.2.12.Final:linux-aarch_64") // ShreddedPaper - optional Linux io_uring transport
++    runtimeOnly("io.netty:netty-transport-native-io_uring:4.2.12.Final:linux-riscv64") // ShreddedPaper - optional Linux io_uring transport
 -    implementation("com.velocitypowered:velocity-native:3.4.0-SNAPSHOT") {
 +    implementation("com.velocitypowered:velocity-native:3.4.0") {
          isTransitive = false
