@@ -70,10 +70,14 @@ public class LevelChunkRegion {
     public ArrayDeque<RedstoneTorchBlock.Toggle> redstoneUpdateInfos;
 
     public LevelChunkRegion(ServerLevel level, RegionOwner owner) {
+        this(level, owner, RegionRuntimeState.CreationReason.REGION);
+    }
+
+    public LevelChunkRegion(ServerLevel level, RegionOwner owner, RegionRuntimeState.CreationReason creationReason) {
         this.level = level;
         this.owner = owner;
         this.regionPos = owner.primaryCell();
-        this.runtimeState = RegionRuntimeState.getOrCreate(level, owner);
+        this.runtimeState = RegionRuntimeState.getOrCreate(level, owner, creationReason);
         this.runtimeState.attach(this);
 
         this.bumpLastAccess();

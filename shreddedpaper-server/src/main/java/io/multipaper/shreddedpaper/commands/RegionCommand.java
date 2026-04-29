@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.commands;
 
 import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
+import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
 import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -104,6 +105,23 @@ public final class RegionCommand extends Command {
                 this.metric("ownerHandoffRequeues", Long.toString(ShreddedPaperAccess.ownerHandoffRequeues()), this.countColor(ShreddedPaperAccess.ownerHandoffRequeues())),
                 this.metric("ownerHandoffRejections", Long.toString(ShreddedPaperAccess.ownerHandoffRejections()), this.countColor(ShreddedPaperAccess.ownerHandoffRejections())),
                 this.metric("prefetchFailures", Long.toString(ShreddedPaperAccess.prefetchFailures()), this.countColor(ShreddedPaperAccess.prefetchFailures()))
+        ));
+        final RegionRuntimeState.RuntimeStateDiagnostics runtimeStates = RegionRuntimeState.diagnostics();
+        sender.sendMessage(this.metricLine(
+                "runtime",
+                this.metric("states", Integer.toString(runtimeStates.totalStates()), NamedTextColor.GRAY),
+                this.metric("attached", Integer.toString(runtimeStates.attachedStates()), NamedTextColor.GRAY),
+                this.metric("detachedPending", Integer.toString(runtimeStates.detachedPendingStates()), this.countColor(runtimeStates.detachedPendingStates())),
+                this.metric("orphan", Integer.toString(runtimeStates.orphanStates()), this.countColor(runtimeStates.orphanStates()))
+        ));
+        sender.sendMessage(this.metricLine(
+                "runtime lifecycle",
+                this.metric("created", Long.toString(runtimeStates.createdRegions()), NamedTextColor.GRAY),
+                this.metric("split", Long.toString(runtimeStates.createdSplits()), NamedTextColor.GRAY),
+                this.metric("lookup", Long.toString(runtimeStates.createdCellLookups()), NamedTextColor.GRAY),
+                this.metric("removedEmpty", Long.toString(runtimeStates.removedEmptyRegions()), NamedTextColor.GRAY),
+                this.metric("removedMerged", Long.toString(runtimeStates.removedMergedRegions()), NamedTextColor.GRAY),
+                this.metric("removedIdle", Long.toString(runtimeStates.removedDetachedIdle()), NamedTextColor.GRAY)
         ));
         final List<String> loadedReadFallbackSamples = ShreddedPaperAccess.loadedReadFallbackSamples();
         if (!loadedReadFallbackSamples.isEmpty()) {

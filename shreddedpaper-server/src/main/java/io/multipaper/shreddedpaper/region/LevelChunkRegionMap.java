@@ -73,13 +73,17 @@ public class LevelChunkRegionMap {
     }
 
     private LevelChunkRegion getOrCreateRegionLocked(final RegionPos regionPos) {
+        return this.getOrCreateRegionLocked(regionPos, RegionRuntimeState.CreationReason.REGION);
+    }
+
+    private LevelChunkRegion getOrCreateRegionLocked(final RegionPos regionPos, final RegionRuntimeState.CreationReason creationReason) {
         final LevelChunkRegion existing = this.getExistingRegionLocked(regionPos);
         if (existing != null) {
             return existing;
         }
 
         final RegionOwner owner = RegionOwner.singleCell(regionPos);
-        final LevelChunkRegion created = new LevelChunkRegion(this.level, owner);
+        final LevelChunkRegion created = new LevelChunkRegion(this.level, owner, creationReason);
         owner.attachRegion(created);
         this.ownersByCell.put(regionPos.longKey, owner);
         this.ownersById.put(owner.id(), owner);
@@ -231,7 +235,7 @@ public class LevelChunkRegionMap {
                 this.ownersById.remove(sourceOwner.id());
                 this.invalidateRegionsSnapshot();
                 sourceOwner.detachRegion(sourceRegion);
-                sourceRegion.getRuntimeState().detach(sourceRegion);
+                sourceRegion.getRuntimeState().detach(sourceRegion, RegionRuntimeState.RemovalReason.MERGED_REGION);
                 sourceOwner.clearTransferredCells();
                 this.commitMergeEvent(targetOwner, sourceCell, targetCellsBefore, sourceCells, System.nanoTime() - startNanos);
             } finally {
@@ -406,7 +410,7 @@ public class LevelChunkRegionMap {
         final long startNanos = System.nanoTime();
         final RegionPos newPrimary = new RegionPos(splitCells.iterator().nextLong());
         final RegionOwner splitOwner = RegionOwner.splitOwner(newPrimary, splitCells);
-        final LevelChunkRegion splitRegion = new LevelChunkRegion(this.level, splitOwner);
+        final LevelChunkRegion splitRegion = new LevelChunkRegion(this.level, splitOwner, RegionRuntimeState.CreationReason.SPLIT);
         splitOwner.attachRegion(splitRegion);
         splitOwner.recordSplit(nowNanos);
 
@@ -507,7 +511,7 @@ public class LevelChunkRegionMap {
         this.ownersById.remove(owner.id());
         this.invalidateRegionsSnapshot();
         owner.detachRegion(region);
-        region.getRuntimeState().detach(region);
+        region.getRuntimeState().detach(region, RegionRuntimeState.RemovalReason.EMPTY_REGION);
     }
 
     public void addTickingChunk(LevelChunk levelChunk) {
@@ -700,9 +704,16 @@ public class LevelChunkRegionMap {
 
     public RegionRuntimeState getOrCreateRuntimeStateForCell(RegionPos regionPos) {
         return this.regionsLock.write(() -> {
-            final LevelChunkRegion region = this.getOrCreateRegionLocked(regionPos);
+            final LevelChunkRegion region = this.getOrCreateRegionLocked(regionPos, RegionRuntimeState.CreationReason.CELL_LOOKUP);
             return region.getRuntimeState();
         });
+    }
+
+    public RuntimeStateParity runtimeStateParity() {
+        return this.regionsLock.read(() -> new RuntimeStateParity(
+                this.ownersById.size(),
+                RegionRuntimeState.liveDiagnostics(this.level)
+        ));
     }
 
     public boolean scheduleTransferredTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
@@ -848,6 +859,12 @@ public class LevelChunkRegionMap {
         }
 
         return navigatingMobs;
+    }
+
+    public record RuntimeStateParity(int activeOwners, RegionRuntimeState.LiveStateDiagnostics runtimeStates) {
+        public boolean attachedStateCountMatchesOwners() {
+            return this.activeOwners == this.runtimeStates.attachedStates();
+        }
     }
 
     private record RegionActionResult<T>(boolean found, T value) {
