@@ -32,6 +32,23 @@ public class SynchronousPluginExecution {
         return pluginRef == null ? null : pluginRef.get();
     }
 
+    public static void runWithoutCurrentPluginLocks(RunnableWithException runnable) throws Exception {
+        WeakReference<Plugin> suspendedPlugin = currentPlugin.get();
+        List<String> releasedLocks = releaseHeldPluginLocks();
+        currentPlugin.remove();
+
+        try {
+            runnable.run();
+        } finally {
+            reacquirePluginLocks(releasedLocks);
+            if (suspendedPlugin == null) {
+                currentPlugin.remove();
+            } else {
+                currentPlugin.set(suspendedPlugin);
+            }
+        }
+    }
+
     public static void executeNoException(Plugin plugin, RunnableWithException runnable) {
         try {
             execute(plugin, runnable);
@@ -152,6 +169,36 @@ public class SynchronousPluginExecution {
         }
 
         return success;
+    }
+
+    private static List<String> releaseHeldPluginLocks() {
+        List<String> heldLocks = heldPluginLocks.get();
+        if (heldLocks.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> releasedLocks = new ArrayList<>(heldLocks);
+        for (int i = releasedLocks.size() - 1; i >= 0; --i) {
+            getLock(releasedLocks.get(i)).unlock();
+        }
+        heldLocks.clear();
+
+        return releasedLocks;
+    }
+
+    private static void reacquirePluginLocks(List<String> releasedLocks) {
+        if (releasedLocks.isEmpty()) {
+            return;
+        }
+
+        List<String> sortedLocks = new ArrayList<>(releasedLocks);
+        Collections.sort(sortedLocks);
+
+        List<String> heldLocks = heldPluginLocks.get();
+        for (String plugin : sortedLocks) {
+            getLock(plugin).lock();
+            heldLocks.add(plugin);
+        }
     }
 
     private static boolean fillPluginsToLock(Plugin plugin, TreeSet<String> pluginsToLock, List<String> parentList) {

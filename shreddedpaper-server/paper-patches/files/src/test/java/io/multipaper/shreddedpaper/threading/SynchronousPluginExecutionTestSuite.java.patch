@@ -1,0 +1,11 @@
+--- /dev/null
++++ b/src/test/java/io/multipaper/shreddedpaper/threading/SynchronousPluginExecutionTestSuite.java
+@@ -1,0 +_,8 @@
++package io.multipaper.shreddedpaper.threading;
++
++import org.junit.platform.suite.api.SelectClasses;
++import org.junit.platform.suite.api.Suite;
++
++@Suite
++@SelectClasses(SynchronousPluginExecutionTest.class)
++public class SynchronousPluginExecutionTestSuite {}
