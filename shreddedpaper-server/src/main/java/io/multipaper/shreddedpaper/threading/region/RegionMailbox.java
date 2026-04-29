@@ -37,6 +37,7 @@ public final class RegionMailbox {
     private static final RegionTaskClass[] ALL_CLASSES = RegionTaskClass.values();
 
     private final ServerLevel level;
+    private final String worldName;
     private final RegionPos regionPos;
     private final long ownerId;
     private final LongSupplier ownerEpochSupplier;
@@ -59,7 +60,29 @@ public final class RegionMailbox {
             final LongSupplier ownerEpochSupplier,
             final LongPredicate ownerOwnsCell
     ) {
+        this(level, level.getWorld().getName(), regionPos, ownerId, ownerEpochSupplier, ownerOwnsCell);
+    }
+
+    RegionMailbox(
+            final String worldName,
+            final RegionPos regionPos,
+            final long ownerId,
+            final LongSupplier ownerEpochSupplier,
+            final LongPredicate ownerOwnsCell
+    ) {
+        this(null, worldName, regionPos, ownerId, ownerEpochSupplier, ownerOwnsCell);
+    }
+
+    private RegionMailbox(
+            final ServerLevel level,
+            final String worldName,
+            final RegionPos regionPos,
+            final long ownerId,
+            final LongSupplier ownerEpochSupplier,
+            final LongPredicate ownerOwnsCell
+    ) {
         this.level = level;
+        this.worldName = worldName;
         this.regionPos = regionPos;
         this.ownerId = ownerId;
         this.ownerEpochSupplier = ownerEpochSupplier;
@@ -136,7 +159,7 @@ public final class RegionMailbox {
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final LevelChunkRegion sourceRegion = ShreddedPaperChunkTicker.currentlyTickingRegion();
         final boolean hasSourceRegion = sourceRegion != null;
-        final boolean sameWorldSource = hasSourceRegion && this.level.equals(sourceRegion.getLevel());
+        final boolean sameWorldSource = hasSourceRegion && this.level != null && this.level.equals(sourceRegion.getLevel());
         final long sourceOwnerId = hasSourceRegion ? sourceRegion.getOwner().id() : Long.MIN_VALUE;
         final boolean sameOwnerSource = sameWorldSource && sourceOwnerId == this.ownerId;
         final boolean crossRegion = hasSourceRegion && !sameOwnerSource;
@@ -284,7 +307,7 @@ public final class RegionMailbox {
                 LOGGER.warn(
                         "Transferred {} region task exceeded mailbox reserve for {} {} (queued={} reserve={}); admitted tasks are non-dropping",
                         taskClass,
-                        this.level.getWorld().getName(),
+                        this.worldName,
                         this.regionPos,
                         current,
                         capacity
@@ -298,7 +321,7 @@ public final class RegionMailbox {
         final int remaining = this.queuedByClass.get(taskClass).decrementAndGet();
         if (remaining < 0) {
             this.queuedByClass.get(taskClass).compareAndSet(remaining, 0);
-            LOGGER.error("Region mailbox accounting underflow for {} {} {}", taskClass, this.level.getWorld().getName(), this.regionPos);
+            LOGGER.error("Region mailbox accounting underflow for {} {} {}", taskClass, this.worldName, this.regionPos);
         }
     }
 
@@ -310,7 +333,7 @@ public final class RegionMailbox {
             LOGGER.warn(
                     "Rejected {} region task for {} {} because {} (queued={}/{} rejectedClass={} rejectedTotal={})",
                     taskClass,
-                    this.level.getWorld().getName(),
+                    this.worldName,
                     this.regionPos,
                     reason,
                     this.queuedByClass.get(taskClass).get(),
@@ -327,7 +350,7 @@ public final class RegionMailbox {
             this.commitQueueEvent("critical-over-reserve", RegionTaskClass.CRITICAL_SYSTEM, this.depth());
             LOGGER.warn(
                     "Critical region mailbox reserve exceeded for {} {} (queued={} reserve={}); critical work remains non-dropping",
-                    this.level.getWorld().getName(),
+                    this.worldName,
                     this.regionPos,
                     queued,
                     capacity
@@ -438,7 +461,7 @@ public final class RegionMailbox {
                 LOGGER.error(
                         "Error while executing {} region task in {} {} (failureClass={}); further failures are sampled",
                         task.taskClass(),
-                        this.level.getWorld().getName(),
+                        this.worldName,
                         this.regionPos,
                         failedForClass,
                         throwable
@@ -457,6 +480,9 @@ public final class RegionMailbox {
 
         this.releaseSlot(task.taskClass());
         final RegionPos affinityRegionPos = new RegionPos(task.affinityCellKey());
+        if (this.level == null) {
+            throw new IllegalStateException("Cannot redirect stale-owner task without a backing ServerLevel");
+        }
         this.level.chunkSource.tickingRegions.scheduleTransferredTask(affinityRegionPos, task, 0L, task.taskClass());
         return true;
     }
@@ -504,7 +530,7 @@ public final class RegionMailbox {
 
     private void commitQueueEvent(final String action, final RegionTaskClass taskClass, final int depth) {
         final RegionQueueEvent event = new RegionQueueEvent();
-        event.world = this.level.getWorld().getName();
+        event.world = this.worldName;
         event.regionX = this.regionPos.x;
         event.regionZ = this.regionPos.z;
         event.action = action;
@@ -537,7 +563,7 @@ public final class RegionMailbox {
             final int capacity
     ) {
         final CrossRegionTaskEvent event = new CrossRegionTaskEvent();
-        event.world = this.level.getWorld().getName();
+        event.world = this.worldName;
         event.sourceWorld = sourceWorld;
         event.sourceRegionX = sourceRegionX;
         event.sourceRegionZ = sourceRegionZ;

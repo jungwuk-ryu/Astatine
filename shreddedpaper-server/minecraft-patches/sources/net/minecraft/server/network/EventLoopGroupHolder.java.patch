@@ -1,0 +1,90 @@
+--- a/net/minecraft/server/network/EventLoopGroupHolder.java
++++ b/net/minecraft/server/network/EventLoopGroupHolder.java
+@@ -3,2 +3,4 @@
+ import com.google.common.util.concurrent.ThreadFactoryBuilder;
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import io.multipaper.shreddedpaper.network.NetworkTransportSelection;
+ import io.netty.channel.Channel;
+@@ -22,2 +24,6 @@
+ import io.netty.channel.socket.nio.NioSocketChannel;
++import io.netty.channel.uring.IoUring;
++import io.netty.channel.uring.IoUringIoHandler;
++import io.netty.channel.uring.IoUringServerSocketChannel;
++import io.netty.channel.uring.IoUringSocketChannel;
+ import java.util.concurrent.ThreadFactory;
+@@ -38,2 +44,8 @@
+     };
++    private static final EventLoopGroupHolder IO_URING = new EventLoopGroupHolder("io_uring", IoUringSocketChannel.class, IoUringServerSocketChannel.class) {
++        @Override
++        protected IoHandlerFactory ioHandlerFactory() {
++            return IoUringIoHandler.newFactory();
++        }
++    };
+     private static final EventLoopGroupHolder KQUEUE = new EventLoopGroupHolder("Kqueue", KQueueSocketChannel.class, KQueueServerSocketChannel.class) {
+@@ -65,13 +77,14 @@
+     public static EventLoopGroupHolder remote(boolean tryNativeTransport) {
+-        if (tryNativeTransport) {
+-            if (KQueue.isAvailable()) {
+-                return KQUEUE;
+-            }
+-
+-            if (Epoll.isAvailable()) {
+-                return EPOLL;
+-            }
++        if (!tryNativeTransport) {
++            return NIO;
+         }
+-
++
+-        return NIO;
++        return bySelection(NetworkTransportSelection.selectRemote(
++                true,
++                ShreddedPaperConfiguration.get().optimizations.preferIoUringTransport,
++                IoUring::isAvailable,
++                KQueue::isAvailable,
++                Epoll::isAvailable,
++                false
++        ));
+     }
+@@ -80,16 +93,14 @@
+     public static EventLoopGroupHolder remote(java.net.SocketAddress address, boolean tryNativeTransport) {
+-        if (tryNativeTransport) {
+-            if (KQueue.isAvailable()) {
+-                return KQUEUE;
+-            }
+-
+-            if (Epoll.isAvailable()) {
+-                if (address instanceof io.netty.channel.unix.DomainSocketAddress) {
+-                    return EPOLL_UNIX_DOMAIN;
+-                } else {
+-                    return EPOLL;
+-                }
+-            }
++        if (!tryNativeTransport) {
++            return NIO;
+         }
+-        return NIO;
++
++        return bySelection(NetworkTransportSelection.selectRemote(
++                true,
++                ShreddedPaperConfiguration.get().optimizations.preferIoUringTransport,
++                IoUring::isAvailable,
++                KQueue::isAvailable,
++                Epoll::isAvailable,
++                address instanceof io.netty.channel.unix.DomainSocketAddress
++        ));
+     }
+@@ -97,2 +108,12 @@
+-
++
++    private static EventLoopGroupHolder bySelection(final NetworkTransportSelection.Transport transport) {
++        return switch (transport) {
++            case NIO -> NIO;
++            case KQUEUE -> KQUEUE;
++            case EPOLL -> EPOLL;
++            case EPOLL_UNIX_DOMAIN -> EPOLL_UNIX_DOMAIN;
++            case IO_URING -> IO_URING;
++        };
++    }
++
+     public static EventLoopGroupHolder local() {

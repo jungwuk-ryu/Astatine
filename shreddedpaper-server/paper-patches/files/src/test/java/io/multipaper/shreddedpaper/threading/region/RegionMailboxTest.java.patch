@@ -1,0 +1,97 @@
+--- /dev/null
++++ b/src/test/java/io/multipaper/shreddedpaper/threading/region/RegionMailboxTest.java
+@@ -1,0 +_,94 @@
++package io.multipaper.shreddedpaper.threading.region;
++
++import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import io.multipaper.shreddedpaper.region.RegionPos;
++import org.junit.jupiter.api.Test;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.atomic.AtomicInteger;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++class RegionMailboxTest {
++
++    private static final RegionPos REGION = new RegionPos(3, -2);
++
++    @Test
++    void delayZeroAndDelayOneRunOnNextDrain() {
++        final RegionMailbox mailbox = newMailbox(0L);
++        final List<String> ran = new ArrayList<>();
++
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, () -> ran.add("delay-0"), 0L));
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, () -> ran.add("delay-1"), 1L));
++
++        assertEquals(2, mailbox.depth());
++        assertEquals(2, mailbox.runDue(null));
++        assertEquals(List.of("delay-0", "delay-1"), ran);
++        assertEquals(0, mailbox.depth());
++        assertEquals(2L, mailbox.executed());
++    }
++
++    @Test
++    void delayedTasksWaitForTheirReadyTick() {
++        final RegionMailbox mailbox = newMailbox(0L);
++        final AtomicInteger ran = new AtomicInteger();
++
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, ran::incrementAndGet, 2L));
++
++        assertEquals(0, mailbox.runDue(null));
++        assertEquals(0, ran.get());
++        assertEquals(1, mailbox.depth());
++
++        assertEquals(1, mailbox.runDue(null));
++        assertEquals(1, ran.get());
++        assertEquals(0, mailbox.depth());
++    }
++
++    @Test
++    void boundedPluginTasksRejectWhenCapacityIsFull() {
++        final int oldCapacity = ShreddedPaperConfiguration.get().multithreading.pluginRegionMailboxCapacity;
++        ShreddedPaperConfiguration.get().multithreading.pluginRegionMailboxCapacity = 16;
++        try {
++            final RegionMailbox mailbox = newMailbox(0L);
++            final AtomicInteger ran = new AtomicInteger();
++
++            for (int i = 0; i < 16; i++) {
++                assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, ran::incrementAndGet, 0L));
++            }
++
++            assertFalse(mailbox.offer(RegionTaskClass.PLUGIN, ran::incrementAndGet, 0L));
++            assertEquals(16, mailbox.depth());
++            assertEquals(1L, mailbox.rejected());
++
++            assertEquals(16, mailbox.runDue(null));
++            assertEquals(16, ran.get());
++            assertEquals(0, mailbox.depth());
++        } finally {
++            ShreddedPaperConfiguration.get().multithreading.pluginRegionMailboxCapacity = oldCapacity;
++        }
++    }
++
++    @Test
++    void taskExceptionDoesNotBlockLaterTasksOrLeakQuota() {
++        final RegionMailbox mailbox = newMailbox(0L);
++        final List<Integer> ran = new ArrayList<>();
++
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, () -> ran.add(1), 0L));
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, () -> {
++            throw new IllegalStateException("boom");
++        }, 0L));
++        assertTrue(mailbox.offer(RegionTaskClass.PLUGIN, () -> ran.add(2), 0L));
++
++        assertEquals(3, mailbox.runDue(null));
++        assertEquals(List.of(1, 2), ran);
++        assertEquals(2L, mailbox.executed());
++        assertEquals(0, mailbox.depth());
++    }
++
++    private static RegionMailbox newMailbox(final long ownerEpoch) {
++        return new RegionMailbox("mailbox-test", REGION, REGION.longKey, () -> ownerEpoch, cellKey -> cellKey == REGION.longKey);
++    }
++}

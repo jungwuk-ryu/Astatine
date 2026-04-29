@@ -114,6 +114,9 @@ optimizations:
   use-lazy-execute-when-not-flushing: true
   process-track-queue-in-parallel: true
   flush-queue-in-parallel: true
+  # Prefer Netty io_uring over epoll for TCP listeners when native transport is
+  # enabled and io_uring is available. Linux-only and off by default.
+  prefer-io-uring-transport: false
   maximum-trackers-per-entity: 500
   tracker-full-update-frequency: 20
   purge-stale-tickets-frequency: 20

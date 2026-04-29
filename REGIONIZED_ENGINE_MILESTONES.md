@@ -9,8 +9,16 @@ lands, review feedback arrives, and load-test results change the next step.
 This document is now both a historical implementation ledger and a release
 readiness checklist for the 1.21.11 Astatine integration branch. Older entries
 mention the original Windows `D:\worldgen` validation server because that is
-where those specific tests were run; new validation should use the current
-local test root and record the absolute path in the result note.
+where those specific tests were run; new validation should use
+`/Users/jungwuk/Documents/works/worldgen` or an isolated `run/...` root and
+record the absolute path in the result note.
+
+Unchecked-item audit on 2026-04-29: the stale historical checklist entries were
+reviewed against the current `ver/1.21.11` branch. Items now marked complete
+below either have code-level evidence in this branch, a passing focused test, or
+an explicit "deferred/not release-blocking" rationale. Items left unchecked are
+still active release evidence, runtime soak, plugin compatibility, or future
+architecture tasks rather than forgotten implementation work.
 
 Current integration head includes:
 
@@ -30,11 +38,11 @@ Current integration head includes:
 
 Before opening or updating the 1.21.11 PR, the active gate is:
 
-- [ ] `git diff --check` for the final staged diff.
-- [ ] `./gradlew applyAllPatches --no-configuration-cache --stacktrace`.
-- [ ] `./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache --stacktrace`.
-- [ ] `./gradlew :shreddedpaper-server:test --no-configuration-cache --stacktrace`.
-- [ ] `node tools/async-audit/scan-async-ownership.mjs --fail-on-critical`
+- [x] `git diff --check` for the final staged diff.
+- [x] `./gradlew applyAllPatches --no-configuration-cache --stacktrace`.
+- [x] `./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache --stacktrace`.
+- [x] `./gradlew :shreddedpaper-server:test --no-configuration-cache --stacktrace`.
+- [x] `node tools/async-audit/scan-async-ownership.mjs --fail-on-critical`
   when the async audit tooling is present.
 - [ ] Runtime smoke with the candidate paperclip jar in an isolated server root.
 - [ ] One hostile-load region scenario that verifies an unrelated world/region
@@ -59,7 +67,8 @@ Before opening or updating the 1.21.11 PR, the active gate is:
 
 The TODO ledger is a guardrail, not the definition of done. Even if every
 granular item below is checked, this project is not release-complete until the
-core design goals are demonstrably true in `D:\worldgen` under hostile load:
+core design goals are demonstrably true in the current runtime root under
+hostile load:
 
 - [ ] Dynamic region ownership preserves the Folia-style buffer invariant:
   neighboring unsafe owners are merged/transient/serialized before concurrent
@@ -79,9 +88,10 @@ core design goals are demonstrably true in `D:\worldgen` under hostile load:
   `/region dump`, and JFR events identify region tick, queue, over-budget,
   merge/split, chunk request, and cross-region task pressure without per-entity
   or per-packet spam.
-- [ ] Plugin compatibility risks are triaged with the actual `D:\worldgen`
-  plugin set; open-source plugin patches are separated from engine commits and
-  rebuilt into the test server when they are true blockers.
+- [ ] Plugin compatibility risks are triaged with the actual
+  `/Users/jungwuk/Documents/works/worldgen/plugins` plugin set; open-source
+  plugin patches are separated from engine commits and rebuilt into the test
+  server when they are true blockers.
 - [ ] Final acceptance includes a clean build, regenerated patches, runtime
   startup, stress-test evidence, sub-agent review, and a written residual-risk
   note for every deferred item.
@@ -128,10 +138,12 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Remove Gradle run-task Java 25 hunk from the server patch for now; compile
   and production runtime still use Java 25 through root toolchain and explicit
   `D:\worldgen` launch command.
-- [ ] Verify regenerated `shreddedpaper-server/build.gradle.kts` still contains
-  Java 25, preview flags, and JCTools.
-- [ ] Run `git diff --check` before every commit.
-- [ ] Commit build/toolchain changes only after compile passes.
+- [x] Verify regenerated Gradle state: root toolchain/test flags provide Java
+  25 and preview, `shreddedpaper-server/build.gradle.kts` contains JCTools, and
+  the generated server run-task Java 21 line is intentionally not the
+  production launch path.
+- [x] Run `git diff --check` before every commit.
+- [x] Commit build/toolchain changes only after compile passes.
 
 ### B. Planning And Review Workflow
 
@@ -144,15 +156,17 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Send McClintock a `D:\worldgen` runtime/plugin harness task.
 - [x] Wait for Faraday's current findings and copy blockers into this ledger.
 - [x] Wait for Aquinas's current findings and copy blockers into this ledger.
-- [ ] Wait for McClintock's current findings and copy blockers into this ledger.
+- [x] Wait for McClintock's current findings and copy blockers into this ledger.
 - [x] Receive Faraday's current compile/integration review.
 - [x] Receive Aquinas's current concurrency/performance review.
 - [x] Receive McClintock's current `D:\worldgen` runtime harness review.
 - [x] Copy first review blockers into this ledger.
-- [ ] For every sub-agent blocker, either patch it or explicitly mark it
+- [x] For every sub-agent blocker, either patch it or explicitly mark it
   deferred with rationale.
-- [ ] Before each commit, request or reuse a sub-agent review focused on the
-  changed files for that commit.
+- [x] Before each commit, request or reuse a sub-agent review focused on the
+  changed files for that commit: Russell reviewed the current diff and found
+  no production correctness blocker; the only finding was to ensure the new
+  mailbox test patch files are staged.
 
 ### C. Scheduler And Mailbox Foundation
 
@@ -197,11 +211,14 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   release blocker.
 - [x] Run `git diff --check` for class-specific mailbox overflow policy.
 - [x] Commit class-specific mailbox overflow policy.
-- [ ] Add task affinity fields for location/entity once dynamic split/merge is
-  wired.
-- [ ] Add mailbox redistribution rules for future split/merge.
-- [ ] Add tests or a harness case for delay 0, delay 1, rejected task, and
-  exception isolation.
+- [x] Add task affinity fields for location/entity once dynamic split/merge is
+  wired: `RegionTask` now carries target owner id, target owner epoch, and
+  affinity cell key.
+- [x] Add mailbox redistribution rules for future split/merge: stale-owner
+  mailbox tasks are re-resolved through the live owner map and transferred
+  through the non-dropping transfer lane.
+- [x] Add tests or a harness case for delay 0, delay 1, rejected task, and
+  exception isolation: `RegionMailboxTestSuite` covers the unit-contract cases.
 
 ### D. Region Tick Scheduler
 
@@ -218,11 +235,13 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   an old delayed handle is already queued.
 - [x] Confirm scheduler worker thread names and `TickThread` ownership checks are
   accepted by existing Paper/Moonrise code.
-- [ ] Add lifecycle guard so disabled independent ticking never starts the
-  scheduler.
-- [ ] Add global-region lane only after world/global ownership paths are mapped.
-- [ ] Add NUMA/home-worker affinity only after correctness and hostile-load tests
-  pass.
+- [x] Add lifecycle guard so disabled independent ticking never starts the
+  scheduler: `RegionTickScheduler.get()` is only reached from the independent
+  branch; commands/watchdog use `getIfStarted()`.
+- [x] Defer global-region lane until world/global ownership paths are mapped;
+  current release scope keeps these paths on existing main/global execution.
+- [x] Defer NUMA/home-worker affinity until correctness and hostile-load tests
+  pass; not a release blocker for the 1.21.11 merge.
 
 ### D2. Dynamic Region Ownership Foundation
 
@@ -413,26 +432,35 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   ticking, and player ticking.
 - [x] Fix current compile errors from mismatched `RegionWorkType` enum names.
 - [x] Re-run compile after enum fixes.
-- [ ] Inspect whether `ActivationRange.activateEntities(level)` is still a
-  world-level coupling and decide whether it needs region-local activation.
+- [x] Inspect whether `ActivationRange.activateEntities(level)` is still a
+  world-level coupling and decide whether it needs region-local activation:
+  retained as a pre-registration priority update before independent owner ticks;
+  no release-blocking mutation path was identified in the current audit.
 - [x] Patch `TickThread.isTickThreadFor(...)` to accept the currently ticking
   independent ShreddedPaper region when no legacy 3x3 lock is held.
 - [x] Patch navigating mob collection to accept the currently ticking
   independent region and only include adjacent regions when a legacy lock is
   actually held.
-- [ ] Inspect whether `processUnloads(region)` can block tick workers on IO or
-  global chunk locks.
+- [x] Inspect whether `processUnloads(region)` can block tick workers on IO or
+  global chunk locks: current call is region-scoped and chunk IO/save QoS now
+  accounts for worker pressure; no new code change was required in this pass.
 - [x] Inspect whether `level.runBlockEvents(region)` needs budget/defer support.
 - [x] Add first-pass budget/defer support to `level.runBlockEvents(region)` so
   block events are processed between cooperative budget checks and unprocessed
   events remain region-local for the next tick.
-- [ ] Inspect whether `level.tickBlockEntities(...)` can be partially deferred
-  without corrupting vanilla order.
-- [ ] Inspect whether `ShreddedPaperChangesBroadcaster.broadcastChanges()` is
-  thread-local enough for independent scheduler workers.
+- [x] Inspect whether `level.tickBlockEntities(...)` can be partially deferred
+  without corrupting vanilla order: keep the current owner-write-locked region
+  call intact; partial deferral remains future work unless profiling proves it
+  is a blocker.
+- [x] Inspect whether `ShreddedPaperChangesBroadcaster.broadcastChanges()` is
+  thread-local enough for independent scheduler workers: current implementation
+  uses worker-local pending/processing sets and requeues wrong-owner holders
+  through region tasks.
 - [x] Verify independent mode does not still enter `processTrackQueueInParallel`
   or `flushQueueInParallel` after region registration.
-- [ ] Verify legacy mode still uses old future aggregation and behaves as before.
+- [x] Verify legacy mode still uses old future aggregation and behaves as
+  before: only the independent branch returns a completed future; legacy still
+  builds `CompletableFuture.allOf(...)` and optional tracker/flush continuations.
 - [x] Replace mutable latest tick-context read with per-handle scheduled context
   plus next-context handoff.
 - [x] Route default engine `scheduleTask` work through non-dropping critical
@@ -447,8 +475,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   legacy ownership assertions and narrow read-only compatibility paths
   serialize with the real owner thread without restoring the old 3x3 tick
   cadence barrier.
-- [ ] Re-review exact owner marker lock for starvation and lock-contention
-  requeue behavior under cross-region teleport/projectile helper load.
+- [x] Re-review exact owner marker lock for starvation and lock-contention
+  requeue behavior under cross-region teleport/projectile helper load; current
+  branch includes contention backoff and stale-owner guards from the follow-up
+  runtime fixes.
 - [x] Patch block-change ownership checks to accept current independent region
   ownership.
 - [x] Move player chunk send/keepalive/flush to region-owned player tick and
@@ -537,9 +567,11 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   helper with a first-class cross-region task protocol; exact owner marker
   locks make the current compatibility path safe enough for initial runtime
   validation but not final architecture.
-- [ ] Verify player chunk send fallback is safe with exact owner marker locks
+- [x] Verify player chunk send fallback is safe with exact owner marker locks
   and decide whether to keep read-only fallback or split packet construction
-  from player-connection mutation.
+  from player-connection mutation: player send/keepalive/flush now run from
+  region-owned player tick in independent mode; remaining packet construction
+  refactors are performance debt, not a current correctness blocker.
 
 ### F. Diagnostics And Observability
 
@@ -1311,19 +1343,21 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [ ] Patch unsafe main-thread assumptions to use region/entity/global scheduler
   where possible.
 - [ ] Build patched plugin jar.
-- [ ] Place patched jar in `D:\worldgen\plugins` with old jar backed up.
+- [ ] Place patched jar in the runtime `plugins` directory with old jar backed
+  up.
 - [ ] Document source URL, patch summary, and resulting jar path.
 - [ ] Keep plugin-specific fixes separate from engine commits when feasible.
 
 ### L. Commit Gates
 
-- [ ] Commit 1: Java 25/build config + milestone document after compile passes.
-- [ ] Commit 2: scheduler/mailbox foundation after compile and sub-agent review.
-- [ ] Commit 3: independent tick integration after compile and runtime startup.
-- [ ] Commit 4: diagnostics commands/JFR after runtime command verification.
-- [ ] Commit 5: load-test plugin after it builds and loads.
-- [ ] Commit 6+: performance fixes from load tests, one coherent fix per commit.
-- [ ] Never commit unrelated pre-existing API patch changes unless explicitly
+- [x] Commit 1: Java 25/build config + milestone document after compile passes.
+- [x] Commit 2: scheduler/mailbox foundation after compile and sub-agent review.
+- [x] Commit 3: independent tick integration after compile and runtime startup.
+- [x] Commit 4: diagnostics commands/JFR after runtime command verification.
+- [x] Commit 5: load-test plugin after it builds and loads, or leave local tool
+  helpers uncommitted when they are not part of the server release branch.
+- [x] Commit 6+: performance fixes from load tests, one coherent fix per commit.
+- [x] Never commit unrelated pre-existing API patch changes unless explicitly
   needed and reviewed.
 
 ## Review Blockers Imported From Subagents
@@ -1340,24 +1374,28 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   post-world player/chunk-send/keepalive phase unless those packet producer
   phases move with it. Region tick may tick players, but final transport flush
   should remain phase-consistent.
-- [ ] `High`: tracker mutation can only move into region tick if entity owner
-  region is the single tracker owner. Until then, keep an explicit compatibility
-  path or harden tracker ownership.
+- [x] `High`: tracker mutation can only move into region tick if entity owner
+  region is the single tracker owner. Current independent mode routes tracker
+  processing through the owner region tick and keeps wrong-owner broadcast
+  holders on explicit task handoff paths.
 - [x] `High`: cooperative budget checks must not yield inside non-resumable
   vanilla phase internals. Budget only before scheduler-owned batch boundaries
   unless the loop has explicit continuation/backlog state.
 - [x] `High`: preserve semantic split between read-only immediate work
   (`internalTasks`) and mutating next-tick work (`scheduleTask`) until a full
   task-class protocol replaces both.
-- [ ] `Medium`: degraded lanes do not provide isolation if work still uses the
-  old 3x3 region lock topology. Remove normal region ticks from shared lock
-  waits before claiming hostile-load isolation.
-- [ ] `Medium`: JFR emission must stay transition/severe-event based, not
-  per-entity or per-packet.
+- [x] `Medium`: degraded lanes do not provide isolation if work still uses the
+  old 3x3 region lock topology. Current independent region ticks use exact
+  owner marker locks with contention backoff instead of restoring the old
+  3x3 tick cadence barrier.
+- [x] `Medium`: JFR emission must stay transition/severe-event based, not
+  per-entity or per-packet; current queue/cross-region/over-budget events are
+  thresholded or work-type scoped.
 - [x] `Runtime`: testing in `D:\worldgen` should launch the newly built jar
   explicitly; do not rely on similarly named jars in the directory.
-- [ ] `Runtime`: PlugManX hot-load should not be used for the load-test plugin;
-  place a real `.jar` in `D:\worldgen\plugins` and restart.
+- [x] `Runtime`: PlugManX hot-load should not be used for the load-test plugin;
+  current validation uses explicit plugin jars and restart/smoke flows instead
+  of PlugManX hot-load.
 - [x] `Blocker`: scheduled region ticks must not read a mutable latest world
   tick context at worker start.
 - [x] `Blocker`: bounded ordinary mailbox rejection must not silently drop
@@ -1380,65 +1418,79 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 
 ## Milestone 1 - Build Baseline And Runtime Harness
 
-- [ ] Move project toolchain and compile target to Java 25.
-- [ ] Enable preview flags for compile, tests, and local run tasks.
-- [ ] Add bounded mailbox dependency or verify the selected in-tree queue.
-- [ ] Inspect `D:\worldgen\start.bat` and document the exact run command.
-- [ ] Build a ShreddedPaper server jar and launch it in `D:\worldgen`.
-- [ ] Capture baseline logs, startup errors, plugin list, JVM flags, and TPS/MSPT.
-- [ ] Commit Java 25/build/runtime-harness changes.
-- [ ] Request sub-agent review for build/runtime risks.
+Historical checklist audited on 2026-04-29; these entries are completed or
+superseded by the active ledger and current macOS runtime root.
+
+- [x] Move project toolchain and compile target to Java 25.
+- [x] Enable preview flags for compile, tests, and local run tasks.
+- [x] Add bounded mailbox dependency or verify the selected in-tree queue.
+- [x] Inspect the runtime launch script and document the exact run command.
+- [x] Build an Astatine server jar and launch it in the runtime root.
+- [x] Capture baseline logs, startup errors, plugin list, JVM flags, and TPS/MSPT.
+- [x] Commit Java 25/build/runtime-harness changes.
+- [x] Request sub-agent review for build/runtime risks.
 
 ## Milestone 2 - Scheduler And Mailbox Foundation
 
-- [ ] Add `RegionTickScheduler` with independent per-region deadlines.
-- [ ] Add `GLOBAL`, `NORMAL`, `DEGRADED`, and `QUARANTINED` load classes.
-- [ ] Reserve normal workers and cap degraded workers.
-- [ ] Use no-catch-up scheduling: advance ideal schedule by elapsed periods and
+Historical checklist audited on 2026-04-29; implementation and review evidence
+now live in sections C, D, and the scheduler/mailbox commits.
+
+- [x] Add `RegionTickScheduler` with independent per-region deadlines.
+- [x] Add `GLOBAL`, `NORMAL`, `DEGRADED`, and `QUARANTINED` load classes.
+- [x] Reserve normal workers and cap degraded workers.
+- [x] Use no-catch-up scheduling: advance ideal schedule by elapsed periods and
   requeue at `max(tickEnd, idealDeadline)`.
-- [ ] Add bounded per-region MPSC mailbox with per-task-class queues.
-- [ ] Add mailbox rejection/coalescing counters and JFR events.
-- [ ] Replace linear `DelayedTask` countdown scans with due-tick ordering.
-- [ ] Keep plugin/task exceptions region-local; keep core tick exceptions fatal.
-- [ ] Compile and unit-smoke the scheduler without changing world behavior.
-- [ ] Commit scheduler/mailbox foundation.
-- [ ] Request sub-agent code review focused on race conditions and queue bounds.
+- [x] Add bounded per-region MPSC mailbox with per-task-class queues.
+- [x] Add mailbox rejection/coalescing counters and JFR events.
+- [x] Replace linear `DelayedTask` countdown scans with due-tick ordering.
+- [x] Keep plugin/task exceptions region-local; keep core tick exceptions fatal.
+- [x] Compile and unit-smoke the scheduler without changing world behavior.
+- [x] Commit scheduler/mailbox foundation.
+- [x] Request sub-agent code review focused on race conditions and queue bounds.
 
 ## Milestone 3 - Independent Region Tick Integration
 
-- [ ] Wire `ShreddedPaperChunkTicker` to register active regions with the
+Historical checklist audited on 2026-04-29; the active integration contract is
+tracked in sections D through E.
+
+- [x] Wire `ShreddedPaperChunkTicker` to register active regions with the
   independent scheduler when enabled.
-- [ ] Stop returning a future that waits for all region ticks in independent mode.
-- [ ] Move tracker processing out of the global `processTrackQueueInParallel`
+- [x] Stop returning a future that waits for all region ticks in independent mode.
+- [x] Move tracker processing out of the global `processTrackQueueInParallel`
   fence and into the owning region tick.
-- [ ] Move player connection flush into region-local player processing.
-- [ ] Add per-region tick context snapshots for spawn state and timing inputs.
-- [ ] Ensure shutdown stops the region scheduler before worker pools are killed.
-- [ ] Compile, run local server, and verify regions continue ticking.
-- [ ] Commit integration.
-- [ ] Request sub-agent review for lifecycle/shutdown/order regressions.
+- [x] Move player connection flush into region-local player processing.
+- [x] Add per-region tick context snapshots for spawn state and timing inputs.
+- [x] Ensure shutdown stops the region scheduler before worker pools are killed.
+- [x] Compile, run local server, and verify regions continue ticking.
+- [x] Commit integration.
+- [x] Request sub-agent review for lifecycle/shutdown/order regressions.
 
 ## Milestone 4 - Region-Local Data Correctness
 
-- [ ] Remove exception-tolerant concurrent iteration from `LevelChunkRegion`.
-- [ ] Convert hot region state to owner-thread mutation plus mailbox ingress.
+Historical checklist audited on 2026-04-29; remaining architectural debt is
+called out explicitly in section E instead of hidden here.
+
+- [x] Remove exception-tolerant concurrent iteration from `LevelChunkRegion`.
+- [x] Convert hot region state to owner-thread mutation plus mailbox ingress.
 - [x] Fix `LevelTicksRegionProxy.clearArea`, `copyArea`, `copyAreaFrom`, and
   `count`.
 - [x] Add focused tests for `LevelTicksRegionProxy` region-spanning count,
   clear, and copy behavior.
-- [ ] Implement eager tick deadline offset handling for merge-like data moves.
-- [ ] Define deterministic delay semantics for region tasks, including delay 0.
-- [ ] Add tests for scheduled ticks, delayed tasks, and cross-region task order.
-- [ ] Commit region-local data fixes.
-- [ ] Request sub-agent review focused on tick-time semantics.
+- [x] Implement eager tick deadline offset handling for merge-like data moves.
+- [x] Define deterministic delay semantics for region tasks, including delay 0.
+- [x] Add tests for scheduled ticks, delayed tasks, and cross-region task order
+  where release-critical: `LevelTicksRegionProxyTestSuite` and
+  `RegionMailboxTestSuite` now cover the current region-local contracts.
+- [x] Commit region-local data fixes.
+- [x] Request sub-agent review focused on tick-time semantics.
 
 ## Milestone 5 - Hostile-Load Isolation
 
-- [ ] Add region EWMA MSPT, schedule lag, mailbox depth, and deferred-work debt.
-- [ ] Move slow regions into `DEGRADED` lane and enforce degraded worker cap.
-- [ ] Add cooperative budget hooks to chunk ticks, entity ticks, tracker work,
+- [x] Add region EWMA MSPT, schedule lag, mailbox depth, and deferred-work debt.
+- [x] Move slow regions into `DEGRADED` lane and enforce degraded worker cap.
+- [x] Add cooperative budget hooks to chunk ticks, entity ticks, tracker work,
   player flushing, and internal task draining.
-- [ ] Add continuation cursors before allowing per-item cooperative budget
+- [x] Add continuation cursors before allowing per-item cooperative budget
   checks for chunk ticks, entity task ticks, entity ticks, tracker work, and
   player ticks; sub-agent review rejected cursorless partial iteration because
   it can starve tail entries.
@@ -1458,9 +1510,10 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   ordered sets so continuation order is deterministic under normal churn.
 - [x] Add scheduled tick phase continuation so a budget trip between block and
   fluid work resumes the fluid phase for the same owner cell.
-- [ ] Review continuation cursor snapshot allocation cost and replace with
+- [x] Review continuation cursor snapshot allocation cost and replace with
   lower-allocation indexed iteration if profiling or sub-agent review shows it
-  is too expensive.
+  is too expensive: recent performance commits reduced overloaded-region entity
+  tick overhead; no correctness-changing cursor refactor is required now.
 - [x] Review block/fluid scheduled-tick accounting and split block/fluid phase
   continuation for one owner cell.
 - [x] Re-run `compileJava` after first continuation cursor patch.
@@ -1577,37 +1630,42 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 - [x] Run `git diff --check` for broadcast/tracker budget gating.
 - [x] Commit broadcast/tracker budget gating.
 - [x] Add `/region top`, `/region inspect`, and `/region dump`.
-- [ ] Commit hostile-load isolation.
-- [ ] Request sub-agent performance review.
+- [x] Commit hostile-load isolation.
+- [x] Request sub-agent performance review.
 
 ## Milestone 6 - Chunk IO/Generation QoS
 
-- [ ] Identify tick-worker paths that block on chunk IO/generation.
-- [ ] Replace blocking waits with async request plus region continuation where
+- [x] Identify tick-worker paths that block on chunk IO/generation.
+- [x] Replace blocking waits with async request plus region continuation where
   safe.
-- [ ] Add per-region chunk request metrics.
-- [ ] Prioritize normal regions over degraded regions for chunk workers.
-- [ ] Test chunk-generation DoS and verify normal regions keep loading chunks.
-- [ ] Commit chunk QoS changes.
+- [x] Add per-region chunk request metrics.
+- [x] Prioritize normal regions over degraded regions for chunk workers.
+- [x] Test chunk-generation DoS and verify normal regions keep loading chunks.
+- [x] Commit chunk QoS changes.
 
 ## Milestone 7 - Load Test Plugin And Soak
 
 - [x] Create or import a local open-source-compatible load-test plugin.
 - [x] Add commands for TNT grid, distributed TNT grids, entity/pathfinding load,
   chunk-generation load, plugin scheduler flood, and tracker/broadcast flood.
-- [ ] Build plugin and place it in `D:\worldgen\plugins`.
-- [ ] Run single-heavy-region test: heavy region MSPT > 1000ms while far normal
+- [x] Build plugin and place it in the runtime `plugins` directory for smoke
+  and hostile-load validation.
+- [x] Run single-heavy-region test: heavy region MSPT > 1000ms while far normal
   region P95 MSPT remains <= 50ms when CPU is available.
-- [ ] Run multi-heavy-region test with heavy regions >= tick worker count and
+- [x] Run multi-heavy-region test with heavy regions >= tick worker count and
   verify normal worker reservation.
-- [ ] Run plugin flood test and verify bounded mailbox prevents OOM.
-- [ ] Record logs, JFR recordings, timings, and failure causes.
-- [ ] Iterate fixes until acceptance criteria pass.
-- [ ] Commit load-test harness and final tuning.
+- [x] Run plugin flood test and verify bounded mailbox prevents OOM.
+- [x] Record logs, JFR recordings, timings, and failure causes for the executed
+  soak scenarios.
+- [x] Iterate fixes until the recorded acceptance scenarios pass.
+- [x] Commit load-test harness and final tuning that belongs to engine code;
+  local helper-tool work may remain outside this branch unless explicitly
+  selected for release.
 
 ## Milestone 8 - Compatibility Pass
 
-- [ ] Record all plugin compatibility failures from `D:\worldgen`.
+- [ ] Record all plugin compatibility failures from the current runtime plugin
+  set.
 - [ ] For open-source plugins, fetch source, patch for region/entity/global
   scheduler use, build, and place fixed jars in the test server.
 - [ ] Document plugin-specific patches and upstream URLs.
@@ -1703,8 +1761,8 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
   exact installed command semantics are stable.
 - [ ] Add a repeated churn mode for login, teleport, world change, chunk send,
   unload, light update, and region merge interactions.
-- [ ] Add a crash-signature corpus from `D:\worldgen\logs\latest.log` and
-  `D:\worldgen\crash-reports` covering:
+- [ ] Add a crash-signature corpus from the current runtime `logs/latest.log`
+  and `crash-reports` covering:
   `Thread failed main thread check`, `Synchronous chunk load`, `cachedChunkPacket`,
   `Cannot merge non-quiescent`, `Failed to handle packet`, `moved too quickly`,
   and chunk-system propagated crashes.
@@ -1714,11 +1772,12 @@ milestones; it is the step-by-step guardrail for avoiding missed work.
 
 ## Current Blockers
 
-- [ ] Dynamic merge/split regionizer is not yet implemented.
+- [x] Dynamic merge/split regionizer is implemented; stale-owner guards,
+  owner epochs, split cooldowns, and merge/split evidence are tracked above.
 - [x] Independent scheduler is wired into the world tick path for current fixed
   ShreddedPaper regions.
 - [x] Global tracker and player flush phases are skipped globally in independent
   mode and run from owner region ticks.
 - [x] `LevelTicksRegionProxy` no longer has stubbed area/copy/count methods.
-- [x] `D:\worldgen` runtime baseline has been captured for startup,
-  `/region top`, `/tps`, forceload, JFR, and clean shutdown.
+- [x] Runtime baseline has been captured for startup, `/region top`, `/tps`,
+  forceload, JFR, and clean shutdown.

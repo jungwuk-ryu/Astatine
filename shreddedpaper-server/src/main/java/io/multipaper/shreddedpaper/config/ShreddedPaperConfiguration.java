@@ -169,6 +169,9 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public boolean useLazyExecuteWhenNotFlushing = true;
         public boolean processTrackQueueInParallel = true;
         public boolean flushQueueInParallel = true;
+        @Setting("prefer-io-uring-transport")
+        @Comment("Prefer Netty io_uring over epoll for TCP listeners when native transport is enabled and io_uring is available. Linux-only and off by default.")
+        public boolean preferIoUringTransport = false;
         public int maximumTrackersPerEntity = 500;
         public long trackerFullUpdateFrequency = 20;
         public long purgeStaleTicketsFrequency = 20;

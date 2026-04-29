@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/src/test/java/io/papermc/paper/pathfinding/AsyncPathfindingConfigTest.java
-@@ -1,0 +_,64 @@
+@@ -1,0 +_,86 @@
 +package io.papermc.paper.pathfinding;
 +
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
@@ -17,6 +17,7 @@
 +    @Test
 +    void syncAppliesConfiguredAsyncPathfindingOptions() {
 +        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        configuration.multithreading.independentRegionTicking = false;
 +        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
 +        pathfinding.enable = true;
 +        pathfinding.maxThreads = 2;
@@ -36,6 +37,7 @@
 +    @Test
 +    void syncNormalizesAutomaticThreadAndQueueOptions() {
 +        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        configuration.multithreading.independentRegionTicking = false;
 +        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
 +        pathfinding.enable = true;
 +        pathfinding.maxThreads = 0;
@@ -50,6 +52,26 @@
 +        assertEquals(1, DivineConfig.AsyncCategory.asyncPathfindingKeepalive);
 +        assertEquals(expectedThreads * 256, DivineConfig.AsyncCategory.asyncPathfindingQueueSize);
 +        assertEquals(PathfindTaskRejectPolicy.CALLER_RUNS, DivineConfig.AsyncCategory.asyncPathfindingRejectPolicy);
++    }
++
++    @Test
++    void independentRegionTickingDisablesAsyncPathfindingUntilSnapshotSupportExists() {
++        ShreddedPaperConfiguration configuration = new ShreddedPaperConfiguration();
++        configuration.multithreading.independentRegionTicking = true;
++        ShreddedPaperConfiguration.AsyncOperations.Pathfinding pathfinding = configuration.asyncOperations.pathfinding;
++        pathfinding.enable = true;
++        pathfinding.maxThreads = 2;
++        pathfinding.keepalive = 45;
++        pathfinding.queueSize = 123;
++        pathfinding.rejectPolicy = "FLUSH_ALL";
++
++        DivineConfig.syncFromShreddedPaper(configuration);
++
++        assertEquals(false, DivineConfig.AsyncCategory.asyncPathfinding);
++        assertEquals(0, DivineConfig.AsyncCategory.asyncPathfindingMaxThreads);
++        assertEquals(45, DivineConfig.AsyncCategory.asyncPathfindingKeepalive);
++        assertEquals(123, DivineConfig.AsyncCategory.asyncPathfindingQueueSize);
++        assertEquals(PathfindTaskRejectPolicy.FLUSH_ALL, DivineConfig.AsyncCategory.asyncPathfindingRejectPolicy);
 +    }
 +
 +    @Test
