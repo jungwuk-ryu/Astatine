@@ -30,39 +30,12 @@ public final class RegionChunkIoTracker {
     private final ServerLevel level;
     private final RegionPos regionPos;
     private final RegionOverloadController overloadController;
-    private final AtomicInteger inFlight = new AtomicInteger();
-    private final AtomicInteger deferredRetries = new AtomicInteger();
-    private final AtomicLong admitted = new AtomicLong();
-    private final AtomicLong completed = new AtomicLong();
-    private final AtomicLong deferred = new AtomicLong();
-    private final AtomicLong rejected = new AtomicLong();
-    private final AtomicLong downgraded = new AtomicLong();
-    private final AtomicInteger executorInFlight = new AtomicInteger();
-    private final AtomicInteger executorWaitingTasks = new AtomicInteger();
-    private final AtomicInteger executorDeferredRetries = new AtomicInteger();
-    private final AtomicLong executorAdmitted = new AtomicLong();
-    private final AtomicLong executorCompleted = new AtomicLong();
-    private final AtomicLong executorDeferred = new AtomicLong();
-    private final AtomicLong executorRejected = new AtomicLong();
-    private final AtomicLong executorDowngraded = new AtomicLong();
-    private final AtomicInteger executorOverflowInFlight = new AtomicInteger();
-    private final AtomicLong executorOverflowAdmitted = new AtomicLong();
-    private final AtomicLong executorOverflowCompleted = new AtomicLong();
-    private final AtomicLong executorOverflowBackpressure = new AtomicLong();
-    private final AtomicLong executorBacklogBackpressure = new AtomicLong();
-    private final AtomicInteger executorBacklogQueuedTasks = new AtomicInteger();
-    private final AtomicLong executorBacklogDeferred = new AtomicLong();
-    private final AtomicInteger executorBacklogEmergencyInFlight = new AtomicInteger();
-    private final AtomicLong executorBacklogEmergency = new AtomicLong();
-    private final AtomicInteger executorBacklogEmergencyRetries = new AtomicInteger();
-    private final AtomicLong executorBacklogEmergencyRejected = new AtomicLong();
-    private final Queue<Runnable> executorDeferredWaiters = new ConcurrentLinkedQueue<>();
-    private final Queue<ExecutorBacklogRetry> executorBacklogWaiters = new ConcurrentLinkedQueue<>();
-    private final Queue<ExecutorBackpressureRetry> executorBackpressureWaiters = new ConcurrentLinkedQueue<>();
-    private final AtomicInteger executorBackpressuredRetries = new AtomicInteger();
-    private final AtomicBoolean executorDeferredDrainScheduled = new AtomicBoolean();
-    private final AtomicBoolean executorBacklogDrainScheduled = new AtomicBoolean();
-    private final AtomicBoolean executorBackpressureDrainScheduled = new AtomicBoolean();
+    private final LoadAdmissionCounters loadCounters = new LoadAdmissionCounters();
+    private final ExecutorAdmissionCounters executorCounters = new ExecutorAdmissionCounters();
+    private final ExecutorBacklogCounters executorBacklogCounters = new ExecutorBacklogCounters();
+    private final ExecutorOverflowCounters executorOverflowCounters = new ExecutorOverflowCounters();
+    private final ExecutorBackpressureCounters executorBackpressureCounters = new ExecutorBackpressureCounters();
+    private final ExecutorRetryQueues executorRetryQueues = new ExecutorRetryQueues();
 
     public RegionChunkIoTracker(
             final ServerLevel level,
@@ -90,10 +63,10 @@ public final class RegionChunkIoTracker {
         final int cap = this.capFor(loadClass, config);
 
         if (addTicket && cap > 0 && this.isExecutorBacklogSaturated()) {
-            final int queued = this.deferredRetries.incrementAndGet();
-            final long count = this.deferred.incrementAndGet();
+            final int queued = this.loadCounters.deferredRetries.incrementAndGet();
+            final long count = this.loadCounters.deferred.incrementAndGet();
             if (ChunkRequestEvent.shouldCommitSample(count)) {
-                this.commitEvent("async-load-deferred-executor-backlog", chunkX, chunkZ, status, count, false, this.inFlight.get(), cap, requestedPriority);
+                this.commitEvent("async-load-deferred-executor-backlog", chunkX, chunkZ, status, count, false, this.loadCounters.inFlight.get(), cap, requestedPriority);
             }
             return Admission.deferred(queued, cap);
         }
@@ -104,9 +77,9 @@ public final class RegionChunkIoTracker {
             return Admission.bypass(admittedPriority);
         }
 
-        final int current = this.inFlight.incrementAndGet();
+        final int current = this.loadCounters.inFlight.incrementAndGet();
         if (current <= cap) {
-            final long count = this.admitted.incrementAndGet();
+            final long count = this.loadCounters.admitted.incrementAndGet();
             final Priority admittedPriority = this.adjustPriority(requestedPriority, loadClass, config);
             this.recordDowngradeIfNeeded(chunkX, chunkZ, status, requestedPriority, admittedPriority);
             if (this.shouldSamplePressure(current, cap, count)) {
@@ -115,9 +88,9 @@ public final class RegionChunkIoTracker {
             return Admission.acquired(admittedPriority);
         }
 
-        this.inFlight.decrementAndGet();
-        final int queued = this.deferredRetries.incrementAndGet();
-        final long count = this.deferred.incrementAndGet();
+        this.loadCounters.inFlight.decrementAndGet();
+        final int queued = this.loadCounters.deferredRetries.incrementAndGet();
+        final long count = this.loadCounters.deferred.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitEvent("async-load-deferred", chunkX, chunkZ, status, count, false, current - 1, cap, requestedPriority);
         }
@@ -138,9 +111,9 @@ public final class RegionChunkIoTracker {
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         final int cap = this.executorCapFor(loadClass, config);
 
-        final int current = this.executorInFlight.incrementAndGet();
+        final int current = this.executorCounters.inFlight.incrementAndGet();
         if (current <= cap) {
-            final long count = this.executorAdmitted.incrementAndGet();
+            final long count = this.executorCounters.admitted.incrementAndGet();
             final Priority admittedPriority = this.adjustExecutorPriority(requestedPriority, loadClass, config);
             this.recordExecutorDowngradeIfNeeded(chunkX, chunkZ, workType, requestedPriority, admittedPriority);
             if (this.shouldSamplePressure(current, cap, count)) {
@@ -149,8 +122,8 @@ public final class RegionChunkIoTracker {
             return Admission.acquired(admittedPriority);
         }
 
-        this.executorInFlight.decrementAndGet();
-        return Admission.deferred(Math.max(0, this.executorDeferredRetries.get()) + 1, cap);
+        this.executorCounters.inFlight.decrementAndGet();
+        return Admission.deferred(Math.max(0, this.executorCounters.deferredRetries.get()) + 1, cap);
     }
 
     public boolean deferExecutorRetry(
@@ -163,20 +136,20 @@ public final class RegionChunkIoTracker {
         final int reserve = this.executorDeferredRetryReserve();
         final int queued;
         for (;;) {
-            final int current = Math.max(0, this.executorDeferredRetries.get());
+            final int current = Math.max(0, this.executorCounters.deferredRetries.get());
             if (current >= reserve) {
                 return false;
             }
-            if (this.executorDeferredRetries.compareAndSet(current, current + 1)) {
+            if (this.executorCounters.deferredRetries.compareAndSet(current, current + 1)) {
                 queued = current + 1;
                 break;
             }
         }
-        final long count = this.executorDeferred.incrementAndGet();
-        this.executorDeferredWaiters.offer(retry);
+        final long count = this.executorCounters.deferred.incrementAndGet();
+        this.executorRetryQueues.deferredWaiters.offer(retry);
 
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitExecutorEvent("-deferred", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), priority);
+            this.commitExecutorEvent("-deferred", chunkX, chunkZ, workType, count, false, this.executorCounters.inFlight.get(), this.currentExecutorCap(), priority);
         }
         this.scheduleExecutorDeferredDrain(0L);
         return true;
@@ -190,12 +163,12 @@ public final class RegionChunkIoTracker {
     ) {
         final int cap = this.executorBacklogCap();
         for (;;) {
-            final int current = Math.max(0, this.executorWaitingTasks.get());
+            final int current = Math.max(0, this.executorBacklogCounters.waitingTasks.get());
             if (current >= cap) {
                 this.recordExecutorBacklogSaturated(chunkX, chunkZ, workType, priority, current + 1, cap);
                 return false;
             }
-            if (this.executorWaitingTasks.compareAndSet(current, current + 1)) {
+            if (this.executorBacklogCounters.waitingTasks.compareAndSet(current, current + 1)) {
                 return true;
             }
         }
@@ -209,7 +182,7 @@ public final class RegionChunkIoTracker {
             final int current,
             final int cap
     ) {
-        final long count = this.executorBacklogBackpressure.incrementAndGet();
+        final long count = this.executorBacklogCounters.backpressure.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
                     "-backlog-backpressure",
@@ -246,19 +219,19 @@ public final class RegionChunkIoTracker {
         final int cap = this.executorBacklogCap();
         final int queued;
         for (;;) {
-            final int current = Math.max(0, this.executorBacklogQueuedTasks.get());
+            final int current = Math.max(0, this.executorBacklogCounters.queuedTasks.get());
             if (current >= cap) {
                 return false;
             }
-            if (this.executorBacklogQueuedTasks.compareAndSet(current, current + 1)) {
+            if (this.executorBacklogCounters.queuedTasks.compareAndSet(current, current + 1)) {
                 queued = current + 1;
                 break;
             }
         }
 
-        final long count = this.executorBacklogDeferred.incrementAndGet();
+        final long count = this.executorBacklogCounters.deferred.incrementAndGet();
         if (retry.markQueued()) {
-            this.executorBacklogWaiters.offer(retry);
+            this.executorRetryQueues.backlogWaiters.offer(retry);
         }
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
@@ -279,15 +252,15 @@ public final class RegionChunkIoTracker {
 
     public void requeueExecutorBacklogAdmission(final ExecutorBacklogRetry retry) {
         if (retry.markQueued()) {
-            this.executorBacklogWaiters.offer(retry);
+            this.executorRetryQueues.backlogWaiters.offer(retry);
         }
         this.scheduleExecutorBacklogDrain(EXECUTOR_BACKPRESSURE_RETRY_NANOS);
     }
 
     public void executorBacklogAdmissionStarted() {
-        final int remaining = this.executorBacklogQueuedTasks.decrementAndGet();
+        final int remaining = this.executorBacklogCounters.queuedTasks.decrementAndGet();
         if (remaining < 0) {
-            this.executorBacklogQueuedTasks.compareAndSet(remaining, 0);
+            this.executorBacklogCounters.queuedTasks.compareAndSet(remaining, 0);
         }
     }
 
@@ -297,8 +270,8 @@ public final class RegionChunkIoTracker {
             final String workType,
             final Priority priority
     ) {
-        final int inFlight = this.executorBacklogEmergencyInFlight.incrementAndGet();
-        final long count = this.executorBacklogEmergency.incrementAndGet();
+        final int inFlight = this.executorBacklogCounters.emergencyInFlight.incrementAndGet();
+        final long count = this.executorBacklogCounters.emergency.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
                     "-backlog-emergency",
@@ -317,8 +290,8 @@ public final class RegionChunkIoTracker {
                     "Internal chunk executor backlog admission queue is saturated for {} {} (waitingTasks={} backlogQueued={} backlogEmergencyInFlight={} backlogCap={} workType={} emergencyCount={}); handing one engine task to the bounded emergency executor",
                     this.level.getWorld().getName(),
                     this.regionPos,
-                    Math.max(0, this.executorWaitingTasks.get()),
-                    Math.max(0, this.executorBacklogQueuedTasks.get()),
+                    Math.max(0, this.executorBacklogCounters.waitingTasks.get()),
+                    Math.max(0, this.executorBacklogCounters.queuedTasks.get()),
                     inFlight,
                     this.executorBacklogCap(),
                     workType,
@@ -328,9 +301,9 @@ public final class RegionChunkIoTracker {
     }
 
     public void completeExecutorBacklogEmergency() {
-        final int remaining = this.executorBacklogEmergencyInFlight.decrementAndGet();
+        final int remaining = this.executorBacklogCounters.emergencyInFlight.decrementAndGet();
         if (remaining < 0) {
-            this.executorBacklogEmergencyInFlight.compareAndSet(remaining, 0);
+            this.executorBacklogCounters.emergencyInFlight.compareAndSet(remaining, 0);
         }
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
@@ -342,8 +315,8 @@ public final class RegionChunkIoTracker {
             final String workType,
             final Priority priority
     ) {
-        final int queued = this.executorBacklogEmergencyRetries.incrementAndGet();
-        final long count = this.executorBacklogEmergencyRejected.incrementAndGet();
+        final int queued = this.executorBacklogCounters.emergencyRetries.incrementAndGet();
+        final long count = this.executorBacklogCounters.emergencyRejected.incrementAndGet();
         this.commitExecutorEvent(
                 "-backlog-emergency-retry",
                 chunkX,
@@ -361,7 +334,7 @@ public final class RegionChunkIoTracker {
                     this.level.getWorld().getName(),
                     this.regionPos,
                     queued,
-                    Math.max(0, this.executorBacklogEmergencyInFlight.get()),
+                    Math.max(0, this.executorBacklogCounters.emergencyInFlight.get()),
                     this.executorBacklogCap(),
                     workType,
                     count
@@ -370,76 +343,76 @@ public final class RegionChunkIoTracker {
     }
 
     public void executorBacklogEmergencyRetryStarted() {
-        final int remaining = this.executorBacklogEmergencyRetries.decrementAndGet();
+        final int remaining = this.executorBacklogCounters.emergencyRetries.decrementAndGet();
         if (remaining < 0) {
-            this.executorBacklogEmergencyRetries.compareAndSet(remaining, 0);
+            this.executorBacklogCounters.emergencyRetries.compareAndSet(remaining, 0);
         }
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
     public void endExecutorWaiting() {
-        final int remaining = this.executorWaitingTasks.decrementAndGet();
+        final int remaining = this.executorBacklogCounters.waitingTasks.decrementAndGet();
         if (remaining < 0) {
-            this.executorWaitingTasks.compareAndSet(remaining, 0);
+            this.executorBacklogCounters.waitingTasks.compareAndSet(remaining, 0);
         }
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
     public void complete() {
-        final int remaining = this.inFlight.decrementAndGet();
+        final int remaining = this.loadCounters.inFlight.decrementAndGet();
         if (remaining < 0) {
-            this.inFlight.compareAndSet(remaining, 0);
+            this.loadCounters.inFlight.compareAndSet(remaining, 0);
         }
-        this.completed.incrementAndGet();
+        this.loadCounters.completed.incrementAndGet();
     }
 
     public void completeExecutor() {
-        final int remaining = this.executorInFlight.decrementAndGet();
+        final int remaining = this.executorCounters.inFlight.decrementAndGet();
         if (remaining < 0) {
-            this.executorInFlight.compareAndSet(remaining, 0);
+            this.executorCounters.inFlight.compareAndSet(remaining, 0);
         }
-        this.executorCompleted.incrementAndGet();
+        this.executorCounters.completed.incrementAndGet();
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorDeferredDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
     public void deferredRetryStarted() {
-        final int remaining = this.deferredRetries.decrementAndGet();
+        final int remaining = this.loadCounters.deferredRetries.decrementAndGet();
         if (remaining < 0) {
-            this.deferredRetries.compareAndSet(remaining, 0);
+            this.loadCounters.deferredRetries.compareAndSet(remaining, 0);
         }
     }
 
     public void executorDeferredRetryStarted() {
-        final int remaining = this.executorDeferredRetries.decrementAndGet();
+        final int remaining = this.executorCounters.deferredRetries.decrementAndGet();
         if (remaining < 0) {
-            this.executorDeferredRetries.compareAndSet(remaining, 0);
+            this.executorCounters.deferredRetries.compareAndSet(remaining, 0);
         }
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
     public void executorBackpressureRetryStarted() {
-        final int remaining = this.executorBackpressuredRetries.decrementAndGet();
+        final int remaining = this.executorBackpressureCounters.retries.decrementAndGet();
         if (remaining < 0) {
-            this.executorBackpressuredRetries.compareAndSet(remaining, 0);
+            this.executorBackpressureCounters.retries.compareAndSet(remaining, 0);
         }
     }
 
     public void rejectDeferred(final int chunkX, final int chunkZ, final ChunkStatus status, final Priority priority) {
         this.deferredRetryStarted();
-        final long count = this.rejected.incrementAndGet();
+        final long count = this.loadCounters.rejected.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitEvent("async-load-rejected", chunkX, chunkZ, status, count, true, this.inFlight.get(), this.currentCap(), priority);
+            this.commitEvent("async-load-rejected", chunkX, chunkZ, status, count, true, this.loadCounters.inFlight.get(), this.currentCap(), priority);
         }
     }
 
     public void rejectDeferredExecutor(final int chunkX, final int chunkZ, final String workType, final Priority priority) {
         this.executorDeferredRetryStarted();
-        final long count = this.executorRejected.incrementAndGet();
+        final long count = this.executorCounters.rejected.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
                     "-fallback",
@@ -448,7 +421,7 @@ public final class RegionChunkIoTracker {
                     workType,
                     count,
                     true,
-                    this.executorInFlight.get(),
+                    this.executorCounters.inFlight.get(),
                     this.currentExecutorCap(),
                     priority
             );
@@ -471,7 +444,7 @@ public final class RegionChunkIoTracker {
     }
 
     public boolean hasExecutorDeferredRetryCapacity() {
-        return Math.max(0, this.executorDeferredRetries.get()) < this.executorDeferredRetryReserve();
+        return Math.max(0, this.executorCounters.deferredRetries.get()) < this.executorDeferredRetryReserve();
     }
 
     public boolean tryAcquireExecutorOverflow(
@@ -486,18 +459,18 @@ public final class RegionChunkIoTracker {
         }
         final int current;
         for (;;) {
-            final int observed = Math.max(0, this.executorOverflowInFlight.get());
+            final int observed = Math.max(0, this.executorOverflowCounters.inFlight.get());
             if (observed >= cap) {
                 return false;
             }
-            if (this.executorOverflowInFlight.compareAndSet(observed, observed + 1)) {
+            if (this.executorOverflowCounters.inFlight.compareAndSet(observed, observed + 1)) {
                 current = observed + 1;
                 break;
             }
         }
 
-        final long admitted = this.executorOverflowAdmitted.incrementAndGet();
-        final long fallback = this.executorRejected.incrementAndGet();
+        final long admitted = this.executorOverflowCounters.admitted.incrementAndGet();
+        final long fallback = this.executorCounters.rejected.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(fallback)) {
             this.commitExecutorEvent(
                     "-overflow-fallback",
@@ -526,11 +499,11 @@ public final class RegionChunkIoTracker {
     }
 
     public void completeExecutorOverflow() {
-        final int remaining = this.executorOverflowInFlight.decrementAndGet();
+        final int remaining = this.executorOverflowCounters.inFlight.decrementAndGet();
         if (remaining < 0) {
-            this.executorOverflowInFlight.compareAndSet(remaining, 0);
+            this.executorOverflowCounters.inFlight.compareAndSet(remaining, 0);
         }
-        this.executorOverflowCompleted.incrementAndGet();
+        this.executorOverflowCounters.completed.incrementAndGet();
         this.scheduleExecutorBacklogDrain(0L);
         this.scheduleExecutorDeferredDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
@@ -546,14 +519,14 @@ public final class RegionChunkIoTracker {
         final int reserve = this.executorBackpressureRetryReserve();
         final int queued;
         for (;;) {
-            final int current = Math.max(0, this.executorBackpressuredRetries.get());
-            if (this.executorBackpressuredRetries.compareAndSet(current, current + 1)) {
+            final int current = Math.max(0, this.executorBackpressureCounters.retries.get());
+            if (this.executorBackpressureCounters.retries.compareAndSet(current, current + 1)) {
                 queued = current + 1;
                 break;
             }
         }
 
-        final long count = this.executorOverflowBackpressure.incrementAndGet();
+        final long count = this.executorOverflowCounters.backpressure.incrementAndGet();
         this.enqueueExecutorBackpressureRetry(retry, EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent(
@@ -575,7 +548,7 @@ public final class RegionChunkIoTracker {
                     this.regionPos,
                     queued,
                     reserve,
-                    Math.max(0, this.executorOverflowInFlight.get()),
+                    Math.max(0, this.executorOverflowCounters.inFlight.get()),
                     this.currentExecutorOverflowCap(),
                     workType,
                     count
@@ -628,20 +601,20 @@ public final class RegionChunkIoTracker {
 
     public Snapshot snapshot() {
         final int cap = this.currentCap();
-        final int inFlight = Math.max(0, this.inFlight.get());
-        final int deferred = Math.max(0, this.deferredRetries.get());
+        final int inFlight = Math.max(0, this.loadCounters.inFlight.get());
+        final int deferred = Math.max(0, this.loadCounters.deferredRetries.get());
         final double requestPressure = cap <= 0 ? 0.0D : Math.max(inFlight / (double) cap, deferred / (double) cap);
         final int executorCap = this.currentExecutorCap();
-        final int executorWaiting = Math.max(0, this.executorWaitingTasks.get());
-        final int executorBacklogQueued = Math.max(0, this.executorBacklogQueuedTasks.get());
-        final int executorBacklogEmergencyInFlight = Math.max(0, this.executorBacklogEmergencyInFlight.get());
-        final int executorBacklogEmergencyRetries = Math.max(0, this.executorBacklogEmergencyRetries.get());
+        final int executorWaiting = Math.max(0, this.executorBacklogCounters.waitingTasks.get());
+        final int executorBacklogQueued = Math.max(0, this.executorBacklogCounters.queuedTasks.get());
+        final int executorBacklogEmergencyInFlight = Math.max(0, this.executorBacklogCounters.emergencyInFlight.get());
+        final int executorBacklogEmergencyRetries = Math.max(0, this.executorBacklogCounters.emergencyRetries.get());
         final int executorBacklogCap = this.executorBacklogCap();
-        final int executorInFlight = Math.max(0, this.executorInFlight.get());
-        final int executorDeferred = Math.max(0, this.executorDeferredRetries.get());
+        final int executorInFlight = Math.max(0, this.executorCounters.inFlight.get());
+        final int executorDeferred = Math.max(0, this.executorCounters.deferredRetries.get());
         final int executorOverflowCap = this.currentExecutorOverflowCap();
-        final int executorOverflowInFlight = Math.max(0, this.executorOverflowInFlight.get());
-        final int executorBackpressured = Math.max(0, this.executorBackpressuredRetries.get());
+        final int executorOverflowInFlight = Math.max(0, this.executorOverflowCounters.inFlight.get());
+        final int executorBackpressured = Math.max(0, this.executorBackpressureCounters.retries.get());
         final int executorBackpressureCap = this.executorBackpressureRetryReserve();
         final double executorBacklogPressure = executorBacklogCap <= 0 ? 0.0D : (executorWaiting + executorBacklogQueued) / (double) executorBacklogCap;
         final double executorPermitPressure = executorCap <= 0 ? 0.0D : Math.max(executorInFlight / (double) executorCap, executorDeferred / (double) executorCap);
@@ -654,36 +627,36 @@ public final class RegionChunkIoTracker {
                 cap,
                 requestPressure,
                 Math.max(requestPressure, executorPressure),
-                this.admitted.get(),
-                this.completed.get(),
-                this.deferred.get(),
-                this.rejected.get(),
-                this.downgraded.get(),
+                this.loadCounters.admitted.get(),
+                this.loadCounters.completed.get(),
+                this.loadCounters.deferred.get(),
+                this.loadCounters.rejected.get(),
+                this.loadCounters.downgraded.get(),
                 executorWaiting,
                 executorBacklogQueued,
                 executorBacklogCap,
                 executorBacklogPressure,
-                this.executorBacklogBackpressure.get(),
-                this.executorBacklogDeferred.get(),
+                this.executorBacklogCounters.backpressure.get(),
+                this.executorBacklogCounters.deferred.get(),
                 executorBacklogEmergencyInFlight,
-                this.executorBacklogEmergency.get(),
+                this.executorBacklogCounters.emergency.get(),
                 executorBacklogEmergencyRetries,
-                this.executorBacklogEmergencyRejected.get(),
+                this.executorBacklogCounters.emergencyRejected.get(),
                 executorInFlight,
                 executorDeferred,
                 executorCap,
                 executorPressure,
-                this.executorAdmitted.get(),
-                this.executorCompleted.get(),
-                this.executorDeferred.get(),
-                this.executorRejected.get(),
-                this.executorDowngraded.get(),
+                this.executorCounters.admitted.get(),
+                this.executorCounters.completed.get(),
+                this.executorCounters.deferred.get(),
+                this.executorCounters.rejected.get(),
+                this.executorCounters.downgraded.get(),
                 executorOverflowInFlight,
                 executorOverflowCap,
                 executorOverflowPressure,
-                this.executorOverflowAdmitted.get(),
-                this.executorOverflowCompleted.get(),
-                this.executorOverflowBackpressure.get(),
+                this.executorOverflowCounters.admitted.get(),
+                this.executorOverflowCounters.completed.get(),
+                this.executorOverflowCounters.backpressure.get(),
                 executorBackpressured,
                 executorBackpressureCap,
                 executorBackpressurePressure
@@ -691,16 +664,16 @@ public final class RegionChunkIoTracker {
     }
 
     public boolean hasPendingWork() {
-        return this.inFlight.get() > 0
-                || this.deferredRetries.get() > 0
-                || this.executorWaitingTasks.get() > 0
-                || this.executorBacklogQueuedTasks.get() > 0
-                || this.executorBacklogEmergencyInFlight.get() > 0
-                || this.executorBacklogEmergencyRetries.get() > 0
-                || this.executorInFlight.get() > 0
-                || this.executorDeferredRetries.get() > 0
-                || this.executorOverflowInFlight.get() > 0
-                || this.executorBackpressuredRetries.get() > 0;
+        return this.loadCounters.inFlight.get() > 0
+                || this.loadCounters.deferredRetries.get() > 0
+                || this.executorBacklogCounters.waitingTasks.get() > 0
+                || this.executorBacklogCounters.queuedTasks.get() > 0
+                || this.executorBacklogCounters.emergencyInFlight.get() > 0
+                || this.executorBacklogCounters.emergencyRetries.get() > 0
+                || this.executorCounters.inFlight.get() > 0
+                || this.executorCounters.deferredRetries.get() > 0
+                || this.executorOverflowCounters.inFlight.get() > 0
+                || this.executorBackpressureCounters.retries.get() > 0;
     }
 
     private int currentCap() {
@@ -728,11 +701,11 @@ public final class RegionChunkIoTracker {
     }
 
     private boolean isExecutorBacklogSaturated() {
-        return Math.max(0, this.executorWaitingTasks.get()) + Math.max(0, this.executorBacklogQueuedTasks.get()) >= this.executorBacklogCap();
+        return Math.max(0, this.executorBacklogCounters.waitingTasks.get()) + Math.max(0, this.executorBacklogCounters.queuedTasks.get()) >= this.executorBacklogCap();
     }
 
     private void scheduleExecutorBacklogDrain(final long delayNanos) {
-        if (!this.executorBacklogDrainScheduled.compareAndSet(false, true)) {
+        if (!this.executorRetryQueues.backlogDrainScheduled.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -742,15 +715,15 @@ public final class RegionChunkIoTracker {
                     TimeUnit.NANOSECONDS
             );
         } catch (final RuntimeException throwable) {
-            this.executorBacklogDrainScheduled.set(false);
+            this.executorRetryQueues.backlogDrainScheduled.set(false);
             throw throwable;
         }
     }
 
     private void drainExecutorBacklogWaiters() {
-        this.executorBacklogDrainScheduled.set(false);
-        for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH && this.executorWaitingTasks.get() < this.executorBacklogCap(); drained++) {
-            final ExecutorBacklogRetry retry = this.executorBacklogWaiters.poll();
+        this.executorRetryQueues.backlogDrainScheduled.set(false);
+        for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH && this.executorBacklogCounters.waitingTasks.get() < this.executorBacklogCap(); drained++) {
+            final ExecutorBacklogRetry retry = this.executorRetryQueues.backlogWaiters.poll();
             if (retry == null) {
                 return;
             }
@@ -761,13 +734,13 @@ public final class RegionChunkIoTracker {
                 LOGGER.error("Internal chunk executor backlog retry failed for {} {}", this.level.getWorld().getName(), this.regionPos, throwable);
             }
         }
-        if (!this.executorBacklogWaiters.isEmpty()) {
-            this.scheduleExecutorBacklogDrain(this.executorWaitingTasks.get() < this.executorBacklogCap() ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
+        if (!this.executorRetryQueues.backlogWaiters.isEmpty()) {
+            this.scheduleExecutorBacklogDrain(this.executorBacklogCounters.waitingTasks.get() < this.executorBacklogCap() ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         }
     }
 
     private void scheduleExecutorDeferredDrain(final long delayNanos) {
-        if (!this.executorDeferredDrainScheduled.compareAndSet(false, true)) {
+        if (!this.executorRetryQueues.deferredDrainScheduled.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -777,15 +750,15 @@ public final class RegionChunkIoTracker {
                     TimeUnit.NANOSECONDS
             );
         } catch (final RuntimeException throwable) {
-            this.executorDeferredDrainScheduled.set(false);
+            this.executorRetryQueues.deferredDrainScheduled.set(false);
             throw throwable;
         }
     }
 
     private void drainExecutorDeferredWaiters() {
-        this.executorDeferredDrainScheduled.set(false);
-        for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH && this.executorInFlight.get() < this.currentExecutorCap(); drained++) {
-            final Runnable retry = this.executorDeferredWaiters.poll();
+        this.executorRetryQueues.deferredDrainScheduled.set(false);
+        for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH && this.executorCounters.inFlight.get() < this.currentExecutorCap(); drained++) {
+            final Runnable retry = this.executorRetryQueues.deferredWaiters.poll();
             if (retry == null) {
                 return;
             }
@@ -795,13 +768,13 @@ public final class RegionChunkIoTracker {
                 LOGGER.error("Internal chunk executor retry failed for {} {}", this.level.getWorld().getName(), this.regionPos, throwable);
             }
         }
-        if (!this.executorDeferredWaiters.isEmpty()) {
-            this.scheduleExecutorDeferredDrain(this.executorInFlight.get() < this.currentExecutorCap() ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
+        if (!this.executorRetryQueues.deferredWaiters.isEmpty()) {
+            this.scheduleExecutorDeferredDrain(this.executorCounters.inFlight.get() < this.currentExecutorCap() ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         }
     }
 
     private void scheduleExecutorBackpressureDrain(final long delayNanos) {
-        if (!this.executorBackpressureDrainScheduled.compareAndSet(false, true)) {
+        if (!this.executorRetryQueues.backpressureDrainScheduled.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -811,15 +784,15 @@ public final class RegionChunkIoTracker {
                     TimeUnit.NANOSECONDS
             );
         } catch (final RuntimeException throwable) {
-            this.executorBackpressureDrainScheduled.set(false);
+            this.executorRetryQueues.backpressureDrainScheduled.set(false);
             throw throwable;
         }
     }
 
     private void drainExecutorBackpressureWaiters() {
-        this.executorBackpressureDrainScheduled.set(false);
+        this.executorRetryQueues.backpressureDrainScheduled.set(false);
         for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH; drained++) {
-            final ExecutorBackpressureRetry retry = this.executorBackpressureWaiters.poll();
+            final ExecutorBackpressureRetry retry = this.executorRetryQueues.backpressureWaiters.poll();
             if (retry == null) {
                 return;
             }
@@ -830,19 +803,19 @@ public final class RegionChunkIoTracker {
                 LOGGER.error("Internal chunk executor backpressure retry failed for {} {}", this.level.getWorld().getName(), this.regionPos, throwable);
             }
         }
-        if (!this.executorBackpressureWaiters.isEmpty()) {
+        if (!this.executorRetryQueues.backpressureWaiters.isEmpty()) {
             this.scheduleExecutorBackpressureDrain((this.hasExecutorDeferredRetryCapacity() || this.hasExecutorOverflowCapacity()) ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         }
     }
 
     private boolean hasExecutorOverflowCapacity() {
         final int cap = this.currentExecutorOverflowCap();
-        return cap > 0 && Math.max(0, this.executorOverflowInFlight.get()) < cap;
+        return cap > 0 && Math.max(0, this.executorOverflowCounters.inFlight.get()) < cap;
     }
 
     private void enqueueExecutorBackpressureRetry(final ExecutorBackpressureRetry retry, final long delayNanos) {
         if (retry.markQueued()) {
-            this.executorBackpressureWaiters.offer(retry);
+            this.executorRetryQueues.backpressureWaiters.offer(retry);
         }
         this.scheduleExecutorBackpressureDrain(delayNanos);
     }
@@ -897,9 +870,9 @@ public final class RegionChunkIoTracker {
         if (requestedPriority == admittedPriority) {
             return;
         }
-        final long count = this.downgraded.incrementAndGet();
+        final long count = this.loadCounters.downgraded.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitEvent("async-load-downgraded", chunkX, chunkZ, status, count, false, this.inFlight.get(), this.currentCap(), admittedPriority);
+            this.commitEvent("async-load-downgraded", chunkX, chunkZ, status, count, false, this.loadCounters.inFlight.get(), this.currentCap(), admittedPriority);
         }
     }
 
@@ -913,9 +886,9 @@ public final class RegionChunkIoTracker {
         if (requestedPriority == admittedPriority) {
             return;
         }
-        final long count = this.executorDowngraded.incrementAndGet();
+        final long count = this.executorCounters.downgraded.incrementAndGet();
         if (ChunkRequestEvent.shouldCommitSample(count)) {
-            this.commitExecutorEvent("-downgraded", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), admittedPriority);
+            this.commitExecutorEvent("-downgraded", chunkX, chunkZ, workType, count, false, this.executorCounters.inFlight.get(), this.currentExecutorCap(), admittedPriority);
         }
     }
 
@@ -994,6 +967,57 @@ public final class RegionChunkIoTracker {
         event.capacity = cap;
         event.priority = priority.name();
         event.commit();
+    }
+
+    private static final class LoadAdmissionCounters {
+        private final AtomicInteger inFlight = new AtomicInteger();
+        private final AtomicInteger deferredRetries = new AtomicInteger();
+        private final AtomicLong admitted = new AtomicLong();
+        private final AtomicLong completed = new AtomicLong();
+        private final AtomicLong deferred = new AtomicLong();
+        private final AtomicLong rejected = new AtomicLong();
+        private final AtomicLong downgraded = new AtomicLong();
+    }
+
+    private static final class ExecutorAdmissionCounters {
+        private final AtomicInteger inFlight = new AtomicInteger();
+        private final AtomicInteger deferredRetries = new AtomicInteger();
+        private final AtomicLong admitted = new AtomicLong();
+        private final AtomicLong completed = new AtomicLong();
+        private final AtomicLong deferred = new AtomicLong();
+        private final AtomicLong rejected = new AtomicLong();
+        private final AtomicLong downgraded = new AtomicLong();
+    }
+
+    private static final class ExecutorBacklogCounters {
+        private final AtomicInteger waitingTasks = new AtomicInteger();
+        private final AtomicInteger queuedTasks = new AtomicInteger();
+        private final AtomicLong backpressure = new AtomicLong();
+        private final AtomicLong deferred = new AtomicLong();
+        private final AtomicInteger emergencyInFlight = new AtomicInteger();
+        private final AtomicLong emergency = new AtomicLong();
+        private final AtomicInteger emergencyRetries = new AtomicInteger();
+        private final AtomicLong emergencyRejected = new AtomicLong();
+    }
+
+    private static final class ExecutorOverflowCounters {
+        private final AtomicInteger inFlight = new AtomicInteger();
+        private final AtomicLong admitted = new AtomicLong();
+        private final AtomicLong completed = new AtomicLong();
+        private final AtomicLong backpressure = new AtomicLong();
+    }
+
+    private static final class ExecutorBackpressureCounters {
+        private final AtomicInteger retries = new AtomicInteger();
+    }
+
+    private static final class ExecutorRetryQueues {
+        private final Queue<Runnable> deferredWaiters = new ConcurrentLinkedQueue<>();
+        private final Queue<ExecutorBacklogRetry> backlogWaiters = new ConcurrentLinkedQueue<>();
+        private final Queue<ExecutorBackpressureRetry> backpressureWaiters = new ConcurrentLinkedQueue<>();
+        private final AtomicBoolean deferredDrainScheduled = new AtomicBoolean();
+        private final AtomicBoolean backlogDrainScheduled = new AtomicBoolean();
+        private final AtomicBoolean backpressureDrainScheduled = new AtomicBoolean();
     }
 
     public record Admission(Result result, Priority priority, int deferredQueued, int capacity) {
