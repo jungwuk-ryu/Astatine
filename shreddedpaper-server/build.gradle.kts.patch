@@ -47,7 +47,7 @@
 -    implementation(project(":purpur-api")) // Purpur
 +    implementation(project(":shreddedpaper-api")) // Purpur // ShreddedPaper
      implementation("ca.spottedleaf:concurrentutil:0.0.8")
-+    implementation("org.jctools:jctools-core:4.0.5") // ShreddedPaper - bounded region mailboxes
++    implementation("org.jctools:jctools-core:4.0.6") // ShreddedPaper - bounded region mailboxes
      implementation("org.jline:jline-terminal-ffm:3.27.1") // use ffm on java 22+
      implementation("org.jline:jline-terminal-jni:3.27.1") // fall back to jni on java 21
 @@ -175,10 +_,13 @@
