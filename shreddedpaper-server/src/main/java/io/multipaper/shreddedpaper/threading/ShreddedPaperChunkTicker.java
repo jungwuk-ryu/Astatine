@@ -46,7 +46,6 @@ public class ShreddedPaperChunkTicker {
     public CompletableFuture<Void> tickChunks(final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
         ServerLevel level = this.serverChunkCache.chunkMap.level;
         final ScheduledTickContext tickContext = new ScheduledTickContext(timeInhabited, filteredSpawningCategories == null ? List.of() : filteredSpawningCategories, spawnState);
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
         io.papermc.paper.entity.activation.ActivationRange.activateEntities(level); // Paper - EAR // DivineMC - DAB must update priorities before ShreddedPaper region entity ticking
 
         if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
@@ -60,6 +59,7 @@ public class ShreddedPaperChunkTicker {
             return CompletableFuture.completedFuture(null);
         }
 
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         level.chunkSource.tickingRegions.forEach(
                 region -> futures.add(this.tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState))
         );

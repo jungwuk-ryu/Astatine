@@ -34,6 +34,7 @@ public final class RegionMailbox {
             RegionTaskClass.TRACKER_BROADCAST,
             RegionTaskClass.EXPLOSION_PHYSICS
     };
+    private static final RegionTaskClass[] ALL_CLASSES = RegionTaskClass.values();
 
     private final ServerLevel level;
     private final RegionPos regionPos;
@@ -64,7 +65,7 @@ public final class RegionMailbox {
         this.ownerEpochSupplier = ownerEpochSupplier;
         this.ownerOwnsCell = ownerOwnsCell;
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
-        for (final RegionTaskClass taskClass : RegionTaskClass.values()) {
+        for (final RegionTaskClass taskClass : ALL_CLASSES) {
             final int capacity = this.capacityFor(config, taskClass);
             this.capacityByClass.put(taskClass, capacity);
             this.queuedByClass.put(taskClass, new AtomicInteger());
@@ -487,7 +488,7 @@ public final class RegionMailbox {
 
     public double maxClassPressure() {
         double pressure = 0.0D;
-        for (final RegionTaskClass taskClass : RegionTaskClass.values()) {
+        for (final RegionTaskClass taskClass : ALL_CLASSES) {
             pressure = Math.max(pressure, this.queued(taskClass) / (double) Math.max(1, this.capacity(taskClass)));
         }
         return pressure;

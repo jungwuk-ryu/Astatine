@@ -45,6 +45,7 @@ public class LevelChunkRegionMap {
     private final SimpleStampedLock regionsLock = new SimpleStampedLock();
     private final Long2ObjectOpenHashMap<RegionOwner> ownersByCell = new Long2ObjectOpenHashMap<>(2048, 0.5f);
     private final Long2ObjectOpenHashMap<RegionOwner> ownersById = new Long2ObjectOpenHashMap<>(2048, 0.5f);
+    private volatile List<LevelChunkRegion> regionsSnapshot;
 
     public LevelChunkRegionMap(ServerLevel level) {
         this.level = level;
@@ -82,6 +83,7 @@ public class LevelChunkRegionMap {
         owner.attachRegion(created);
         this.ownersByCell.put(regionPos.longKey, owner);
         this.ownersById.put(owner.id(), owner);
+        this.invalidateRegionsSnapshot();
         return created;
     }
 
@@ -227,6 +229,7 @@ public class LevelChunkRegionMap {
                     this.ownersByCell.put(cellKey, targetOwner);
                 }
                 this.ownersById.remove(sourceOwner.id());
+                this.invalidateRegionsSnapshot();
                 sourceOwner.detachRegion(sourceRegion);
                 sourceRegion.getRuntimeState().detach(sourceRegion);
                 sourceOwner.clearTransferredCells();
@@ -411,6 +414,7 @@ public class LevelChunkRegionMap {
         sourceOwner.removeCells(splitCells);
 
         this.ownersById.put(splitOwner.id(), splitOwner);
+        this.invalidateRegionsSnapshot();
         for (final long cellKey : splitCells) {
             this.ownersByCell.put(cellKey, splitOwner);
         }
@@ -501,6 +505,7 @@ public class LevelChunkRegionMap {
             this.ownersByCell.remove(cellKey, owner);
         }
         this.ownersById.remove(owner.id());
+        this.invalidateRegionsSnapshot();
         owner.detachRegion(region);
         region.getRuntimeState().detach(region);
     }
@@ -514,16 +519,31 @@ public class LevelChunkRegionMap {
     }
 
     public void forEach(Consumer<LevelChunkRegion> consumer) {
-        List<LevelChunkRegion> regionsCopy = new ArrayList<>(ownersById.size());
-        regionsLock.read(() -> {
+        this.regionsSnapshot().forEach(consumer);
+    }
+
+    private List<LevelChunkRegion> regionsSnapshot() {
+        return regionsLock.read(() -> {
+            List<LevelChunkRegion> snapshot = this.regionsSnapshot;
+            if (snapshot != null) {
+                return snapshot;
+            }
+
+            final List<LevelChunkRegion> regions = new ArrayList<>(ownersById.size());
             for (final RegionOwner owner : this.ownersById.values()) {
                 final LevelChunkRegion region = owner.region();
                 if (region != null) {
-                    regionsCopy.add(region);
+                    regions.add(region);
                 }
             }
+            snapshot = List.copyOf(regions);
+            this.regionsSnapshot = snapshot;
+            return snapshot;
         });
-        regionsCopy.forEach(consumer);
+    }
+
+    private void invalidateRegionsSnapshot() {
+        this.regionsSnapshot = null;
     }
 
     public void addTickingEntity(Entity entity) {

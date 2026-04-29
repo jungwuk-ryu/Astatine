@@ -27,7 +27,7 @@ public final class RegionRuntimeState {
         this.level = level;
         this.ownerId = owner.id();
         this.regionPos = owner.primaryCell();
-        this.mailbox = new RegionMailbox(level, owner.primaryCell(), owner.id(), owner::layoutEpoch, cellKey -> owner.ownsCell(new RegionPos(cellKey)));
+        this.mailbox = new RegionMailbox(level, owner.primaryCell(), owner.id(), owner::layoutEpoch, owner::ownsCellKey);
         this.overloadController = new RegionOverloadController(level, owner.primaryCell());
         this.chunkIoTracker = new RegionChunkIoTracker(level, owner.primaryCell(), this.overloadController);
     }

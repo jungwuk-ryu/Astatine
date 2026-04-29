@@ -39,19 +39,32 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
     }
 
     public Optional<LevelTicks<T>> get(BlockPos pos) {
-        return get(new ChunkPos(pos));
+        return Optional.ofNullable(getNullable(pos));
     }
 
     public Optional<LevelTicks<T>> get(ChunkPos pos) {
-        return get(RegionPos.forChunk(pos));
+        return Optional.ofNullable(getNullable(pos));
     }
 
     public Optional<LevelTicks<T>> get(RegionPos pos) {
-        return Optional.ofNullable(regionsLock.optimisticRead(() -> regions.get(pos.longKey)));
+        return Optional.ofNullable(getNullable(pos));
+    }
+
+    private LevelTicks<T> getNullable(BlockPos pos) {
+        return getNullable(RegionPos.forBlockPos(pos));
+    }
+
+    private LevelTicks<T> getNullable(ChunkPos pos) {
+        return getNullable(RegionPos.forChunk(pos));
+    }
+
+    private LevelTicks<T> getNullable(RegionPos pos) {
+        return regionsLock.optimisticRead(() -> regions.get(pos.longKey));
     }
 
     public boolean hasRegionData(RegionPos pos) {
-        return get(pos).map(region -> !region.isEmpty()).orElse(false);
+        final LevelTicks<T> region = getNullable(pos);
+        return region != null && !region.isEmpty();
     }
 
     public static boolean canScheduleFromCurrentThread(ServerLevel level, BlockPos pos) {
@@ -78,30 +91,40 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
     }
 
     public void addContainer(ChunkPos pos, LevelChunkTicks<T> scheduler) {
-        get(pos).orElseGet(() -> {
-            return regionsLock.write(() -> regions.computeIfAbsent(RegionPos.forChunk(pos).longKey, k -> createRegionLevelTicks()));
-        }).addContainer(pos, scheduler);
+        final RegionPos regionPos = RegionPos.forChunk(pos);
+        LevelTicks<T> region = getNullable(regionPos);
+        if (region == null) {
+            region = regionsLock.write(() -> regions.computeIfAbsent(regionPos.longKey, k -> createRegionLevelTicks()));
+        }
+        region.addContainer(pos, scheduler);
     }
 
     public void removeContainer(ChunkPos pos) {
-        get(pos).ifPresent(v -> {
-            v.removeContainer(pos);
+        final RegionPos regionPos = RegionPos.forChunk(pos);
+        final LevelTicks<T> region = getNullable(regionPos);
+        if (region != null) {
+            region.removeContainer(pos);
 
-            if (v.isEmpty()) {
-                regionsLock.write(() -> regions.remove(RegionPos.forChunk(pos).longKey));
+            if (region.isEmpty()) {
+                regionsLock.write(() -> regions.remove(regionPos.longKey));
             }
-        });
+        }
     }
 
     @Override
     public void schedule(ScheduledTick<T> orderedTick) {
-        get(orderedTick.pos()).orElseThrow(() -> new IllegalArgumentException("Chunk not loaded: " + orderedTick.pos())).schedule(orderedTick);
+        final LevelTicks<T> region = getNullable(orderedTick.pos());
+        if (region == null) {
+            throw new IllegalArgumentException("Chunk not loaded: " + orderedTick.pos());
+        }
+        region.schedule(orderedTick);
     }
 
     public void tick(RegionPos regionPos, long time, int maxTicks, BiConsumer<BlockPos, T> ticker) {
-        get(regionPos).ifPresent(v -> {
-            v.tick(time, maxTicks, ticker);
-        });
+        final LevelTicks<T> region = getNullable(regionPos);
+        if (region != null) {
+            region.tick(time, maxTicks, ticker);
+        }
     }
 
     @Override
@@ -111,12 +134,14 @@ public class LevelTicksRegionProxy<T> extends LevelTicks<T> {
 
     @Override
     public boolean hasScheduledTick(BlockPos pos, T type) {
-        return get(pos).map(v -> v.hasScheduledTick(pos, type)).orElse(false);
+        final LevelTicks<T> region = getNullable(pos);
+        return region != null && region.hasScheduledTick(pos, type);
     }
 
     @Override
     public boolean willTickThisTick(BlockPos pos, T type) {
-        return get(pos).map(v -> v.willTickThisTick(pos, type)).orElse(false);
+        final LevelTicks<T> region = getNullable(pos);
+        return region != null && region.willTickThisTick(pos, type);
     }
 
     @Override

@@ -482,15 +482,18 @@ public final class RegionTickScheduler {
                 final long tickEnd = System.nanoTime();
                 final long wallNanos = Math.max(0L, tickEnd - actualStart);
                 final RegionChunkIoTracker.Snapshot chunkIo = this.state.chunkIoTracker().snapshot();
+                final RegionMailbox mailbox = this.state.mailbox();
+                final int mailboxDepth = mailbox.depth();
+                final double mailboxClassPressure = mailbox.maxClassPressure();
                 this.state.overloadController().recordTick(
                         wallNanos,
                         scheduleLag,
-                        this.state.mailbox().depth(),
-                        this.state.mailbox().maxClassPressure(),
+                        mailboxDepth,
+                        mailboxClassPressure,
                         deferred,
                         chunkIo
                 );
-                this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred, chunkIo);
+                this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred, chunkIo, mailboxDepth, mailboxClassPressure);
 
                 this.activatePendingSplitRegions(scheduledStart);
                 if (failure != null || this.retired.get() || region.isEmpty()) {
@@ -620,7 +623,9 @@ public final class RegionTickScheduler {
                 final long wallNanos,
                 final long scheduleLag,
                 final long deferred,
-                final RegionChunkIoTracker.Snapshot chunkIo
+                final RegionChunkIoTracker.Snapshot chunkIo,
+                final int mailboxDepth,
+                final double mailboxClassPressure
         ) {
             final RegionTickEvent event = new RegionTickEvent();
             event.world = this.level.getWorld().getName();
@@ -631,7 +636,7 @@ public final class RegionTickScheduler {
             event.actualStartNanos = actualStart;
             event.wallNanos = wallNanos;
             event.scheduleLagNanos = scheduleLag;
-            event.mailboxDepth = this.state.mailbox().depth();
+            event.mailboxDepth = mailboxDepth;
             event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
             event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
             event.ownerHandoffQueued = this.state.mailbox().queued(RegionTaskClass.OWNER_HANDOFF);
@@ -670,7 +675,7 @@ public final class RegionTickScheduler {
             event.pluginQueued = this.state.mailbox().queued(RegionTaskClass.PLUGIN);
             event.trackerBroadcastQueued = this.state.mailbox().queued(RegionTaskClass.TRACKER_BROADCAST);
             event.explosionPhysicsQueued = this.state.mailbox().queued(RegionTaskClass.EXPLOSION_PHYSICS);
-            event.mailboxClassPressure = this.state.mailbox().maxClassPressure();
+            event.mailboxClassPressure = mailboxClassPressure;
             event.deferredWork = deferred;
             event.commit();
         }
