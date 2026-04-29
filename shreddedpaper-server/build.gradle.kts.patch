@@ -61,7 +61,7 @@
      implementation("org.apache.logging.log4j:log4j-iostreams:2.24.1")
      implementation("org.ow2.asm:asm-commons:9.8")
      implementation("org.spongepowered:configurate-yaml:4.2.0")
-+    implementation("com.github.luben:zstd-jni:1.5.7-4")
++    implementation("com.github.luben:zstd-jni:1.5.7-7")
 +    implementation("net.openhft:zero-allocation-hashing:0.16")
  
      implementation("org.mozilla:rhino-runtime:1.7.14") // Purpur
