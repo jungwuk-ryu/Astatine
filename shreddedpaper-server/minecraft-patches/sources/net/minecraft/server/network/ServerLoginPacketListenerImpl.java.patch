@@ -1,0 +1,58 @@
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -211,19 +_,37 @@
+             this.disconnect(component);
+         } else {
+             if (this.server.getCompressionThreshold() >= 0 && !this.connection.isMemoryConnection()) {
++                int compressionThreshold = this.server.getCompressionThreshold();
++                this.state = ServerLoginPacketListenerImpl.State.WAITING_FOR_COMPRESSION;
+                 this.connection
+                     .send(
+-                        new ClientboundLoginCompressionPacket(this.server.getCompressionThreshold()),
+-                        PacketSendListener.thenRun(() -> this.connection.setupCompression(this.server.getCompressionThreshold(), true))
++                        new ClientboundLoginCompressionPacket(compressionThreshold),
++                        PacketSendListener.thenRun(() -> {
++                            this.connection.setupCompression(compressionThreshold, true);
++                            this.server.execute(() -> this.finishLoginAfterCompression(profile));
++                        })
+                     );
+-            }
+-
+-            boolean flag = playerList.disconnectAllPlayersWithProfile(profile); // Paper - validate usernames
+-            if (flag) {
+-                this.state = ServerLoginPacketListenerImpl.State.WAITING_FOR_DUPE_DISCONNECT;
+-            } else {
+-                this.finishLoginAndWaitForClient(profile);
+-            }
++                return;
++            }
++
++            this.finishVerifiedLogin(profile);
++        }
++    }
++
++    private void finishLoginAfterCompression(GameProfile profile) {
++        if (this.disconnecting || !this.connection.isConnected() || this.state != ServerLoginPacketListenerImpl.State.WAITING_FOR_COMPRESSION) {
++            return;
++        }
++
++        this.finishVerifiedLogin(profile);
++    }
++
++    private void finishVerifiedLogin(GameProfile profile) {
++        boolean flag = this.server.getPlayerList().disconnectAllPlayersWithProfile(profile); // Paper - validate usernames
++        if (flag) {
++            this.state = ServerLoginPacketListenerImpl.State.WAITING_FOR_DUPE_DISCONNECT;
++        } else {
++            this.finishLoginAndWaitForClient(profile);
+         }
+     }
+
+@@ -470,6 +_,7 @@
+         AUTHENTICATING,
+         NEGOTIATING,
+         VERIFYING,
++        WAITING_FOR_COMPRESSION,
+         WAITING_FOR_DUPE_DISCONNECT,
+         PROTOCOL_SWITCHING,
+         ACCEPTED;
