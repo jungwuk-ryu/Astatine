@@ -268,12 +268,28 @@ public class ShreddedPaperRegionLocker {
     }
 
     @Nullable
+    public WriteRegionLock internalTryTakeExactLockNow(long[] sortedRegionKeys) {
+        final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(sortedRegionKeys);
+        return lock == null ? null : new WriteRegionLock(lock);
+    }
+
+    @Nullable
     public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> writeRegionPositions, Collection<RegionPos> isolationRegionPositions) {
         if (writeRegionPositions.isEmpty() || isolationRegionPositions.isEmpty()) {
             return null;
         }
         final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(isolationRegionPositions);
         return lock == null ? null : new WriteRegionLock(lock, sortedUniqueRegions(writeRegionPositions));
+    }
+
+    @Nullable
+    public WriteRegionLock internalTryTakeExactLockNow(long[] sortedWriteRegionKeys, long[] sortedIsolationRegionKeys) {
+        if (sortedWriteRegionKeys.length == 0 || sortedIsolationRegionKeys.length == 0) {
+            return null;
+        }
+        requireSortedUniqueRegionKeys(sortedWriteRegionKeys);
+        final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(sortedIsolationRegionKeys);
+        return lock == null ? null : new WriteRegionLock(lock, sortedWriteRegionKeys);
     }
 
     @Nullable
@@ -306,6 +322,21 @@ public class ShreddedPaperRegionLocker {
 
         for (final RegionPos regionPos : sortedRegions) {
             if (!lock.tryLockRegion(regionPos)) {
+                lock.unlock();
+                return null;
+            }
+        }
+
+        return lock;
+    }
+
+    @Nullable
+    public ReadOnlyRegionLock internalTryTakeExactReadOnlyLockNow(long[] sortedRegionKeys) {
+        requireSortedUniqueRegionKeys(sortedRegionKeys);
+        final ReadOnlyRegionLock lock = new ReadOnlyRegionLock(sortedRegionKeys.length);
+
+        for (final long regionKey : sortedRegionKeys) {
+            if (!lock.tryLockRegion(new RegionPos(regionKey))) {
                 lock.unlock();
                 return null;
             }
@@ -354,6 +385,20 @@ public class ShreddedPaperRegionLocker {
             }
         }
         return sortedRegions;
+    }
+
+    private static void requireSortedUniqueRegionKeys(final long[] sortedRegionKeys) {
+        if (sortedRegionKeys.length == 0) {
+            throw new IllegalArgumentException("regionPositions must not be empty");
+        }
+        long previous = sortedRegionKeys[0];
+        for (int i = 1; i < sortedRegionKeys.length; i++) {
+            final long current = sortedRegionKeys[i];
+            if (current <= previous) {
+                throw new IllegalArgumentException("regionPositions must be sorted and unique");
+            }
+            previous = current;
+        }
     }
 
     /**
@@ -488,6 +533,28 @@ public class ShreddedPaperRegionLocker {
             final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
             this.writeLocks = new ArrayList<>(writeRegions.size());
             for (final RegionPos writeRegion : writeRegions) {
+                if (local.contains(writeRegion)) {
+                    if (writes.contains(writeRegion)) {
+                        continue;
+                    }
+                    this.writeLocks.add(writeRegion);
+                }
+            }
+            writes.addAll(this.writeLocks);
+            final Set<RegionPos> readOnly = ShreddedPaperRegionLocker.this.readOnlyLocks.get();
+            for (final RegionPos writeRegion : this.writeLocks) {
+                readOnly.remove(writeRegion);
+            }
+        }
+
+        private WriteRegionLock(ReadOnlyRegionLock superLock, long[] sortedWriteRegionKeys) {
+            this.superLock = superLock;
+
+            final Set<RegionPos> local = ShreddedPaperRegionLocker.this.localLocks.get();
+            final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
+            this.writeLocks = new ArrayList<>(sortedWriteRegionKeys.length);
+            for (final long writeRegionKey : sortedWriteRegionKeys) {
+                final RegionPos writeRegion = new RegionPos(writeRegionKey);
                 if (local.contains(writeRegion)) {
                     if (writes.contains(writeRegion)) {
                         continue;

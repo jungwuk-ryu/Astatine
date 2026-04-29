@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -411,14 +412,14 @@ public final class RegionTickScheduler {
                 boolean requeueAfterLayoutChange = false;
 
                 try {
-                    final List<RegionPos> ownerCells = region.getOwner().cellPositionsSnapshot();
-                    if (ownerCells.isEmpty()) {
+                    final long[] ownerCells = region.getOwner().internalSortedCellKeysSnapshot();
+                    if (ownerCells.length == 0) {
                         this.retire();
                         return;
                     }
-                    final List<RegionPos> isolationCells = region.getOwner().isolationCellPositionsSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
-                    if (isolationCells.isEmpty()) {
-                        if (this.retireIfDetached(region) || region.getOwner().cellPositionsSnapshot().isEmpty()) {
+                    final long[] isolationCells = region.getOwner().internalSortedIsolationCellKeysSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS);
+                    if (isolationCells.length == 0) {
+                        if (this.retireIfDetached(region) || region.getOwner().internalSortedCellKeysSnapshot().length == 0) {
                             this.retire();
                         } else {
                             requeueAfterLayoutChange = true;
@@ -427,12 +428,12 @@ public final class RegionTickScheduler {
                         if (this.retireIfDetached(region)) {
                             return;
                         }
-                        final List<RegionPos> currentOwnerCells = region.getOwner().cellPositionsSnapshot();
-                        if (currentOwnerCells.isEmpty()) {
+                        final long[] currentOwnerCells = region.getOwner().internalSortedCellKeysSnapshot();
+                        if (currentOwnerCells.length == 0) {
                             this.retire();
                             return;
                         }
-                        if (!currentOwnerCells.equals(ownerCells)) {
+                        if (!Arrays.equals(currentOwnerCells, ownerCells)) {
                             requeueAfterLayoutChange = true;
                         } else {
                             RegionTickBudget.setCurrent(budget);

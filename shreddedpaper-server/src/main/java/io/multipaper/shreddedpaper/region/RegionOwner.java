@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -23,6 +24,8 @@ public final class RegionOwner {
     private final LongOpenHashSet cells = new LongOpenHashSet();
     private volatile List<RegionPos> cellPositionsSnapshot;
     private volatile List<RegionPos> isolationRadiusOneSnapshot;
+    private volatile long[] sortedCellKeysSnapshot;
+    private volatile long[] sortedIsolationRadiusOneKeysSnapshot;
     private volatile LevelChunkRegion region;
     private volatile long lastMergeNanos;
     private volatile long lastSplitNanos;
@@ -138,6 +141,35 @@ public final class RegionOwner {
         }
     }
 
+    public long[] sortedCellKeysSnapshot() {
+        return this.internalSortedCellKeysSnapshot().clone();
+    }
+
+    /**
+     * Returns this owner's cells as sorted packed {@link RegionPos#toLong()} keys.
+     *
+     * <p>The returned array is the cached internal snapshot for scheduler hot
+     * paths. Callers must not mutate it.</p>
+     */
+    public long[] internalSortedCellKeysSnapshot() {
+        long[] cached = this.sortedCellKeysSnapshot;
+        if (cached != null) {
+            return cached;
+        }
+
+        synchronized (this.cells) {
+            cached = this.sortedCellKeysSnapshot;
+            if (cached != null) {
+                return cached;
+            }
+
+            cached = this.cells.toLongArray();
+            Arrays.sort(cached);
+            this.sortedCellKeysSnapshot = cached;
+            return cached;
+        }
+    }
+
     public List<RegionPos> isolationCellPositionsSnapshot(final int radius) {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must be >= 0");
@@ -182,6 +214,57 @@ public final class RegionOwner {
         }
     }
 
+    public long[] sortedIsolationCellKeysSnapshot(final int radius) {
+        return this.internalSortedIsolationCellKeysSnapshot(radius).clone();
+    }
+
+    /**
+     * Returns isolation cells as sorted packed {@link RegionPos#toLong()} keys.
+     *
+     * <p>The returned array is the cached internal snapshot for scheduler hot
+     * paths. Callers must not mutate it.</p>
+     */
+    public long[] internalSortedIsolationCellKeysSnapshot(final int radius) {
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must be >= 0");
+        }
+        if (radius == 0) {
+            return this.internalSortedCellKeysSnapshot();
+        }
+        if (radius == 1) {
+            final long[] cached = this.sortedIsolationRadiusOneKeysSnapshot;
+            if (cached != null) {
+                return cached;
+            }
+        }
+
+        synchronized (this.cells) {
+            if (radius == 1) {
+                final long[] cached = this.sortedIsolationRadiusOneKeysSnapshot;
+                if (cached != null) {
+                    return cached;
+                }
+            }
+
+            final LongOpenHashSet isolationCells = new LongOpenHashSet(this.cells.size() * ((radius * 2 + 1) * (radius * 2 + 1)));
+            for (final long cellKey : this.cells) {
+                final RegionPos cell = new RegionPos(cellKey);
+                for (int x = -radius; x <= radius; x++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        isolationCells.add(RegionPos.asLong(cell.x + x, cell.z + z));
+                    }
+                }
+            }
+
+            final long[] keys = isolationCells.toLongArray();
+            Arrays.sort(keys);
+            if (radius == 1) {
+                this.sortedIsolationRadiusOneKeysSnapshot = keys;
+            }
+            return keys;
+        }
+    }
+
     void absorbCellsFrom(final RegionOwner source) {
         if (this == source) {
             return;
@@ -211,6 +294,8 @@ public final class RegionOwner {
     private void invalidateSnapshots() {
         this.cellPositionsSnapshot = null;
         this.isolationRadiusOneSnapshot = null;
+        this.sortedCellKeysSnapshot = null;
+        this.sortedIsolationRadiusOneKeysSnapshot = null;
     }
 
     private void absorbCellsFromLocked(final RegionOwner source, final RegionOwner first, final RegionOwner second) {
