@@ -1,0 +1,13 @@
+--- a/net/minecraft/world/level/block/RailBlock.java
++++ b/net/minecraft/world/level/block/RailBlock.java
+@@ -27,6 +_,10 @@
+ 
+     @Override
+     protected void updateState(BlockState state, Level level, BlockPos pos, Block block) {
++        if (block.defaultBlockState().isSignalSource() && !this.shreddedpaper$ownsRailEvaluation(level, pos)) {
++            this.shreddedpaper$deferRailEvaluation(level, pos, false);
++            return;
++        }
+         if (block.defaultBlockState().isSignalSource() && new RailState(level, pos, state).countPotentialConnections() == 3) {
+             this.updateDir(level, pos, state, false);
+         }

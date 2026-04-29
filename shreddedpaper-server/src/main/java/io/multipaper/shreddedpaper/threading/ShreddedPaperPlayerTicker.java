@@ -7,11 +7,34 @@ import net.minecraft.server.level.ServerPlayer;
 public class ShreddedPaperPlayerTicker {
 
     public static void tickPlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer.connection.player != serverPlayer
+                || serverPlayer.connection.processedDisconnect
+                || serverPlayer.isRemoved()
+                || !serverPlayer.valid) {
+            return;
+        }
+        final io.multipaper.shreddedpaper.region.LevelChunkRegion tickingRegion = ShreddedPaperChunkTicker.currentlyTickingRegion();
+        if (tickingRegion != null && (serverPlayer.currentRegion != tickingRegion || serverPlayer.level() != tickingRegion.getLevel())) {
+            return;
+        }
+
+        tickPlayerChunkLoader(serverPlayer);
+        serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
+
         serverPlayer.connection.connection.tick();
+
+        tickPlayerChunkLoader(serverPlayer);
+        serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
+        serverPlayer.connection.keepConnectionAlive();
+        serverPlayer.connection.resumeFlushing();
+    }
+
+    private static void tickPlayerChunkLoader(ServerPlayer serverPlayer) {
         RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader = serverPlayer.moonrise$getChunkLoader();
         if (loader != null && !loader.isForWorld(serverPlayer.level())) {
             loader.scheduleStaleWorldChangeCleanup();
             serverPlayer.moonrise$setChunkLoader(null);
+            serverPlayer.connection.chunkSender.clearPendingChunks();
             loader = null;
         }
         if (loader == null && !serverPlayer.isRemoved() && serverPlayer.valid) {
@@ -22,9 +45,6 @@ public class ShreddedPaperPlayerTicker {
             loader.update(); // can't invoke plugin logic
             loader.updateQueues(System.nanoTime());
         }
-        serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
-        serverPlayer.connection.keepConnectionAlive();
-        serverPlayer.connection.resumeFlushing();
     }
 
 }

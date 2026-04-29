@@ -18,6 +18,7 @@ public final class RegionOverloadController {
     private volatile double lastChunkIoPressure;
     private volatile int lastChunkIoInFlight;
     private volatile int lastChunkIoDeferred;
+    private volatile long lastDeferredWork;
     private int quarantineStrikes;
 
     public RegionOverloadController(final ServerLevel level, final RegionPos regionPos) {
@@ -51,6 +52,7 @@ public final class RegionOverloadController {
         this.lastChunkIoPressure = chunkIo.requestPressure();
         this.lastChunkIoInFlight = chunkIo.inFlight();
         this.lastChunkIoDeferred = chunkIo.deferredRetries();
+        this.lastDeferredWork = deferredWork;
 
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         if (this.ewmaMspt >= config.quarantinedRegionMsptThreshold) {
@@ -109,5 +111,9 @@ public final class RegionOverloadController {
 
     public int lastChunkIoDeferred() {
         return this.lastChunkIoDeferred;
+    }
+
+    public long lastDeferredWork() {
+        return this.lastDeferredWork;
     }
 }

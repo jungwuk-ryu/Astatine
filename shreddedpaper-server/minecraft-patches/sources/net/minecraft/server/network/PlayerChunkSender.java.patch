@@ -1,7 +1,9 @@
 --- a/net/minecraft/server/network/PlayerChunkSender.java
 +++ b/net/minecraft/server/network/PlayerChunkSender.java
-@@ -2,8 +_,13 @@
+@@ -1,9 +_,15 @@
+ package net.minecraft.server.network;
  
++import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.collect.Comparators;
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
@@ -14,6 +16,36 @@
  import java.util.Comparator;
  import java.util.List;
  import java.util.Objects;
+@@ -18,6 +_,7 @@
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.LevelChunk;
++import org.bukkit.craftbukkit.CraftChunk;
+ import org.slf4j.Logger;
+ 
+ public class PlayerChunkSender {
+@@ -46,7 +_,7 @@
+             player.connection.send(new ClientboundForgetLevelChunkPacket(chunkPos));
+             // Paper start - PlayerChunkUnloadEvent
+             if (io.papermc.paper.event.packet.PlayerChunkUnloadEvent.getHandlerList().getRegisteredListeners().length > 0) {
+-                new io.papermc.paper.event.packet.PlayerChunkUnloadEvent(player.getBukkitEntity().getWorld().getChunkAt(chunkPos.longKey), player.getBukkitEntity()).callEvent();
++                new io.papermc.paper.event.packet.PlayerChunkUnloadEvent(new CraftChunk(player.level(), chunkPos.x, chunkPos.z), player.getBukkitEntity()).callEvent();
+             }
+             // Paper end - PlayerChunkUnloadEvent
+         }
+@@ -60,7 +_,11 @@
+                 if (!this.pendingChunks.isEmpty()) {
+                     ServerLevel serverLevel = player.level();
+                     ChunkMap chunkMap = serverLevel.getChunkSource().chunkMap;
+-                    List<LevelChunk> list = this.collectChunksToSend(chunkMap, player.chunkPosition());
++                    if (player.connection.player != player || player.connection.processedDisconnect) {
++                        this.clearPendingChunks();
++                        return;
++                    }
++                    List<LevelChunk> list = this.collectChunksToSend(chunkMap, player.chunkPosition(), serverLevel); // ShreddedPaper - only send owned chunks
+                     if (!list.isEmpty()) {
+                         ServerGamePacketListenerImpl serverGamePacketListenerImpl = player.connection;
+                         this.unacknowledgedBatches++;
 @@ -81,7 +_,16 @@
      public static void sendChunk(ServerGamePacketListenerImpl packetListener, ServerLevel level, LevelChunk chunk) { // Paper - rewrite chunk system - public
          // Paper start - Anti-Xray
@@ -32,3 +64,44 @@
          // Paper end - Anti-Xray
          // Paper start - PlayerChunkLoadEvent
          if (io.papermc.paper.event.packet.PlayerChunkLoadEvent.getHandlerList().getRegisteredListeners().length > 0) {
+@@ -96,23 +_,25 @@
+         level.debugSynchronizers().startTrackingChunk(packetListener.player, chunk.getPos());
+     }
+ 
+-    private List<LevelChunk> collectChunksToSend(ChunkMap chunkMap, ChunkPos chunkPos) {
++    private List<LevelChunk> collectChunksToSend(ChunkMap chunkMap, ChunkPos chunkPos, ServerLevel level) { // ShreddedPaper - only send chunks owned by this tick
+         int floor = Mth.floor(this.batchQuota);
+         List<LevelChunk> list;
+         if (!this.memoryConnection && this.pendingChunks.size() > floor) {
+             list = this.pendingChunks
+                 .stream()
+-                .collect(Comparators.least(floor, Comparator.comparingInt(chunkPos::distanceSquared)))
+-                .stream()
+                 .mapToLong(Long::longValue)
+                 .mapToObj(chunkMap::getChunkToSend)
+                 .filter(Objects::nonNull)
++                .filter(levelChunk -> TickThread.isTickThreadFor(level, levelChunk.getPos())) // ShreddedPaper - do not send stale/off-owner chunks
++                .collect(Comparators.least(floor, Comparator.comparingInt(levelChunk -> chunkPos.distanceSquared(levelChunk.getPos()))))
++                .stream()
+                 .toList();
+         } else {
+             list = this.pendingChunks
+                 .longStream()
+                 .mapToObj(chunkMap::getChunkToSend)
+                 .filter(Objects::nonNull)
++                .filter(levelChunk -> TickThread.isTickThreadFor(level, levelChunk.getPos())) // ShreddedPaper - do not send stale/off-owner chunks
+                 .sorted(Comparator.comparingInt(levelChunk1 -> chunkPos.distanceSquared(levelChunk1.getPos())))
+                 .toList();
+         }
+@@ -136,5 +_,11 @@
+ 
+     public boolean isPending(long chunkPos) {
+         return this.pendingChunks.contains(chunkPos);
++    }
++
++    public void clearPendingChunks() { // ShreddedPaper - clear stale sends across disconnect/world handoff
++        this.pendingChunks.clear();
++        this.unacknowledgedBatches = 0;
++        this.batchQuota = 0.0F;
+     }
+ }

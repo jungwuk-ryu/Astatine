@@ -1,0 +1,32 @@
+--- a/net/minecraft/world/level/redstone/RedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/RedstoneWireEvaluator.java
+@@ -24,20 +_,25 @@
+         return state.is(this.wireBlock) ? state.getValue(RedStoneWireBlock.POWER) : 0;
+     }
+ 
++    private static BlockState getBlockStateOrAir(Level level, BlockPos pos) {
++        BlockState blockState = level.getBlockStateIfLoaded(pos);
++        return blockState == null ? net.minecraft.world.level.block.Blocks.AIR.defaultBlockState() : blockState;
++    }
++
+     protected int getIncomingWireSignal(Level level, BlockPos pos) {
+         int i = 0;
+ 
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             BlockPos blockPos = pos.relative(direction);
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = getBlockStateOrAir(level, blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
+             i = Math.max(i, this.getWireSignal(blockPos, blockState));
+             BlockPos blockPos1 = pos.above();
+-            if (blockState.isRedstoneConductor(level, blockPos) && !level.getBlockState(blockPos1).isRedstoneConductor(level, blockPos1)) {
++            if (blockState.isRedstoneConductor(level, blockPos) && !getBlockStateOrAir(level, blockPos1).isRedstoneConductor(level, blockPos1)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 BlockPos blockPos2 = blockPos.above();
+-                i = Math.max(i, this.getWireSignal(blockPos2, level.getBlockState(blockPos2)));
++                i = Math.max(i, this.getWireSignal(blockPos2, getBlockStateOrAir(level, blockPos2))); // ShreddedPaper - avoid sync-loading redstone neighbors
+             } else if (!blockState.isRedstoneConductor(level, blockPos)) {
+                 BlockPos blockPos2 = blockPos.below();
+-                i = Math.max(i, this.getWireSignal(blockPos2, level.getBlockState(blockPos2)));
++                i = Math.max(i, this.getWireSignal(blockPos2, getBlockStateOrAir(level, blockPos2))); // ShreddedPaper - avoid sync-loading redstone neighbors
+             }
+         }
+ 

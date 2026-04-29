@@ -1,0 +1,82 @@
+--- a/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java
+@@ -38,7 +_,11 @@
+             BlockPos blockPos = entry.getKey();
+             int intValue = entry.getIntValue();
+             int i = unpackPower(intValue);
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++            if (blockState == null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++                objectIterator.remove();
++                continue;
++            }
+             // CraftBukkit start
+             int oldPower = blockState.getValue(RedStoneWireBlock.POWER); // Paper - Call BlockRedstoneEvent properly; get the previous power from the right state
+             if (oldPower != i) {
+@@ -66,12 +_,18 @@
+     private void causeNeighborUpdates(Level level) {
+         this.updatedWires.forEach((blockPos, i) -> {
+             Orientation orientation = unpackOrientation(i);
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++            if (blockState == null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++                return;
++            }
+ 
+             for (Direction direction : orientation.getDirections()) {
+                 if (isConnected(blockState, direction)) {
+                     BlockPos blockPos1 = blockPos.relative(direction);
+-                    BlockState blockState1 = level.getBlockState(blockPos1);
++                    BlockState blockState1 = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync-loading redstone neighbors
++                    if (blockState1 == null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++                        continue;
++                    }
+                     Orientation orientation1 = orientation.withFrontPreserveUp(direction);
+                     level.neighborChanged(blockState1, blockPos1, this.wireBlock, orientation1, false);
+                     if (blockState1.isRedstoneConductor(level, blockPos1)) {
+@@ -110,7 +_,10 @@
+     }
+ 
+     private void calculateCurrentChanges(Level level, BlockPos pos, Orientation orientation) {
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading redstone neighbors
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++            return;
++        }
+         if (blockState.is(this.wireBlock)) {
+             this.setPower(pos, blockState.getValue(RedStoneWireBlock.POWER), orientation);
+             this.wiresToTurnOff.add(pos);
+@@ -192,23 +_,30 @@
+ 
+         for (Direction direction : orientation.getVerticalDirections()) {
+             BlockPos blockPos = pos.relative(direction);
+-            boolean isRedstoneConductor = level.getBlockState(blockPos).isRedstoneConductor(level, blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++            boolean isRedstoneConductor = blockState != null && blockState.isRedstoneConductor(level, blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
+ 
+             for (Direction direction1 : orientation.getHorizontalDirections()) {
+                 BlockPos blockPos1 = pos.relative(direction1);
+                 if (direction == Direction.UP && !isRedstoneConductor) {
+                     BlockPos blockPos2 = blockPos.relative(direction1);
+                     this.enqueueNeighborWire(level, blockPos2, power, orientation.withFront(direction1), canTurnOff);
+-                } else if (direction == Direction.DOWN && !level.getBlockState(blockPos1).isRedstoneConductor(level, blockPos1)) {
++                } else if (direction == Direction.DOWN) {
++                    BlockState blockState1 = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync-loading redstone neighbors
++                    if (blockState1 == null || !blockState1.isRedstoneConductor(level, blockPos1)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                     BlockPos blockPos2 = blockPos.relative(direction1);
+                     this.enqueueNeighborWire(level, blockPos2, power, orientation.withFront(direction1), canTurnOff);
++                    } // ShreddedPaper - avoid sync-loading redstone neighbors
+                 }
+             }
+         }
+     }
+ 
+     private void enqueueNeighborWire(Level level, BlockPos pos, int power, Orientation orientation, boolean canTurnOff) {
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading redstone neighbors
++        if (blockState == null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++            return;
++        }
+         if (blockState.is(this.wireBlock)) {
+             int wireSignal = this.getWireSignal(pos, blockState);
+             if (wireSignal < power - 1 && !this.wiresToTurnOn.contains(pos)) {

@@ -119,7 +119,7 @@
 +            future = TeleportTransition.createDefaultAsync(this, postTeleportTransition); // ShreddedPaper - respawn async
          }
  
-+        return future.thenApply(teleportTransition -> { // ShreddedPaper - respawn async
++        return future.thenCompose(teleportTransition -> CompletableFuture.supplyAsync(() -> { // ShreddedPaper - respawn async
          org.bukkit.entity.Player respawnPlayer = this.getBukkitEntity();
          org.bukkit.Location location = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(
              teleportTransition.position(),
@@ -155,7 +155,7 @@
 +            isAnchorSpawn.get() // ShreddedPaper - respawn async
          );
          // CraftBukkit end
-+        }); // ShreddedPaper - respawn async
++        }, r -> ShreddedPaper.ensureSync(this, teleportTransition.newLevel(), new ChunkPos(BlockPos.containing(teleportTransition.position())), r))); // ShreddedPaper - respawn async
      }
  
      public boolean isReceivingWaypoints() {

@@ -5,6 +5,7 @@
  
 +import ca.spottedleaf.moonrise.common.util.WorldUtil;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
  import io.papermc.paper.FeatureHooks;
  import io.papermc.paper.configuration.GlobalConfiguration;
  import java.lang.management.ManagementFactory;
@@ -14,6 +15,7 @@
 +import java.util.Arrays;
 +import java.util.List;
 +import java.util.Map;
++import java.util.concurrent.TimeUnit;
  import java.util.logging.Level;
  import java.util.logging.Logger;
  import net.minecraft.server.MinecraftServer;
@@ -21,12 +23,73 @@
  import org.bukkit.Bukkit;
  import org.bukkit.craftbukkit.CraftServer;
  
+@@ -21,6 +_,7 @@
+ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThread { // Paper - rewrite chunk system
+ 
+     public static final boolean DISABLE_WATCHDOG = Boolean.getBoolean("disable.watchdog"); // Paper - Improved watchdog support
++    private static final long EMERGENCY_SHUTDOWN_GRACE_MS = Long.getLong("shreddedpaper.watchdog.shutdown-grace-ms", 30_000L);
+     private static WatchdogThread instance;
+     private long timeoutTime;
+     private boolean restart;
+@@ -23,3 +_,4 @@
+     private long lastEarlyWarning; // Paper - Keep track of short dump times to avoid spamming console with short dumps
+     private volatile long lastTick;
+     private volatile boolean stopping;
++    private volatile long shutdownStart; // ShreddedPaper - keep watchdog active until shutdown is fully complete
+@@ -54,5 +_,8 @@
+     public static void doStop() {
+         if (WatchdogThread.instance != null) {
++            WatchdogThread.instance.shutdownStart = WatchdogThread.monotonicMillis(); // ShreddedPaper - bound shutdown hangs
++            WatchdogThread.instance.lastTick = WatchdogThread.instance.shutdownStart; // ShreddedPaper - measure shutdown from stop request
+             WatchdogThread.instance.stopping = true;
++            WatchdogThread.instance.interrupt(); // ShreddedPaper - wake watchdog for shutdown monitoring
+         }
+     }
+@@ -60,15 +_,29 @@
+     @Override
+     public void run() {
+-        while (!this.stopping) {
++        while (!this.stopping || !MinecraftServer.getServer().hasFullyShutdown) { // ShreddedPaper - monitor shutdown until final exit hooks complete
+             Logger logger = Bukkit.getServer().getLogger();
+             long currentTime = WatchdogThread.monotonicMillis();
+             MinecraftServer server = MinecraftServer.getServer();
++            if (this.stopping && (DISABLE_WATCHDOG || this.timeoutTime <= 0)) { // ShreddedPaper - preserve explicit watchdog disable
++                break;
++            }
++            if (this.stopping && !server.hasFullyShutdown && currentTime <= this.shutdownStart + this.timeoutTime) { // ShreddedPaper - allow bounded normal shutdown progress
++                try {
++                    sleep(1000);
++                } catch (InterruptedException ex) {
++                    // ShreddedPaper - doStop() interrupts to wake this thread; do not preserve
++                    // the flag while the shutdown grace loop is intentionally sleeping.
++                }
++                continue;
++            }
+-            if (this.lastTick != 0 && this.timeoutTime > 0 && WatchdogThread.hasStarted && (!server.isRunning() || (currentTime > this.lastTick + this.earlyWarningEvery && !DISABLE_WATCHDOG))) { // Paper - add property to disable
+-                boolean isLongTimeout = currentTime > this.lastTick + this.timeoutTime || (!server.isRunning() && !server.hasStopped() && currentTime > this.lastTick + 1000);
++            final List<RegionTickScheduler.LongRunningRegionTick> longRunningRegionTicks = this.getLongRunningRegionTicks(server);
++            final boolean regionTickTimeout = !longRunningRegionTicks.isEmpty();
++            if (this.lastTick != 0 && this.timeoutTime > 0 && WatchdogThread.hasStarted && (regionTickTimeout || !server.isRunning() || (currentTime > this.lastTick + this.earlyWarningEvery && !DISABLE_WATCHDOG))) { // Paper - add property to disable
++                boolean isLongTimeout = regionTickTimeout || currentTime > this.lastTick + this.timeoutTime || (!server.isRunning() && !server.hasStopped() && currentTime > this.lastTick + 1000);
+                 // Don't spam early warning dumps
+-                if (!isLongTimeout && (this.earlyWarningEvery <= 0 ||
++                if (!regionTickTimeout && !isLongTimeout && (this.earlyWarningEvery <= 0 ||
+                     !hasStarted || currentTime < this.lastEarlyWarning + this.earlyWarningEvery ||
+                     currentTime < this.lastTick + this.earlyWarningDelay))
+                     continue;
+-                if (!isLongTimeout && server.hasStopped())
++                if (!regionTickTimeout && !isLongTimeout && server.hasStopped())
+                     continue; // Don't spam early watchdog warnings during shutdown, we'll come back to this...
 @@ -75,14 +_,14 @@
                  this.lastEarlyWarning = currentTime;
                  if (isLongTimeout) {
                      logger.log(Level.SEVERE, "------------------------------");
 -                    logger.log(Level.SEVERE, "The server has stopped responding! This is (probably) not a Purpur bug."); // Paper // Purpur - Rebrand
-+                    logger.log(Level.SEVERE, "The server has stopped responding! This is (probably) not a ShreddedPaper bug."); // Paper // Purpur - Rebrand // ShreddedPaper
++                    if (regionTickTimeout) {
++                        logger.log(Level.SEVERE, "A ShreddedPaper independent region tick has stopped responding! This is (probably) not a ShreddedPaper bug.");
++                    } else {
++                        logger.log(Level.SEVERE, "The server has stopped responding! This is (probably) not a ShreddedPaper bug."); // Paper // Purpur - Rebrand // ShreddedPaper
++                    }
                      logger.log(Level.SEVERE, "If you see a plugin in the Server thread dump below, then please report it to that author");
                      logger.log(Level.SEVERE, "\t *Especially* if it looks like HTTP or MySQL operations are occurring");
                      logger.log(Level.SEVERE, "If you see a world save or edit, then it means you did far more than your server can handle at once");
@@ -53,6 +116,7 @@
 +                logger.log(Level.SEVERE, "Server thread dump (Look for plugins here before reporting to ShreddedPaper!):"); // Paper // Purpur - Rebrand // ShreddedPaper
                  FeatureHooks.dumpAllChunkLoadInfo(MinecraftServer.getServer(), isLongTimeout); // Paper - log detailed tick information
                  WatchdogThread.dumpThread(ManagementFactory.getThreadMXBean().getThreadInfo(MinecraftServer.getServer().serverThread.threadId(), Integer.MAX_VALUE), logger);
++                this.dumpLongRunningRegionTicks(longRunningRegionTicks, logger);
 +                // ShreddedPaper start - Dump stuck worker threads
 +                for (ThreadInfo worker : getStuckTickWorkerThreads()) {
 +                    WatchdogThread.dumpThread( worker, logger );
@@ -70,15 +134,137 @@
                  }
  
                  logger.log(Level.SEVERE, "------------------------------");
-@@ -156,6 +_,26 @@
+@@ -138,23 +_,7 @@
+                 logger.log(Level.SEVERE, "------------------------------");
+ 
+                 if (isLongTimeout) {
+-                    if (!server.hasStopped()) {
+-                        server.forceTicks = true;
+-                        if (this.restart) {
+-                            RestartCommand.addShutdownHook(SpigotConfig.restartScript);
+-                        }
+-                        // try one last chance to safe shutdown on main in case it 'comes back'
+-                        server.abnormalExit = true;
+-                        server.safeShutdown(false, this.restart);
+-                        try {
+-                            Thread.sleep(1000);
+-                        } catch (InterruptedException e) {
+-                            e.printStackTrace();
+-                        }
+-                        if (!server.hasStopped()) {
+-                            server.close();
+-                        }
+-                    }
++                    this.shutdownStalledServer(server, logger);
+                     break;
+                 }
+                 // Paper end
+@@ -156,6 +_,102 @@
          }
      }
  
 +    // ShreddedPaper start
++    private void shutdownStalledServer(final MinecraftServer server, final Logger logger) {
++        if (server.hasFullyShutdown) {
++            return;
++        }
++
++        server.forceTicks = true;
++        if (this.restart) {
++            RestartCommand.addShutdownHook(SpigotConfig.restartScript);
++        }
++        server.abnormalExit = true;
++        // Try one last chance to safe shutdown on main in case it comes back.
++        server.safeShutdown(false, this.restart);
++
++        try {
++            Thread.sleep(1000L);
++        } catch (final InterruptedException interrupted) {
++            Thread.currentThread().interrupt();
++        }
++
++        if (!server.hasStopped()) {
++            final Thread shutdownThread = new Thread(() -> {
++                try {
++                    server.close();
++                } catch (final Throwable throwable) {
++                    logger.log(Level.SEVERE, "Exception stopping the server after watchdog timeout", throwable);
++                }
++            }, "Watchdog Server Shutdown");
++            shutdownThread.setDaemon(false);
++            shutdownThread.start();
++        }
++
++        final long deadline = WatchdogThread.monotonicMillis() + EMERGENCY_SHUTDOWN_GRACE_MS;
++        while (!server.hasFullyShutdown && WatchdogThread.monotonicMillis() < deadline) {
++            try {
++                Thread.sleep(250L);
++            } catch (final InterruptedException interrupted) {
++                Thread.currentThread().interrupt();
++                break;
++            }
++        }
++
++        if (!server.hasFullyShutdown) {
++            logger.log(Level.SEVERE, "------------------------------");
++            logger.log(Level.SEVERE, "Watchdog emergency shutdown did not complete after " + EMERGENCY_SHUTDOWN_GRACE_MS + "ms; forcing JVM exit.");
++            logger.log(Level.SEVERE, "Final emergency thread dump:");
++            try {
++                for (final ThreadInfo thread : ManagementFactory.getThreadMXBean().dumpAllThreads(true, true)) {
++                    WatchdogThread.dumpThread(thread, logger);
++                }
++            } catch (final Throwable throwable) {
++                logger.log(Level.SEVERE, "Failed to write final emergency thread dump", throwable);
++            }
++            logger.log(Level.SEVERE, "------------------------------");
++            WatchdogThread.forceExitAfterWatchdogTimeout();
++        }
++    }
++
++    private static void forceExitAfterWatchdogTimeout() {
++        try {
++            final java.util.Timer timer = new java.util.Timer("Watchdog Forced Halt");
++            timer.schedule(new java.util.TimerTask() {
++                @Override
++                public void run() {
++                    Runtime.getRuntime().halt(70);
++                }
++            }, 10_000L);
++            System.exit(70);
++        } catch (final Throwable throwable) {
++            Runtime.getRuntime().halt(70);
++        }
++    }
++
++    private List<RegionTickScheduler.LongRunningRegionTick> getLongRunningRegionTicks(final MinecraftServer server) {
++        if (DISABLE_WATCHDOG || this.timeoutTime <= 0L || !WatchdogThread.hasStarted || server.hasStopped()) {
++            return List.of();
++        }
++        final RegionTickScheduler scheduler = RegionTickScheduler.getIfStarted();
++        if (scheduler == null) {
++            return List.of();
++        }
++        return scheduler.longRunningTicks(TimeUnit.MILLISECONDS.toNanos(this.timeoutTime));
++    }
++
++    private void dumpLongRunningRegionTicks(final List<RegionTickScheduler.LongRunningRegionTick> ticks, final Logger logger) {
++        if (ticks.isEmpty()) {
++            return;
++        }
++        logger.log(Level.SEVERE, "Long-running independent region ticks:");
++        for (final RegionTickScheduler.LongRunningRegionTick tick : ticks) {
++            logger.log(Level.SEVERE, "\t" + tick.world() + " region=" + tick.regionPos() + " elapsedMs=" + TimeUnit.NANOSECONDS.toMillis(tick.elapsedNanos()) + " thread=" + tick.threadName());
++            final ThreadInfo thread = ManagementFactory.getThreadMXBean().getThreadInfo(tick.threadId(), Integer.MAX_VALUE);
++            if (thread != null) {
++                WatchdogThread.dumpThread(thread, logger);
++            }
++        }
++    }
++
 +    private List<ThreadInfo> getStuckTickWorkerThreads() {
 +        ThreadInfo[] threads = ManagementFactory.getThreadMXBean().dumpAllThreads( true, true );
 +        return Arrays.stream(threads)
-+                .filter(thread -> thread.getThreadName().startsWith("ShreddedPaperTickThread"))
++                .filter(thread -> thread.getThreadName().startsWith("ShreddedPaperTickThread") || thread.getThreadName().startsWith("ShreddedPaperRegion"))
 +                .filter(thread -> Arrays.stream(thread.getStackTrace()).anyMatch(stack -> !stack.getClassName().startsWith("java") && !stack.getClassName().startsWith("jdk")))
 +                .toList();
 +    }
@@ -95,17 +281,25 @@
 +    // ShreddedPaper end
 +
      private static void dumpThread(ThreadInfo thread, Logger logger) {
++        if (thread == null) { // ShreddedPaper - thread may have exited between lookup and dump
++            logger.log(Level.SEVERE, "Thread dump unavailable; thread exited before it could be sampled");
++            return;
++        }
          logger.log(Level.SEVERE, "------------------------------");
  
-@@ -164,6 +_,14 @@
+@@ -164,6 +_,16 @@
              + " | Suspended: " + thread.isSuspended()
              + " | Native: " + thread.isInNative()
              + " | State: " + thread.getThreadState());
 +
 +        // ShreddedPaper start - Dump region locks held by this thread
-+        List<String> locksHeld = getCurrentLocksHeld(thread);
-+        if (!locksHeld.isEmpty()) {
-+            logger.log( Level.SEVERE, "\tRegion locks held (regionSize=" + RegionPos.REGION_SIZE + " chunks): " + locksHeld);
++        try {
++            List<String> locksHeld = getCurrentLocksHeld(thread);
++            if (!locksHeld.isEmpty()) {
++                logger.log( Level.SEVERE, "\tRegion locks held (regionSize=" + RegionPos.REGION_SIZE + " chunks): " + locksHeld);
++            }
++        } catch (final Throwable throwable) {
++            logger.log(Level.SEVERE, "\tFailed to inspect region locks held by this thread", throwable);
 +        }
 +        // ShreddedPaper end - Dump region locks held by this thread
 +

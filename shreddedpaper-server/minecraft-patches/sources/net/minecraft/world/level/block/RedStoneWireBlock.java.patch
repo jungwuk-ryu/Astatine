@@ -1,5 +1,15 @@
 --- a/net/minecraft/world/level/block/RedStoneWireBlock.java
 +++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -3,6 +_,9 @@
+ import com.google.common.collect.ImmutableMap;
+ import com.google.common.collect.Maps;
+ import com.mojang.serialization.MapCodec;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
++import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
+ import java.util.Map;
+ import java.util.Map.Entry;
+ import java.util.function.Function;
 @@ -64,7 +_,7 @@
      private final Function<BlockState, VoxelShape> shapes;
      private final BlockState crossState;
@@ -9,6 +19,91 @@
  
      @Override
      public MapCodec<RedStoneWireBlock> codec() {
+@@ -153,8 +_,13 @@
+         }
+     }
+ 
++    private static BlockState getBlockStateOrAir(BlockGetter level, BlockPos pos) {
++        BlockState blockState = level.getBlockStateIfLoaded(pos);
++        return blockState == null ? Blocks.AIR.defaultBlockState() : blockState;
++    }
++
+     private BlockState getMissingConnections(BlockGetter level, BlockState state, BlockPos pos) {
+-        boolean flag = !level.getBlockState(pos.above()).isRedstoneConductor(level, pos);
++        boolean flag = !getBlockStateOrAir(level, pos.above()).isRedstoneConductor(level, pos); // ShreddedPaper - avoid sync-loading redstone neighbors
+ 
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             if (!state.getValue(PROPERTY_BY_DIRECTION.get(direction)).isConnected()) {
+@@ -211,34 +_,41 @@
+ 
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             RedstoneSide redstoneSide = state.getValue(PROPERTY_BY_DIRECTION.get(direction));
+-            if (redstoneSide != RedstoneSide.NONE && !level.getBlockState(mutableBlockPos.setWithOffset(pos, direction)).is(this)) {
++            BlockState neighborState = level.getBlockStateIfLoaded(mutableBlockPos.setWithOffset(pos, direction)); // ShreddedPaper - avoid sync-loading redstone neighbors
++            if (neighborState != null && redstoneSide != RedstoneSide.NONE && !neighborState.is(this)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 mutableBlockPos.move(Direction.DOWN);
+-                BlockState blockState = level.getBlockState(mutableBlockPos);
+-                if (blockState.is(this)) {
++                BlockState blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++                if (blockState != null && blockState.is(this)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                     BlockPos blockPos = mutableBlockPos.relative(direction.getOpposite());
+-                    level.neighborShapeChanged(direction.getOpposite(), mutableBlockPos, blockPos, level.getBlockState(blockPos), flags, recursionLeft);
++                    BlockState sourceState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++                    if (sourceState != null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++                        level.neighborShapeChanged(direction.getOpposite(), mutableBlockPos, blockPos, sourceState, flags, recursionLeft);
++                    } // ShreddedPaper - avoid sync-loading redstone neighbors
+                 }
+ 
+                 mutableBlockPos.setWithOffset(pos, direction).move(Direction.UP);
+-                BlockState blockState1 = level.getBlockState(mutableBlockPos);
+-                if (blockState1.is(this)) {
++                BlockState blockState1 = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
++                if (blockState1 != null && blockState1.is(this)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                     BlockPos blockPos1 = mutableBlockPos.relative(direction.getOpposite());
+-                    level.neighborShapeChanged(direction.getOpposite(), mutableBlockPos, blockPos1, level.getBlockState(blockPos1), flags, recursionLeft);
++                    BlockState sourceState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync-loading redstone neighbors
++                    if (sourceState != null) { // ShreddedPaper - avoid sync-loading redstone neighbors
++                        level.neighborShapeChanged(direction.getOpposite(), mutableBlockPos, blockPos1, sourceState, flags, recursionLeft);
++                    } // ShreddedPaper - avoid sync-loading redstone neighbors
+                 }
+             }
+         }
+     }
+ 
+     private RedstoneSide getConnectingSide(BlockGetter level, BlockPos pos, Direction face) {
+-        return this.getConnectingSide(level, pos, face, !level.getBlockState(pos.above()).isRedstoneConductor(level, pos));
++        return this.getConnectingSide(level, pos, face, !getBlockStateOrAir(level, pos.above()).isRedstoneConductor(level, pos)); // ShreddedPaper - avoid sync-loading redstone neighbors
+     }
+ 
+     private RedstoneSide getConnectingSide(BlockGetter level, BlockPos pos, Direction direction, boolean nonNormalCubeAbove) {
+         BlockPos blockPos = pos.relative(direction);
+-        BlockState blockState = level.getBlockState(blockPos);
++        BlockState blockState = getBlockStateOrAir(level, blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
+         if (nonNormalCubeAbove) {
+             boolean flag = blockState.getBlock() instanceof TrapDoorBlock || this.canSurviveOn(level, blockPos, blockState);
+-            if (flag && shouldConnectTo(level.getBlockState(blockPos.above()))) {
++            if (flag && shouldConnectTo(getBlockStateOrAir(level, blockPos.above()))) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 if (blockState.isFaceSturdy(level, blockPos, direction.getOpposite())) {
+                     return RedstoneSide.UP;
+                 }
+@@ -248,7 +_,7 @@
+         }
+ 
+         return !shouldConnectTo(blockState, direction)
+-                && (blockState.isRedstoneConductor(level, blockPos) || !shouldConnectTo(level.getBlockState(blockPos.below())))
++                && (blockState.isRedstoneConductor(level, blockPos) || !shouldConnectTo(getBlockStateOrAir(level, blockPos.below()))) // ShreddedPaper - avoid sync-loading redstone neighbors
+             ? RedstoneSide.NONE
+             : RedstoneSide.SIDE;
+     }
+@@ -256,7 +_,7 @@
+     @Override
+     public boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        BlockState blockState = level.getBlockState(blockPos);
++        BlockState blockState = getBlockStateOrAir(level, blockPos); // ShreddedPaper - avoid sync-loading redstone neighbors
+         return this.canSurviveOn(level, blockPos, blockState);
+     }
+ 
 @@ -266,7 +_,7 @@
  
      // Paper start - Optimize redstone (Eigencraft)
@@ -27,7 +122,42 @@
              return;
          }
          updatePowerStrength(worldIn, pos, state, orientation, blockAdded);
-@@ -310,7 +_,7 @@
+@@ -297,6 +_,28 @@
+      * not been relevant since 1.13, thus it has been greatly simplified.
+      */
+     public BlockState calculateCurrentChanges(Level level, BlockPos pos, BlockState state) {
++        if (level instanceof ServerLevel serverLevel
++                && ShreddedPaperTickThread.isShreddedPaperTickThread()
++                && !ShreddedPaperAccess.isOwned(serverLevel, pos)) {
++            final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult =
++                    ShreddedPaperAccess.runWithWriteLockIfHeldOrDeferToOwner(
++                            serverLevel,
++                            pos,
++                            RegionTaskClass.OWNER_HANDOFF,
++                            () -> {
++                                final BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++                                if (currentState != null && currentState.is(this)) {
++                                    this.calculateCurrentChanges(serverLevel, pos, currentState);
++                                }
++                            }
++                    );
++            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED
++                    || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
++                throw new IllegalStateException("Failed to hand off cross-owner vanilla redstone wire update; world=" + serverLevel.getWorld().getName() + ", pos=" + pos);
++            }
++            return state;
++        }
++
+         int oldPower = state.getValue(POWER);
+         int newPower = ((DefaultRedstoneWireEvaluator) evaluator).calculateTargetStrength(level, pos);
+         if (oldPower != newPower) {
+@@ -305,12 +_,12 @@
+ 
+             newPower = event.getNewCurrent();
+ 
+-            if (level.getBlockState(pos) == state) {
++            if (level.getBlockStateIfLoaded(pos) == state) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 state = state.setValue(POWER, newPower);
                  // [Space Walker] suppress shape updates and emit those manually to
                  // bypass the new neighbor update stack.
                  if (level.setBlock(pos, state, Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_CLIENTS)) {
@@ -36,7 +166,7 @@
                  }
              }
          }
-@@ -327,9 +_,9 @@
+@@ -327,14 +_,15 @@
      }
  
      public int getBlockSignal(Level level, BlockPos pos) {
@@ -48,6 +178,22 @@
          return bestNeighborSignal;
      }
  
+     private void checkCornerChangeAt(Level level, BlockPos pos) {
+-        if (level.getBlockState(pos).is(this)) {
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading redstone neighbors
++        if (blockState != null && blockState.is(this)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+             level.updateNeighborsAt(pos, this);
+ 
+             for (Direction direction : Direction.values()) {
+@@ -387,7 +_,7 @@
+ 
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             BlockPos blockPos = pos.relative(direction);
+-            if (level.getBlockState(blockPos).isRedstoneConductor(level, blockPos)) {
++            if (getBlockStateOrAir(level, blockPos).isRedstoneConductor(level, blockPos)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 this.checkCornerChangeAt(level, blockPos.above());
+             } else {
+                 this.checkCornerChangeAt(level, blockPos.below());
 @@ -421,12 +_,12 @@
  
      @Override
@@ -72,3 +218,12 @@
      }
  
      public static int getColorForPower(int power) {
+@@ -565,7 +_,7 @@
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             BlockPos blockPos = pos.relative(direction);
+             if (oldState.getValue(PROPERTY_BY_DIRECTION.get(direction)).isConnected() != newState.getValue(PROPERTY_BY_DIRECTION.get(direction)).isConnected()
+-                && level.getBlockState(blockPos).isRedstoneConductor(level, blockPos)) {
++                && getBlockStateOrAir(level, blockPos).isRedstoneConductor(level, blockPos)) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 level.updateNeighborsAtExceptFromFacing(
+                     blockPos, newState.getBlock(), direction.getOpposite(), ExperimentalRedstoneUtils.withFront(orientation, direction)
+                 );

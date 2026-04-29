@@ -9,13 +9,13 @@
      public long lastKeepAliveTx = System.nanoTime();
      public static final record KeepAliveResponse(long txTimeNS, long rxTimeNS) {
          public long latencyNS() {
-@@ -14,7 +_,25 @@
+@@ -14,6 +_,24 @@
  
      public final PingCalculator pingCalculator1m = new PingCalculator(java.util.concurrent.TimeUnit.MINUTES.toNanos(1L));
      public final PingCalculator pingCalculator5s = new PingCalculator(java.util.concurrent.TimeUnit.SECONDS.toNanos(5L));
 +    private final java.util.concurrent.ConcurrentMap<Long, Long> networkKeepAliveTxTimes = new java.util.concurrent.ConcurrentHashMap<>();
 +    public final PingCalculator networkPingCalculator5s = new PingCalculator(java.util.concurrent.TimeUnit.SECONDS.toNanos(5L));
- 
++
 +    public void trackNetworkKeepAliveSent(long challengeId, long txTimeNS) {
 +        this.networkKeepAliveTxTimes.entrySet().removeIf(entry -> txTimeNS - entry.getValue() > NETWORK_KEEPALIVE_EXPIRATION_NS);
 +        this.networkKeepAliveTxTimes.put(challengeId, txTimeNS);
@@ -31,7 +31,6 @@
 +    public int getNetworkLatencyMS() {
 +        return this.networkPingCalculator5s.getAvgLatencyMS();
 +    }
-+
+ 
      public static final class PingCalculator {
  
-         private final long intervalNS;

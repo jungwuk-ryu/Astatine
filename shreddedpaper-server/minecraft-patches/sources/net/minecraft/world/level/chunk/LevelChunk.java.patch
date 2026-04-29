@@ -35,7 +35,7 @@
      private LevelChunk.UnsavedListener unsavedListener = chunkPos -> {};
      // CraftBukkit start
      public boolean mustNotSave;
-@@ -387,10 +_,13 @@
+@@ -379,10 +_,13 @@
                  return null;
              } else {
                  Block block = state.getBlock();

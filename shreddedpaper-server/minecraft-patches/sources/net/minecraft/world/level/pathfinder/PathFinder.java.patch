@@ -1,5 +1,13 @@
 --- a/net/minecraft/world/level/pathfinder/PathFinder.java
 +++ b/net/minecraft/world/level/pathfinder/PathFinder.java
+@@ -6,6 +_,7 @@
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Objects;
+ import java.util.Optional;
+ import java.util.Set;
+ import java.util.function.BooleanSupplier;
 @@ -19,6 +_,8 @@
  import net.minecraft.world.level.PathNavigationRegion;
  import org.jspecify.annotations.Nullable;
@@ -31,14 +39,16 @@
  
      public void setCaptureDebug(BooleanSupplier captureDebug) {
          this.captureDebug = captureDebug;
-@@ -42,24 +_,92 @@
+@@ -42,24 +_,94 @@
  
      public @Nullable Path findPath(PathNavigationRegion region, Mob mob, Set<BlockPos> targets, float maxRange, int reachRange, float maxVisitedNodesMultiplier) {
          this.openSet.clear();
 -        this.nodeEvaluator.prepare(region, mob);
 -        Node start = this.nodeEvaluator.getStart();
 +        // DivineMC start - Async Pathfinding
-+        NodeEvaluator nodeEvaluator = this.nodeEvaluatorGenerator == null
++        boolean useAsyncWorker = this.nodeEvaluatorGenerator != null
++            && !io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking;
++        NodeEvaluator nodeEvaluator = !useAsyncWorker
 +            ? this.nodeEvaluator
 +            : org.bxteam.divinemc.async.pathfinding.NodeEvaluatorCache.takeNodeEvaluator(this.nodeEvaluatorGenerator, this.nodeEvaluator);
 +        nodeEvaluator.prepare(region, mob);
@@ -65,7 +75,7 @@
 +            map.add(new java.util.AbstractMap.SimpleEntry<>(nodeEvaluator.getTarget(pos.getX(), pos.getY(), pos.getZ()), pos)); // DivineMC - handle nodeEvaluatorGenerator
 +        }
 +        // Paper end - Perf: remove streams and optimize collection
-+        if (this.nodeEvaluatorGenerator == null) {
++        if (!useAsyncWorker) {
              Path path = this.findPath(start, map, maxRange, reachRange, maxVisitedNodesMultiplier);
              this.nodeEvaluator.done();
              return path;
@@ -75,7 +85,7 @@
 +        final BooleanSupplier captureDebug = this.captureDebug;
 +        final PathNavigationRegion regionCapture = region;
 +        final Mob mobCapture = mob;
-+        final NodeEvaluatorGenerator generatorCapture = this.nodeEvaluatorGenerator;
++        final NodeEvaluatorGenerator generatorCapture = Objects.requireNonNull(this.nodeEvaluatorGenerator);
 +
 +        final int nodeEvaluatorFeatures = org.bxteam.divinemc.async.pathfinding.NodeEvaluatorFeatures.fromNodeEvaluator(nodeEvaluator);
 +

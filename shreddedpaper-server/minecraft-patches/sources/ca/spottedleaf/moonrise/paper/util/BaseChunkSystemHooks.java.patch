@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/paper/util/BaseChunkSystemHooks.java
 +++ b/ca/spottedleaf/moonrise/paper/util/BaseChunkSystemHooks.java
-@@ -7,6 +_,7 @@
+@@ -6,6 +_,7 @@
  import ca.spottedleaf.moonrise.patches.chunk_system.player.RegionizedPlayerChunkLoader;
  import ca.spottedleaf.moonrise.patches.chunk_system.world.ChunkSystemServerChunkCache;
  import ca.spottedleaf.moonrise.patches.chunk_tick_iteration.ChunkTickServerLevel;

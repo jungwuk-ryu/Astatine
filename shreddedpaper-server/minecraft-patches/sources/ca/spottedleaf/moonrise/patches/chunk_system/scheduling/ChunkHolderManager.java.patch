@@ -40,7 +40,7 @@
      }
  
      public boolean processTicketUpdates(final int chunkX, final int chunkZ) {
-@@ -230,9 +_,9 @@
+@@ -230,42 +_,126 @@
      }
  
      void ensureInAutosave(final NewChunkHolder holder) {
@@ -52,7 +52,8 @@
          }
      }
  
-@@ -241,30 +_,97 @@
+     public void autoSave() {
+         final List<NewChunkHolder> reschedule = new ArrayList<>();
          final long currentTick = this.currentTick;
 -        final long maxSaveTime = currentTick - Math.max(1L, PlatformHooks.get().configAutoSaveInterval(this.world));
 +        final long autoSaveInterval = Math.max(1L, PlatformHooks.get().configAutoSaveInterval(this.world)); // ShreddedPaper - autosave backpressure
@@ -74,13 +75,12 @@
              }
  
 -            this.autoSaveQueue.remove(holder);
-+            this.autoSaveQueueLock.write(() -> this.autoSaveQueue.remove(holder)); // ShreddedPaper - multithread-safe auto save queue
-+            ++scanned; // ShreddedPaper - autosave backpressure
- 
+-
 -            holder.lastAutoSave = currentTick;
 -            if (holder.save(false) != null) {
--                ++autoSaved;
--            }
++            this.autoSaveQueueLock.write(() -> this.autoSaveQueue.remove(holder)); // ShreddedPaper - multithread-safe auto save queue
++            ++scanned; // ShreddedPaper - autosave backpressure
++
 +            // ShreddedPaper start - bounded owner-thread chunk save dispatch
 +            final RegionPos saveRegionPos = RegionPos.forChunk(holder.vanillaChunkHolder.getPos());
 +            final long ownerId = holder.world.getChunkSource().tickingRegions.ownerIdForCellOr(saveRegionPos, Long.MIN_VALUE);
@@ -94,13 +94,13 @@
 +                    admittedByOwner.addTo(ownerId, 1);
 +                }
 +                holder.lastAutoSave = currentTick;
-+                ++autoSaved;
+                 ++autoSaved;
 +                if (holder.getChunkStatus().isOrAfter(FullChunkStatus.FULL)) {
 +                    reschedule.add(holder);
 +                }
 +            } else {
 +                this.shreddedPaperQueueAutoSaveSoon(holder, autoSaveInterval);
-+            }
+             }
 +            // ShreddedPaper end - bounded owner-thread chunk save dispatch
  
 -            if (holder.getChunkStatus().isOrAfter(FullChunkStatus.FULL)) {
@@ -114,8 +114,9 @@
                  this.autoSaveQueue.add(holder);
              }
          }
+-    }
 +        }); // ShreddedPaper - multithread-safe auto save queue
-     }
++    }
 +
 +    // ShreddedPaper start - bounded owner-thread chunk save dispatch
 +    private boolean shreddedPaperDispatchChunkAutoSave(final NewChunkHolder holder, final RegionPos saveRegionPos) {
@@ -178,7 +179,8 @@
 +    // ShreddedPaper end - bounded owner-thread chunk save dispatch
  
      public void saveAllChunks(final boolean flush, final boolean shutdown, final boolean logProgress,
-@@ -305,7 +_,33 @@
+                               final boolean emergency) {
+@@ -305,7 +_,35 @@
          for (int i = 0, len = holders.size(); i < len; ++i) {
              final NewChunkHolder holder = holders.get(i);
              try {
@@ -191,15 +193,25 @@
 +                } else {
 +                    final RegionPos saveRegionPos = RegionPos.forChunk(holder.vanillaChunkHolder.getPos());
 +                    ShreddedPaperRegionLocker.RegionLock saveLock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(saveRegionPos);
++                    final long saveLockDeadlineNanos = shutdown ? System.nanoTime() + TimeUnit.SECONDS.toNanos(5L) : Long.MAX_VALUE;
 +                    while (saveLock == null) {
++                        if (System.nanoTime() >= saveLockDeadlineNanos) {
++                            LOGGER.warn("Timed out waiting for region lock while saving chunk {},{} in world '{}' during shutdown; saving directly",
++                                holder.chunkX, holder.chunkZ, WorldUtil.getWorldName(this.world));
++                            break;
++                        }
 +                        world.chunkSource.mainThreadProcessor.pollTask();
 +                        LockSupport.parkNanos(100_000L);
 +                        saveLock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(saveRegionPos);
 +                    }
-+                    try {
++                    if (saveLock == null) {
 +                        saveStat = holder.save(shutdown);
-+                    } finally {
-+                        saveLock.unlock();
++                    } else {
++                        try {
++                            saveStat = holder.save(shutdown);
++                        } finally {
++                            saveLock.unlock();
++                        }
 +                    }
 +                }
                  if (saveStat != null) {
@@ -238,7 +250,7 @@
          if (!TickThread.isTickThread()) {
              // These will be handled on the next ServerChunkCache$MainThreadExecutor#pollTask, as it runs the distance manager update
              // which will invoke processTicketUpdates
-@@ -1143,97 +_,122 @@
+@@ -1143,104 +_,136 @@
  
      private void removeChunkHolder(final NewChunkHolder holder) {
          holder.onUnload();
@@ -309,7 +321,12 @@
 +        // ShreddedPaper end - use our own unload queue
  
          // We do need to process updates here so that any addTicket that is synchronised before this call does not go missed.
-         this.processTicketUpdates();
+-        this.processTicketUpdates();
++        // ShreddedPaper start - independent region ticking: do not wait on the global ticket queue while holding region locks
++        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
++            this.processTicketUpdates();
++        }
++        // ShreddedPaper end - independent region ticking
  
 -        final int toUnloadCount = Math.max(
 -            PlatformHooks.get().configMinChunkUnloadCount(this.world),
@@ -430,19 +447,30 @@
  
                      // run stage 1
                      for (int i = 0, len = stage1.size(); i < len; ++i) {
-@@ -1298,10 +_,10 @@
+                         final NewChunkHolder chunkHolder = stage1.get(i);
+                         chunkHolder.removeFromUnloadQueue();
+-                        if (chunkHolder.isSafeToUnload() != null) {
+-                            LOGGER.error("Chunkholder " + chunkHolder + " is not safe to unload but is inside the unload queue?");
++                        final String notSafeReason = chunkHolder.isSafeToUnload();
++                        if (notSafeReason != null) {
++                            LOGGER.debug("Skipping stale region unload queue entry for chunkholder {} because it is no longer safe to unload ({})", chunkHolder, notSafeReason);
+                             continue;
+                         }
+                         final NewChunkHolder.UnloadState state = chunkHolder.unloadStage1();
+@@ -1296,12 +_,12 @@
+                 this.ticketLockArea.unlock(ticketLock);
+             }
  
 -            processedCount += stage1.size();
 -
 -            if (processedCount >= toUnloadCount) {
 -                break;
 -            }
--        }
 +        // ShreddedPaper start - use our own unload queue
 +//            if (processedCount >= toUnloadCount) {
 +//                break;
 +//            }
-+        }
+         }
 +        // ShreddedPaper end - use our own unload queue
      }
  

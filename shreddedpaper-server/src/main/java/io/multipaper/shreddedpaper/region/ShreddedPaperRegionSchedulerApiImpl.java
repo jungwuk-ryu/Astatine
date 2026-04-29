@@ -12,13 +12,15 @@ import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
 
+    private static final LongAdder PLUGIN_SCHEDULE_REJECTIONS = new LongAdder();
 
     @Override
     public void execute(@NotNull Plugin plugin, @NotNull World world, int chunkX, int chunkZ, @NotNull Runnable run) {
@@ -74,10 +76,13 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
         }
 
         private void schedule(long delayTicks) {
-            if (!serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks, RegionTaskClass.PLUGIN)) {
-                executionState.set(ExecutionState.CANCELLED);
-                throw new RejectedExecutionException("Region plugin mailbox is full for " + regionPos);
+            if (serverLevel.getChunkSource().tickingRegions.scheduleTask(regionPos, this, delayTicks, RegionTaskClass.PLUGIN)) {
+                return;
             }
+
+            PLUGIN_SCHEDULE_REJECTIONS.increment();
+            executionState.set(ExecutionState.CANCELLED);
+            throw new RejectedExecutionException("Region plugin mailbox is full for " + regionPos);
         }
 
         @Override

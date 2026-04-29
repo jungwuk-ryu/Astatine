@@ -1,6 +1,6 @@
 --- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
-@@ -2,10 +_,14 @@
+@@ -2,10 +_,15 @@
  
  import ca.spottedleaf.moonrise.common.list.ReferenceList;
  import ca.spottedleaf.moonrise.common.util.CoordinateUtils;
@@ -10,6 +10,7 @@
  import com.google.common.collect.Lists;
  import com.mojang.datafixers.util.Pair;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 +import io.multipaper.shreddedpaper.threading.SynchronousPluginExecution;
  import io.papermc.paper.FeatureHooks;
@@ -32,11 +33,17 @@
      }
  
      @Override
-@@ -370,6 +_,7 @@
+@@ -370,6 +_,13 @@
  
      @Override
      public Chunk getChunkAt(int x, int z) {
-+        if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !TickThread.isTickThreadFor(this.world, x, z)) throw new IllegalStateException("Cannot get chunk from a region that is not ours! world=" + this.world.serverLevelData.getLevelName() + ", chunkpos=[" + x + "," + z + "]"); // ShreddedPaper - regions
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - regions
++            ShreddedPaperAccess.assertNoRegionWorkerSyncLoad(this.world, new ChunkPos(x, z), "CraftWorld#getChunkAt");
++            net.minecraft.world.level.chunk.LevelChunk loaded = this.world.getChunkSource().getChunkAtIfLoadedImmediately(x, z);
++            if (loaded != null) {
++                return new CraftChunk(loaded);
++            }
++        }
          warnUnsafeChunk("getting a faraway chunk", x, z); // Paper
          net.minecraft.world.level.chunk.LevelChunk chunk = (net.minecraft.world.level.chunk.LevelChunk) this.world.getChunk(x, z, ChunkStatus.FULL, true);
          return new CraftChunk(chunk);
@@ -68,6 +75,30 @@
          return future.thenApply(c -> {
              if (c != null) {
                  return c.getPersistedStatus() == ChunkStatus.FULL;
+@@ -527,6 +_,13 @@
+     public boolean loadChunk(int x, int z, boolean generate) {
+         org.spigotmc.AsyncCatcher.catchOp("chunk load"); // Spigot
+         warnUnsafeChunk("loading a faraway chunk", x, z); // Paper
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - regions
++            ShreddedPaperAccess.assertNoRegionWorkerSyncLoad(this.world, new ChunkPos(x, z), "CraftWorld#loadChunk");
++            if (this.world.getChunkSource().getChunkAtIfLoadedImmediately(x, z) instanceof LevelChunk) {
++                this.world.getChunkSource().addTicketWithRadius(TicketType.PLUGIN, new ChunkPos(x, z), 1);
++                return true;
++            }
++        }
+         ChunkAccess chunk = this.world.getChunkSource().getChunk(x, z, generate || isChunkGenerated(x, z) ? ChunkStatus.FULL : ChunkStatus.EMPTY, true); // Paper
+ 
+         // If generate = false, but the chunk already exists, we will get this back.
+@@ -562,6 +_,9 @@
+         warnUnsafeChunk("adding a faraway chunk ticket", x, z); // Paper
+         Preconditions.checkArgument(plugin != null, "null plugin");
+         Preconditions.checkArgument(plugin.isEnabled(), "plugin is not enabled");
++        if (ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - regions
++            ShreddedPaperAccess.assertNoRegionWorkerSyncLoad(this.world, new ChunkPos(x, z), "CraftWorld#addPluginChunkTicket");
++        }
+ 
+         final DistanceManager distanceManager = this.world.getChunkSource().chunkMap.distanceManager;
+         if (distanceManager.ticketStorage.addPluginRegionTicket(new ChunkPos(x, z), plugin)) {
 @@ -738,13 +_,15 @@
  
      @Override
@@ -102,6 +133,24 @@
              return false;
          }
      }
+@@ -912,8 +_,15 @@
+     @Override
+     public void setBiome(int x, int y, int z, Holder<net.minecraft.world.level.biome.Biome> bb) {
+         BlockPos pos = new BlockPos(x, 0, z);
+-        if (this.world.hasChunkAt(pos)) {
+-            net.minecraft.world.level.chunk.LevelChunk chunk = this.world.getChunkAt(pos);
++        net.minecraft.world.level.chunk.LevelChunk chunk = this.world.getChunkIfLoaded(pos); // ShreddedPaper - do not sync-load biome target chunks
++        if (chunk != null) {
++            if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(this.world, pos)) { // ShreddedPaper - owner-required biome mutation
++                final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult = ShreddedPaperAccess.runOrDeferToOwner(this.world, pos, io.multipaper.shreddedpaper.threading.region.RegionTaskClass.OWNER_HANDOFF, () -> this.setBiome(x, y, z, bb));
++                if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
++                    throw new IllegalStateException("Failed to hand off cross-owner biome write; world=" + this.world.getWorld().getName() + ", pos=" + pos);
++                }
++                return;
++            }
+ 
+             chunk.setBiome(x >> 2, y >> 2, z >> 2, bb);
+             chunk.markUnsaved(); // SPIGOT-2890
 @@ -1587,7 +_,7 @@
          if (!(entity instanceof CraftEntity craftEntity) || entity.getWorld() != this || sound == null || category == null) return;
  

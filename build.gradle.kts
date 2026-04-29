@@ -35,6 +35,7 @@ paperweight {
 }
 
 val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
+val defaultTestForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
 subprojects {
     apply(plugin = "java-library")
@@ -59,6 +60,8 @@ subprojects {
         options.encoding = Charsets.UTF_8.name()
         options.release = 25
         options.isFork = true
+        options.isIncremental = true
+        options.forkOptions.memoryInitialSize = "512m"
         options.compilerArgs.add("--enable-preview")
     }
     tasks.withType<Javadoc> {
@@ -68,6 +71,10 @@ subprojects {
         filteringCharset = Charsets.UTF_8.name()
     }
     tasks.withType<Test> {
+        maxParallelForks = providers.gradleProperty("shreddedpaper.test.maxParallelForks")
+            .map(String::toInt)
+            .getOrElse(defaultTestForks)
+        systemProperty("net.bytebuddy.experimental", "true")
         jvmArgs("--enable-preview")
         testLogging {
             showStackTraces = true

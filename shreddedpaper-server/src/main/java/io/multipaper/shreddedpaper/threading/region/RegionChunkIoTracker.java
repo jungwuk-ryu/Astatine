@@ -60,6 +60,7 @@ public final class RegionChunkIoTracker {
     private final Queue<ExecutorBacklogRetry> executorBacklogWaiters = new ConcurrentLinkedQueue<>();
     private final Queue<ExecutorBackpressureRetry> executorBackpressureWaiters = new ConcurrentLinkedQueue<>();
     private final AtomicInteger executorBackpressuredRetries = new AtomicInteger();
+    private final AtomicBoolean executorDeferredDrainScheduled = new AtomicBoolean();
     private final AtomicBoolean executorBacklogDrainScheduled = new AtomicBoolean();
     private final AtomicBoolean executorBackpressureDrainScheduled = new AtomicBoolean();
 
@@ -177,7 +178,7 @@ public final class RegionChunkIoTracker {
         if (ChunkRequestEvent.shouldCommitSample(count)) {
             this.commitExecutorEvent("executor-" + workType + "-deferred", chunkX, chunkZ, workType, count, false, this.executorInFlight.get(), this.currentExecutorCap(), priority);
         }
-        this.drainExecutorDeferredWaiters();
+        this.scheduleExecutorDeferredDrain(0L);
         return true;
     }
 
@@ -401,7 +402,7 @@ public final class RegionChunkIoTracker {
         }
         this.executorCompleted.incrementAndGet();
         this.scheduleExecutorBacklogDrain(0L);
-        this.drainExecutorDeferredWaiters();
+        this.scheduleExecutorDeferredDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
@@ -531,7 +532,7 @@ public final class RegionChunkIoTracker {
         }
         this.executorOverflowCompleted.incrementAndGet();
         this.scheduleExecutorBacklogDrain(0L);
-        this.drainExecutorDeferredWaiters();
+        this.scheduleExecutorDeferredDrain(0L);
         this.scheduleExecutorBackpressureDrain(0L);
     }
 
@@ -765,8 +766,25 @@ public final class RegionChunkIoTracker {
         }
     }
 
+    private void scheduleExecutorDeferredDrain(final long delayNanos) {
+        if (!this.executorDeferredDrainScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            EXECUTOR_BACKPRESSURE_RETRY_EXECUTOR.schedule(
+                    this::drainExecutorDeferredWaiters,
+                    Math.max(0L, delayNanos),
+                    TimeUnit.NANOSECONDS
+            );
+        } catch (final RuntimeException throwable) {
+            this.executorDeferredDrainScheduled.set(false);
+            throw throwable;
+        }
+    }
+
     private void drainExecutorDeferredWaiters() {
-        while (this.executorInFlight.get() < this.currentExecutorCap()) {
+        this.executorDeferredDrainScheduled.set(false);
+        for (int drained = 0; drained < EXECUTOR_BACKPRESSURE_DRAIN_BATCH && this.executorInFlight.get() < this.currentExecutorCap(); drained++) {
             final Runnable retry = this.executorDeferredWaiters.poll();
             if (retry == null) {
                 return;
@@ -776,6 +794,9 @@ public final class RegionChunkIoTracker {
             } catch (final Throwable throwable) {
                 LOGGER.error("Internal chunk executor retry failed for {} {}", this.level.getWorld().getName(), this.regionPos, throwable);
             }
+        }
+        if (!this.executorDeferredWaiters.isEmpty()) {
+            this.scheduleExecutorDeferredDrain(this.executorInFlight.get() < this.currentExecutorCap() ? 0L : EXECUTOR_BACKPRESSURE_RETRY_NANOS);
         }
     }
 

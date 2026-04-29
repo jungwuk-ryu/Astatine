@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java
 +++ b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java
-@@ -27,6 +_,13 @@
+@@ -27,6 +_,17 @@
  import com.google.gson.JsonArray;
  import com.google.gson.JsonObject;
  import com.mojang.logging.LogUtils;
@@ -13,19 +13,30 @@
 +import io.multipaper.shreddedpaper.threading.region.RegionChunkIoTracker;
 +import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
 +import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
++import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
  import net.minecraft.ReportedException;
-@@ -334,6 +_,41 @@
+@@ -47,6 +_,7 @@
+ import java.util.ArrayDeque;
+ import java.util.ArrayList;
+ import java.util.Arrays;
++import java.util.Collection;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Objects;
+@@ -334,10 +_,67 @@
      }
  
      public boolean executeMainThreadTask() {
 +        // ShreddedPaper start
 +        boolean ret = false;
-+        for (RegionPos regionPos : world.chunkScheduler.getRegionLocker().getLockedRegions()) {
++        final Collection<RegionPos> lockedRegions = world.chunkScheduler.getRegionLocker().getLockedRegions();
++        final ReferenceOpenHashSet<LevelChunkRegion> processedRegions = new ReferenceOpenHashSet<>();
++        for (RegionPos regionPos : lockedRegions) {
 +            LevelChunkRegion region = world.chunkSource.tickingRegions.get(regionPos);
 +            if (region != null) {
-+                if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, regionPos)) {
++                if (!processedRegions.add(region) || !this.shreddedpaper$canExecuteRegionInternalTasks(region)) {
 +                    continue;
 +                }
 +                ret |= region.getInternalTaskQueue().executeTask();
@@ -33,14 +44,14 @@
 +        }
 +        if (!ret && !ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
 +            // Try bordering regions to our locked regions
-+            for (RegionPos regionPos : world.chunkScheduler.getRegionLocker().getLockedRegions()) {
++            for (RegionPos regionPos : lockedRegions) {
 +                for (int x = -1; x <= 1; x++) {
 +                    for (int z = -1; z <= 1; z++) {
 +                        RegionPos borderRegionPos = new RegionPos(regionPos.x + x, regionPos.z + z);
 +                        if (world.chunkScheduler.getRegionLocker().hasLock(borderRegionPos)) continue; // Don't bother trying regions we already have locked
 +                        LevelChunkRegion region = world.chunkSource.tickingRegions.get(borderRegionPos);
 +                        if (region != null && !region.getInternalTaskQueue().hasNoScheduledTasks()) {
-+                            ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().internalTryTakeLockNow(borderRegionPos, 0);
++                            ShreddedPaperRegionLocker.RegionLock lock = world.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(region.getOwner().cellPositionsSnapshot());
 +                            if (lock != null) {
 +                                try {
 +                                    ret |= region.getInternalTaskQueue().executeTask();
@@ -61,8 +72,29 @@
          TickThread.ensureTickThread("Cannot execute main thread task off-main");
          return this.mainThreadExecutor.executeTask();
      }
-@@ -427,77 +_,103 @@
-         if (toStatus == FullChunkStatus.INACCESSIBLE) {
+ 
++    // ShreddedPaper start - owner-wide internal task ownership guard
++    private boolean shreddedpaper$canExecuteRegionInternalTasks(final LevelChunkRegion region) {
++        for (final RegionPos ownedRegionPos : region.getOwner().cellPositionsSnapshot()) {
++            if (ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, ownedRegionPos)) {
++                continue;
++            }
++            if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
++                if (!this.world.chunkScheduler.getRegionLocker().hasWriteLock(ownedRegionPos)) {
++                    return false;
++                }
++            } else if (!this.world.chunkScheduler.getRegionLocker().hasLock(ownedRegionPos)) {
++                return false;
++            }
++        }
++        return true;
++    }
++    // ShreddedPaper end - owner-wide internal task ownership guard
++
+     // run only tasks queued before this function was invoked
+     public void executeAllRecentlyQueuedMainThreadTasks() {
+         // note: order of retrieval is important to avoid race conditions
+@@ -384,75 +_,101 @@
              throw new IllegalArgumentException("Cannot wait for INACCESSIBLE status");
          }
  
@@ -91,13 +123,7 @@
 -            this.chunkHolderManager.addTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
 -            this.chunkHolderManager.processTicketUpdates();
 -        }
-+        boolean releaseAdmissionOnFailure = qosAdmission.tracker() != null;
-+        try {
-+            if (addTicket) {
-+                this.chunkHolderManager.addTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
-+                this.chunkHolderManager.processTicketUpdates();
-+            }
- 
+-
 -        final Consumer<LevelChunk> loadCallback = onComplete == null && !addTicket ? null : (final LevelChunk chunk) -> {
 -            try {
 -                if (onComplete != null) {
@@ -106,7 +132,22 @@
 -            } finally {
 -                if (addTicket) {
 -                    ChunkTaskScheduler.this.chunkHolderManager.removeTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
-+            final Consumer<LevelChunk> loadCallback = onComplete == null && !addTicket ? null : (final LevelChunk chunk) -> {
+-                }
+-            }
+-        };
+-
+-        final boolean scheduled;
+-        final LevelChunk chunk;
+-        final ReentrantAreaLock.Node ticketLock = this.chunkHolderManager.ticketLockArea.lock(chunkX, chunkZ, accessRadius);
++        boolean releaseAdmissionOnFailure = qosAdmission.tracker() != null;
+         try {
+-            final ReentrantAreaLock.Node schedulingLock = this.schedulingLockArea.lock(chunkX, chunkZ, accessRadius);
++            if (addTicket) {
++                this.chunkHolderManager.addTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
++                this.chunkHolderManager.processTicketUpdates();
++            }
++
++            final Consumer<LevelChunk> loadCallback = onComplete == null && !addTicket && qosAdmission.tracker() == null ? null : (final LevelChunk chunk) -> {
 +                try {
 +                    if (onComplete != null) {
 +                        onComplete.accept(chunk);
@@ -116,16 +157,9 @@
 +                        ChunkTaskScheduler.this.chunkHolderManager.removeTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
 +                    }
 +                    qosAdmission.release();
-                 }
--            }
--        };
++                }
 +            };
- 
--        final boolean scheduled;
--        final LevelChunk chunk;
--        final ReentrantAreaLock.Node ticketLock = this.chunkHolderManager.ticketLockArea.lock(chunkX, chunkZ, accessRadius);
--        try {
--            final ReentrantAreaLock.Node schedulingLock = this.schedulingLockArea.lock(chunkX, chunkZ, accessRadius);
++
 +            final boolean scheduled;
 +            final LevelChunk chunk;
 +            final ReentrantAreaLock.Node ticketLock = this.chunkHolderManager.ticketLockArea.lock(chunkX, chunkZ, accessRadius);
@@ -146,13 +180,6 @@
 -                    } else {
 -                        scheduled = true;
                          chunk = null;
--
--                        for (int dz = -radius; dz <= radius; ++dz) {
--                            for (int dx = -radius; dx <= radius; ++dx) {
--                                final NewChunkHolder neighbour =
--                                    (dx | dz) == 0 ? chunkHolder : this.chunkHolderManager.getChunkHolder(dx + chunkX, dz + chunkZ);
--                                if (neighbour != null) {
--                                    neighbour.raisePriority(priority);
 +                    } else {
 +                        final FullChunkStatus currStatus = chunkHolder.getChunkStatus();
 +                        if (currStatus.isOrAfter(toStatus)) {
@@ -161,7 +188,13 @@
 +                        } else {
 +                            scheduled = true;
 +                            chunk = null;
-+
+ 
+-                        for (int dz = -radius; dz <= radius; ++dz) {
+-                            for (int dx = -radius; dx <= radius; ++dx) {
+-                                final NewChunkHolder neighbour =
+-                                    (dx | dz) == 0 ? chunkHolder : this.chunkHolderManager.getChunkHolder(dx + chunkX, dz + chunkZ);
+-                                if (neighbour != null) {
+-                                    neighbour.raisePriority(priority);
 +                            for (int dz = -radius; dz <= radius; ++dz) {
 +                                for (int dx = -radius; dx <= radius; ++dx) {
 +                                    final NewChunkHolder neighbour =
@@ -187,18 +220,10 @@
                  }
              } finally {
 -                this.schedulingLockArea.unlock(schedulingLock);
+-            }
 +                this.chunkHolderManager.ticketLockArea.unlock(ticketLock);
-             }
--        } finally {
--            this.chunkHolderManager.ticketLockArea.unlock(ticketLock);
--        }
- 
--        if (loadCallback != null && !scheduled) {
--            // couldn't schedule
--            try {
--                loadCallback.accept(chunk);
--            } catch (final Throwable thr) {
--                LOGGER.error("Failed to process chunk full status callback", thr);
++            }
++
 +            if (loadCallback != null && !scheduled) {
 +                // couldn't schedule
 +                try {
@@ -208,15 +233,22 @@
 +                }
 +            }
 +            releaseAdmissionOnFailure = false;
-+        } finally {
+         } finally {
+-            this.chunkHolderManager.ticketLockArea.unlock(ticketLock);
+-        }
+-
+-        if (loadCallback != null && !scheduled) {
+-            // couldn't schedule
+-            try {
+-                loadCallback.accept(chunk);
+-            } catch (final Throwable thr) {
+-                LOGGER.error("Failed to process chunk full status callback", thr);
 +            if (releaseAdmissionOnFailure) {
 +                qosAdmission.release();
              }
          }
      }
- 
-@@ -636,72 +_,144 @@
-         final int minLevel = ChunkTaskScheduler.getTicketLevel(toStatus);
+@@ -593,70 +_,139 @@
          final Long chunkReference = addTicket ? getNextChunkLoadId() : null;
          final long chunkKey = CoordinateUtils.getChunkKey(chunkX, chunkZ);
  
@@ -249,16 +281,23 @@
 -                if (addTicket) {
 -                    ChunkTaskScheduler.this.chunkHolderManager.removeTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
 -                }
+-            }
+-        };
+-
+-        final List<ChunkProgressionTask> tasks = new ArrayList<>();
+-
+-        final boolean scheduled;
+-        final ChunkAccess chunk;
+-        final ReentrantAreaLock.Node ticketLock = this.chunkHolderManager.ticketLockArea.lock(chunkX, chunkZ, accessRadius);
 +        boolean releaseAdmissionOnFailure = qosAdmission.tracker() != null;
-+        try {
+         try {
+-            final ReentrantAreaLock.Node schedulingLock = this.schedulingLockArea.lock(chunkX, chunkZ, accessRadius);
 +            if (addTicket) {
 +                this.chunkHolderManager.addTicketAtLevel(CHUNK_LOAD, chunkKey, minLevel, chunkReference);
 +                this.chunkHolderManager.processTicketUpdates();
-             }
--        };
- 
--        final List<ChunkProgressionTask> tasks = new ArrayList<>();
-+            final Consumer<ChunkAccess> loadCallback = onComplete == null && !addTicket ? null : (final ChunkAccess chunk) -> {
++            }
++
++            final Consumer<ChunkAccess> loadCallback = onComplete == null && !addTicket && qosAdmission.tracker() == null ? null : (final ChunkAccess chunk) -> {
 +                try {
 +                    if (onComplete != null) {
 +                        onComplete.accept(chunk);
@@ -270,12 +309,7 @@
 +                    qosAdmission.release();
 +                }
 +            };
- 
--        final boolean scheduled;
--        final ChunkAccess chunk;
--        final ReentrantAreaLock.Node ticketLock = this.chunkHolderManager.ticketLockArea.lock(chunkX, chunkZ, accessRadius);
--        try {
--            final ReentrantAreaLock.Node schedulingLock = this.schedulingLockArea.lock(chunkX, chunkZ, accessRadius);
++
 +            final List<ChunkProgressionTask> tasks = new ArrayList<>();
 +
 +            final boolean scheduled;
@@ -299,12 +333,6 @@
 -                        scheduled = true;
                          chunk = null;
 -                        chunkHolder.raisePriority(priority);
--
--                        if (!chunkHolder.upgradeGenTarget(toStatus)) {
--                            this.schedule(chunkX, chunkZ, toStatus, chunkHolder, tasks);
--                        }
--                        if (loadCallback != null) {
--                            chunkHolder.addStatusConsumer(toStatus, loadCallback);
 +                    } else {
 +                        final ChunkStatus genStatus = chunkHolder.getCurrentGenStatus();
 +                        if (genStatus != null && genStatus.isOrAfter(toStatus)) {
@@ -314,7 +342,12 @@
 +                            scheduled = true;
 +                            chunk = null;
 +                            chunkHolder.raisePriority(qosAdmission.priority());
-+
+ 
+-                        if (!chunkHolder.upgradeGenTarget(toStatus)) {
+-                            this.schedule(chunkX, chunkZ, toStatus, chunkHolder, tasks);
+-                        }
+-                        if (loadCallback != null) {
+-                            chunkHolder.addStatusConsumer(toStatus, loadCallback);
 +                            if (!chunkHolder.upgradeGenTarget(toStatus)) {
 +                                this.schedule(chunkX, chunkZ, toStatus, chunkHolder, tasks, qosAdmission.priority());
 +                            }
@@ -328,8 +361,9 @@
                  }
              } finally {
 -                this.schedulingLockArea.unlock(schedulingLock);
+-            }
 +                this.chunkHolderManager.ticketLockArea.unlock(ticketLock);
-             }
++            }
 +
 +            for (int i = 0, len = tasks.size(); i < len; ++i) {
 +                tasks.get(i).schedule();
@@ -346,14 +380,20 @@
 +            releaseAdmissionOnFailure = false;
          } finally {
 -            this.chunkHolderManager.ticketLockArea.unlock(ticketLock);
+-        }
+-
+-        for (int i = 0, len = tasks.size(); i < len; ++i) {
+-            tasks.get(i).schedule();
+-        }
+-
+-        if (loadCallback != null && !scheduled) {
+-            // couldn't schedule
 +            if (releaseAdmissionOnFailure) {
 +                qosAdmission.release();
 +            }
-         }
++        }
 +    }
- 
--        for (int i = 0, len = tasks.size(); i < len; ++i) {
--            tasks.get(i).schedule();
++
 +    private ChunkIoAdmission admitChunkIoRequest(final int chunkX, final int chunkZ, final ChunkStatus toStatus, final boolean addTicket,
 +                                                 final Priority priority, final Runnable retry, final Runnable reject) {
 +        if (!ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || priority == Priority.BLOCKING) {
@@ -367,12 +407,10 @@
 +        final RegionChunkIoTracker.Admission admission = tracker.tryAcquire(chunkX, chunkZ, toStatus, addTicket, priority);
 +        if (admission.result() != RegionChunkIoTracker.Result.DEFERRED) {
 +            return new ChunkIoAdmission(admission.acquiredQuota() ? tracker : null, admission.priority());
-         }
- 
--        if (loadCallback != null && !scheduled) {
--            // couldn't schedule
++        }
++
 +        final long retryDelay = Math.max(1L, ShreddedPaperConfiguration.get().multithreading.chunkIoLoadDeferredRetryDelayTicks);
-+        final boolean queued = this.world.chunkSource.tickingRegions.scheduleTaskIfRegionExists(regionPos, () -> {
++        final boolean queued = this.world.chunkSource.tickingRegions.scheduleTaskNonDropping(regionPos, () -> {
 +            tracker.deferredRetryStarted();
 +            retry.run();
 +        }, retryDelay, RegionTaskClass.CHUNK_IO_LOAD);
@@ -401,22 +439,23 @@
              }
          }
      }
- 
-@@ -840,7 +_,7 @@
+@@ -840,7 +_,8 @@
  
      public PrioritisedExecutor.PrioritisedTask createChunkTask(final int chunkX, final int chunkZ, final Runnable run,
                                                                 final Priority priority) {
 -        return this.mainThreadExecutor.createTask(run, priority);
-+        return world.chunkSource.tickingRegions.createInternalTask(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ)), run, priority); // ShreddedPaper
++        final RegionPos regionPos = RegionPos.forChunk(new ChunkPos(chunkX, chunkZ));
++        return this.world.chunkSource.tickingRegions.createInternalTask(regionPos, run, priority); // ShreddedPaper - run on chunk thread
      }
  
      public PrioritisedExecutor.PrioritisedTask scheduleChunkTask(final int chunkX, final int chunkZ, final Runnable run) {
-@@ -849,7 +_,7 @@
+@@ -849,7 +_,8 @@
  
      public PrioritisedExecutor.PrioritisedTask scheduleChunkTask(final int chunkX, final int chunkZ, final Runnable run,
                                                                   final Priority priority) {
 -        return this.mainThreadExecutor.queueTask(run, priority);
-+        return world.chunkSource.tickingRegions.queueInternalTask(RegionPos.forChunk(new ChunkPos(chunkX, chunkZ)), run, priority); // ShreddedPaper
++        final RegionPos regionPos = RegionPos.forChunk(new ChunkPos(chunkX, chunkZ));
++        return this.world.chunkSource.tickingRegions.queueInternalTask(regionPos, run, priority); // ShreddedPaper - run on chunk thread
      }
  
      public boolean halt(final boolean sync, final long maxWaitNS) {

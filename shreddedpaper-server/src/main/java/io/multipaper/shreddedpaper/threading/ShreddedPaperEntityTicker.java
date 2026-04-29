@@ -6,12 +6,15 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.Entity;
-
-import java.util.Objects;
+import io.multipaper.shreddedpaper.region.LevelChunkRegion;
+import io.multipaper.shreddedpaper.region.RegionPos;
 
 public class ShreddedPaperEntityTicker {
 
     public static void tickEntity(Entity entity) {
+        if (!isOwnedByCurrentTickingRegion(entity)) {
+            return;
+        }
         ProfilerFiller profilerFiller = Profiler.get();
         ServerLevel level = (ServerLevel) entity.level();
 
@@ -32,7 +35,9 @@ public class ShreddedPaperEntityTicker {
                     }
 
                     profilerFiller.push("tick");
-                    level.guardEntityTick(level::tickNonPassenger, entity);
+                    try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
+                        level.guardEntityTick(level::tickNonPassenger, entity);
+                    }
                     profilerFiller.pop();
                 }
             }
@@ -41,11 +46,26 @@ public class ShreddedPaperEntityTicker {
 
     /** processTrackQueue has been renamed to newTrackerTick */
     public static void processTrackQueue(Entity entity) {
-        ChunkMap.TrackedEntity tracker = Objects.requireNonNull(entity.moonrise$getTrackedEntity());
-        ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$tick(((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkData().nearbyPlayers);
+        if (entity.isRemoved() || !isOwnedByCurrentTickingRegion(entity)) {
+            return;
+        }
+        ChunkMap.TrackedEntity tracker = entity.moonrise$getTrackedEntity();
+        if (tracker == null) {
+            return;
+        }
+        final ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkData chunkData = ((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkData();
+        if (chunkData == null) {
+            return;
+        }
+        ((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$tick(chunkData.nearbyPlayers);
         if (((ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerTrackedEntity)tracker).moonrise$hasPlayers()
                 || ((ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity)entity).moonrise$getChunkStatus().isOrAfter(FullChunkStatus.ENTITY_TICKING)) {
             tracker.serverEntity.sendChanges();
         }
+    }
+
+    private static boolean isOwnedByCurrentTickingRegion(Entity entity) {
+        final LevelChunkRegion region = ShreddedPaperChunkTicker.currentlyTickingRegion();
+        return region == null || (entity.level() == region.getLevel() && region.getOwner().ownsCell(RegionPos.forChunk(entity.chunkPosition())));
     }
 }

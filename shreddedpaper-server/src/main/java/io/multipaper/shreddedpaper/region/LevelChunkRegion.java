@@ -213,6 +213,10 @@ public class LevelChunkRegion {
         return this.runtimeState.mailbox().offer(taskClass, task, delay, affinityRegionPos);
     }
 
+    public boolean scheduleTaskNonDropping(RegionTaskClass taskClass, Runnable task, long delay, RegionPos affinityRegionPos) {
+        return this.runtimeState.mailbox().offerNonDropping(taskClass, task, delay, affinityRegionPos);
+    }
+
     public boolean scheduleTransferredTask(RegionTaskClass taskClass, Runnable task, long delay, RegionPos affinityRegionPos) {
         return this.runtimeState.mailbox().offerTransferred(taskClass, task, delay, affinityRegionPos);
     }
@@ -525,7 +529,10 @@ public class LevelChunkRegion {
     }
 
     public synchronized boolean canSplitOwner() {
-        return this.isMergeQuiescent() && (this.redstoneUpdateInfos == null || this.redstoneUpdateInfos.isEmpty());
+        return this.isMergeQuiescent()
+                && this.scheduledTickCellCursor == NO_CONTINUATION_CURSOR
+                && !this.scheduledTickFluidPhase
+                && (this.redstoneUpdateInfos == null || this.redstoneUpdateInfos.isEmpty());
     }
 
     public synchronized LongOpenHashSet activeCellKeysSnapshot() {
@@ -681,6 +688,7 @@ public class LevelChunkRegion {
     }
 
     public boolean isEmpty() {
+        this.pruneExpiredRedstoneToggleHistory();
         return this.lastAccessTick < this.level.levelData.getGameTime() - 20
                 && levelChunks.isEmpty()
                 && playerTickingChunkRequests.isEmpty()
@@ -695,7 +703,19 @@ public class LevelChunkRegion {
                 && trackedEntities.isEmpty()
                 && navigatingMobs.isEmpty()
                 && blockEvents.isEmpty()
+                && (this.redstoneUpdateInfos == null || this.redstoneUpdateInfos.isEmpty())
                 ;
+    }
+
+    private void pruneExpiredRedstoneToggleHistory() {
+        if (this.redstoneUpdateInfos == null) {
+            return;
+        }
+        final long gameTime = this.level.levelData.getGameTime();
+        RedstoneTorchBlock.Toggle toggle;
+        while ((toggle = this.redstoneUpdateInfos.peek()) != null && gameTime - toggle.when > RedstoneTorchBlock.RECENT_TOGGLE_TIMER) {
+            this.redstoneUpdateInfos.poll();
+        }
     }
 
     private record TickSample(long startNanos, long endNanos, long durationNanos, long previousStartNanos) {

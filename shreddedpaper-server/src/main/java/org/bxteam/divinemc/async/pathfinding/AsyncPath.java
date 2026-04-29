@@ -1,7 +1,7 @@
 package org.bxteam.divinemc.async.pathfinding;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
-import ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel;
+import io.multipaper.shreddedpaper.ShreddedPaper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -321,34 +321,36 @@ public final class AsyncPath extends Path {
                                             @NotNull Consumer<@Nullable Path> callback) {
         if (path instanceof AsyncPath asyncPath && !asyncPath.isProcessed()) {
             asyncPath.applyAfterProcessing(processedPath ->
-                scheduleOnMobRegion(level, mob, () -> callback.accept(processedPath))
+                scheduleOnMobOwner(level, mob, () -> callback.accept(processedPath))
             );
         } else {
             callback.accept(path);
         }
     }
 
-    private static void scheduleOnMobRegion(@NotNull ServerLevel level, @NotNull Mob mob, @NotNull Runnable runnable) {
+    private static void scheduleOnMobOwner(@NotNull ServerLevel level, @NotNull Mob mob, @NotNull Runnable runnable) {
         if (mob.isRemoved()) {
             return;
         }
 
-        final BlockPos position = mob.blockPosition();
-        final int chunkX = position.getX() >> 4;
-        final int chunkZ = position.getZ() >> 4;
-        ((ChunkSystemServerLevel) level).moonrise$getChunkTaskScheduler().scheduleChunkTask(chunkX, chunkZ, () -> {
-            if (mob.isRemoved()) {
-                return;
-            }
-
-            final BlockPos currentPosition = mob.blockPosition();
-            if ((currentPosition.getX() >> 4) != chunkX || (currentPosition.getZ() >> 4) != chunkZ) {
-                scheduleOnMobRegion(level, mob, runnable);
-                return;
-            }
-
+        if (mob.level() == level && TickThread.isTickThreadFor(mob)) {
             runnable.run();
-        });
+            return;
+        }
+
+        final boolean queued = ShreddedPaper.runSync(mob, scheduled -> {
+            if (scheduled != mob || scheduled.isRemoved() || scheduled.level() != level) {
+                return;
+            }
+            if (!TickThread.isTickThreadFor(scheduled)) {
+                LOGGER.warn("Skipping async path callback for {} because it is not on the owning region thread", scheduled);
+                return;
+            }
+            runnable.run();
+        }, () -> LOGGER.debug("Async path callback retired before owner execution for {}", mob));
+        if (!queued) {
+            LOGGER.debug("Async path callback could not be queued for {}", mob);
+        }
     }
 
     public static void shutdownExecutor() {

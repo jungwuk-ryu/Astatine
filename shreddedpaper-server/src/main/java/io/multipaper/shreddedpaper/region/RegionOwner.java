@@ -80,8 +80,12 @@ public final class RegionOwner {
     }
 
     public boolean ownsCell(final RegionPos cell) {
+        return this.ownsCellKey(cell.longKey);
+    }
+
+    public boolean ownsCellKey(final long cellKey) {
         synchronized (this.cells) {
-            return this.cells.contains(cell.longKey);
+            return this.cells.contains(cellKey);
         }
     }
 

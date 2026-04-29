@@ -9,9 +9,80 @@
                              return;
                          }
                          // Purpur end - Add option to teleport to spawn if outside world border
-@@ -3105,3 +_,4 @@
+@@ -3103,7 +_,8 @@
+     }
+ 
      public void travel(Vec3 travelVector) {
 -        if (this.shouldTravelInFluid(this.level().getFluidState(this.blockPosition()))) {
 +        FluidState fluidState = this.level().getFluidIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
 +        if (fluidState != null && this.shouldTravelInFluid(fluidState)) {
              this.travelInFluid(travelVector);
+         } else if (this.isFallFlying()) {
+             this.travelFallFlying(travelVector);
+@@ -3134,7 +_,11 @@
+             if (this.getRider() != null && this.isControllable()) {
+                 float friction = 0.91F;
+                 if (this.onGround()) {
+-                    friction = this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getFriction() * 0.91F;
++                    BlockPos blockPosBelowThatAffectsMyMovement = this.getBlockPosBelowThatAffectsMyMovement();
++                    BlockState movementBlockState = io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess.getBlockStateIfSafe(
++                        this.level(), blockPosBelowThatAffectsMyMovement, Blocks.AIR.defaultBlockState(), io.multipaper.shreddedpaper.threading.ownership.OwnershipIntent.LOADED_READ_CONSERVATIVE
++                    ); // ShreddedPaper - avoid sync chunk loads during independent region movement
++                    friction = movementBlockState.getBlock().getFriction() * 0.91F;
+                 }
+ 
+                 float frictionCompensation = 0.16277137F / (friction * friction * friction);
+@@ -3152,7 +_,10 @@
+ 
+     private void travelInAir(Vec3 travelVector) {
+         BlockPos blockPosBelowThatAffectsMyMovement = this.getBlockPosBelowThatAffectsMyMovement();
+-        float f = this.onGround() ? this.level().getBlockState(blockPosBelowThatAffectsMyMovement).getBlock().getFriction() : 1.0F;
++        BlockState movementBlockState = io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess.getBlockStateIfSafe(
++            this.level(), blockPosBelowThatAffectsMyMovement, Blocks.AIR.defaultBlockState(), io.multipaper.shreddedpaper.threading.ownership.OwnershipIntent.LOADED_READ_CONSERVATIVE
++        ); // ShreddedPaper - avoid sync chunk loads during independent region movement
++        float f = this.onGround() ? movementBlockState.getBlock().getFriction() : 1.0F;
+         float f1 = f * 0.91F;
+         Vec3 vec3 = this.handleRelativeFrictionAndCalculateMovement(travelVector, f);
+         double d = vec3.y;
+@@ -4587,6 +_,11 @@
+         boolean flag = false;
+         BlockPos blockPos = BlockPos.containing(x, y, z);
+         Level level = this.level();
++        if (level instanceof ServerLevel serverLevel
++            && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this)
++                || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos))) {
++            return Optional.of(false); // ShreddedPaper - random teleports cannot synchronously cross region ownership
++        }
+         if (level.hasChunkAt(blockPos)) {
+             boolean flag1 = false;
+ 
+@@ -4604,12 +_,15 @@
+             if (flag1) {
+                 // CraftBukkit start - Teleport event
+                 // first set position, to check if the place to teleport is valid
+-                this.setPos(x, d, z);
+-                if (level.noCollision(this) && !level.containsAnyLiquid(this.getBoundingBox())) {
++                AABB teleportBox = this.getBoundingBoxAt(x, d, z); // ShreddedPaper - avoid temporary cross-region position mutation
++                if (level instanceof ServerLevel serverLevel
++                    && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, teleportBox)) {
++                    return Optional.of(false); // ShreddedPaper - random teleports cannot synchronously cross region ownership
++                }
++                if (level.noCollision(this, teleportBox) && !level.containsAnyLiquid(teleportBox)) {
+                     flag = true;
+                 }
+                 // now revert and call event if the teleport place is valid
+-                this.setPos(x1, y1, z1);
+ 
+                 if (flag) {
+                     if (!(this instanceof ServerPlayer)) {
+@@ -4617,6 +_,10 @@
+                         this.level().getCraftServer().getPluginManager().callEvent(teleport);
+                         if (!teleport.isCancelled() && teleport.getTo() != null) { // Paper
+                             Location to = teleport.getTo();
++                            if (this.level() instanceof ServerLevel serverLevel
++                                && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, BlockPos.containing(to.getX(), to.getY(), to.getZ()))) {
++                                return Optional.of(false); // ShreddedPaper - random teleports cannot synchronously cross region ownership
++                            }
+                             this.teleportTo(to.getX(), to.getY(), to.getZ());
+                         } else {
+                             return Optional.empty();

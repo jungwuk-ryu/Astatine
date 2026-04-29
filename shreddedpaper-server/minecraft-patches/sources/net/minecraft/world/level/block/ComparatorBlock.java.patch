@@ -1,0 +1,78 @@
+--- a/net/minecraft/world/level/block/ComparatorBlock.java
++++ b/net/minecraft/world/level/block/ComparatorBlock.java
+@@ -96,15 +_,27 @@
+ 
+     @Override
+     protected int getInputSignal(Level level, BlockPos pos, BlockState state) {
+-        int i = super.getInputSignal(level, pos, state);
+         Direction direction = state.getValue(FACING);
+         BlockPos blockPos = pos.relative(direction);
+-        BlockState blockState = level.getBlockState(blockPos);
++        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) { // ShreddedPaper - avoid off-owner comparator block/entity probes
++            return 0;
++        }
++        int i = super.getInputSignal(level, pos, state);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only comparator input probe
++        if (blockState == null) {
++            return i;
++        }
+         if (blockState.hasAnalogOutputSignal()) {
+             i = blockState.getAnalogOutputSignal(level, blockPos, direction.getOpposite());
+         } else if (i < 15 && blockState.isRedstoneConductor(level, blockPos)) {
+             blockPos = blockPos.relative(direction);
+-            blockState = level.getBlockState(blockPos);
++            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) { // ShreddedPaper - avoid off-owner comparator item-frame probe
++                return i;
++            }
++            blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only comparator input probe
++            if (blockState == null) {
++                return i;
++            }
+             ItemFrame itemFrame = this.getItemFrame(level, direction, blockPos);
+             int max = Math.max(
+                 itemFrame == null ? Integer.MIN_VALUE : itemFrame.getAnalogOutput(),
+@@ -143,6 +_,14 @@
+ 
+     @Override
+     protected void checkTickOnNeighbor(Level level, BlockPos pos, BlockState state) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.checkTickOnNeighbor(level, pos, currentState);
++            }
++        })) {
++            return;
++        }
+         if (!level.getBlockTicks().willTickThisTick(pos, this)) {
+             int i = this.calculateOutputSignal(level, pos, state);
+             BlockEntity blockEntity = level.getBlockEntity(pos);
+@@ -155,6 +_,14 @@
+     }
+ 
+     private void refreshOutputState(Level level, BlockPos pos, BlockState state) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.refreshOutputState(level, pos, currentState);
++            }
++        })) {
++            return;
++        }
+         int i = this.calculateOutputSignal(level, pos, state);
+         BlockEntity blockEntity = level.getBlockEntity(pos);
+         int i1 = 0;
+@@ -188,6 +_,14 @@
+ 
+     @Override
+     protected void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.tick(currentState, level, pos, random);
++            }
++        })) {
++            return;
++        }
+         this.refreshOutputState(level, pos, state);
+     }
+ 

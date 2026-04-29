@@ -1,15 +1,23 @@
 --- a/net/minecraft/world/level/block/NetherPortalBlock.java
 +++ b/net/minecraft/world/level/block/NetherPortalBlock.java
-@@ -4,6 +_,9 @@
+@@ -2,6 +_,9 @@
+ 
+ import com.mojang.logging.LogUtils;
  import com.mojang.serialization.MapCodec;
- import java.util.Map;
- import java.util.Optional;
 +import java.util.concurrent.CompletableFuture;
 +
 +import io.multipaper.shreddedpaper.ShreddedPaper;
+ import java.util.Map;
+ import java.util.Optional;
  import net.minecraft.core.BlockPos;
- import net.minecraft.core.Direction;
- import net.minecraft.core.particles.ParticleTypes;
+@@ -33,6 +_,7 @@
+ import net.minecraft.world.level.block.state.properties.EnumProperty;
+ import net.minecraft.world.level.border.WorldBorder;
+ import net.minecraft.world.level.dimension.DimensionType;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.portal.PortalShape;
+ import net.minecraft.world.level.portal.TeleportTransition;
 @@ -135,7 +_,7 @@
      }
  
@@ -34,7 +42,7 @@
          } else {
              boolean flag = level1.getTypeKey() == net.minecraft.world.level.dimension.LevelStem.NETHER; // CraftBukkit
              WorldBorder worldBorder = level1.getWorldBorder();
-@@ -163,19 +_,20 @@
+@@ -163,53 +_,113 @@
              // CraftBukkit start
              org.bukkit.craftbukkit.event.PortalEventResult result = org.bukkit.craftbukkit.event.CraftEventFactory.handlePortalEvents(entity, org.bukkit.craftbukkit.util.CraftLocation.toBukkit(blockPos, level1), org.bukkit.PortalType.NETHER, portalSearchRadius, level1.paperConfig().environment.portalCreateRadius); // Paper - use custom portal search radius
              if (result == null) {
@@ -45,24 +53,144 @@
              worldBorder = level1.getWorldBorder();
              blockPos = worldBorder.clampToBounds(result.to().getX(), result.to().getY(), result.to().getZ());
 -            return this.getExitPortal(level1, entity, pos, blockPos, worldBorder, result);
-+            return this.getExitPortalAsync(level1, entity, pos, blockPos, worldBorder, result);
++            final ServerLevel targetLevel = level1; // ShreddedPaper - async teleportation
++            final BlockPos targetPos = blockPos; // ShreddedPaper - async teleportation
++            final WorldBorder targetWorldBorder = worldBorder; // ShreddedPaper - async teleportation
++            final org.bukkit.craftbukkit.event.PortalEventResult portalResult = result; // ShreddedPaper - async teleportation
++            final BoundingBox sourceBox = this.portalOwnershipBox(pos, 21); // ShreddedPaper - async teleportation
++            return CompletableFuture.supplyAsync(() -> { // ShreddedPaper - async teleportation
++                BlockState sourcePortalState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - async teleportation
++                Direction.Axis sourceAxis; // ShreddedPaper - async teleportation
++                Vec3 relativePortalPosition; // ShreddedPaper - async teleportation
++                if (sourcePortalState == null || !sourcePortalState.hasProperty(AXIS)) { // ShreddedPaper - async teleportation
++                    return null; // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
++                sourceAxis = sourcePortalState.getValue(AXIS); // ShreddedPaper - async teleportation
++                BlockUtil.FoundRectangle sourceRectangle = BlockUtil.getLargestRectangleAround(pos, sourceAxis, 21, Direction.Axis.Y, 21, blockPos1 -> level.getBlockStateIfLoaded(blockPos1) == sourcePortalState); // ShreddedPaper - async teleportation
++                relativePortalPosition = entity.getRelativePortalPosition(sourceAxis, sourceRectangle); // ShreddedPaper - async teleportation
++                return new java.util.AbstractMap.SimpleImmutableEntry<Direction.Axis, Vec3>(sourceAxis, relativePortalPosition); // ShreddedPaper - async teleportation
++            }, r -> ShreddedPaper.ensureSync(entity, level, sourceBox, r)).thenCompose(sourcePortal -> { // ShreddedPaper - async teleportation
++                if (sourcePortal == null) { // ShreddedPaper - async teleportation
++                    return CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
++                return this.getExitPortalAsync(targetLevel, entity, sourcePortal.getKey(), sourcePortal.getValue(), targetPos, targetWorldBorder, portalResult); // ShreddedPaper - async teleportation
++            }); // ShreddedPaper - async teleportation
              // CraftBukkit end
          }
      }
  
 -    private @Nullable TeleportTransition getExitPortal(
+-        ServerLevel level, Entity entity, BlockPos pos, BlockPos exitPos, WorldBorder worldBorder, org.bukkit.craftbukkit.event.PortalEventResult result // CraftBukkit
 +    private CompletableFuture<@Nullable TeleportTransition> getExitPortalAsync( // ShreddedPaper - async teleportation
-         ServerLevel level, Entity entity, BlockPos pos, BlockPos exitPos, WorldBorder worldBorder, org.bukkit.craftbukkit.event.PortalEventResult result // CraftBukkit
++        ServerLevel level, Entity entity, Direction.Axis sourceAxis, Vec3 relativePortalPosition, BlockPos exitPos, WorldBorder worldBorder, org.bukkit.craftbukkit.event.PortalEventResult result // CraftBukkit // ShreddedPaper - async teleportation
      ) {
-+        return CompletableFuture.supplyAsync(() -> { // ShreddedPaper - async teleportation
-         Optional<BlockPos> optional = level.getPortalForcer().findClosestPortalPosition(exitPos, worldBorder, result.searchRadius()); // CraftBukkit
-         BlockUtil.FoundRectangle largestRectangleAround;
-         TeleportTransition.PostTeleportTransition postTeleportTransition;
-@@ -209,6 +_,7 @@
-         // CraftBukkit end
- 
-         return getDimensionTransitionFromExit(entity, pos, largestRectangleAround, level, postTeleportTransition);
-+        }, r -> ShreddedPaper.ensureSync(level, exitPos, r)); // ShreddedPaper - async teleportation
-     }
+-        Optional<BlockPos> optional = level.getPortalForcer().findClosestPortalPosition(exitPos, worldBorder, result.searchRadius()); // CraftBukkit
+-        BlockUtil.FoundRectangle largestRectangleAround;
+-        TeleportTransition.PostTeleportTransition postTeleportTransition;
+-        if (optional.isPresent()) {
+-            BlockPos blockPos = optional.get();
+-            BlockState blockState = level.getBlockState(blockPos);
+-            largestRectangleAround = BlockUtil.getLargestRectangleAround(
+-                blockPos,
+-                blockState.getValue(BlockStateProperties.HORIZONTAL_AXIS),
+-                21,
+-                Direction.Axis.Y,
+-                21,
+-                blockPos1 -> level.getBlockState(blockPos1) == blockState
+-            );
+-            postTeleportTransition = TeleportTransition.PLAY_PORTAL_SOUND.then(entity1 -> entity1.placePortalTicket(blockPos));
+-        } else if (result.canCreatePortal()) { // CraftBukkit
+-            Direction.Axis axis = entity.level().getBlockState(pos).getOptionalValue(AXIS).orElse(Direction.Axis.X);
+-            Optional<BlockUtil.FoundRectangle> optional1 = level.getPortalForcer().createPortal(exitPos, axis, entity, result.createRadius()); // CraftBukkit
+-            if (optional1.isEmpty()) {
+-                // LOGGER.error("Unable to create a portal, likely target out of worldborder"); // CraftBukkit
+-                return null;
+-            }
+-
+-            largestRectangleAround = optional1.get();
+-            postTeleportTransition = TeleportTransition.PLAY_PORTAL_SOUND.then(TeleportTransition.PLACE_PORTAL_TICKET);
+-        }
+-        // CraftBukkit start
+-        else {
+-            return null;
+-        }
+-        // CraftBukkit end
+-
+-        return getDimensionTransitionFromExit(entity, pos, largestRectangleAround, level, postTeleportTransition);
+-    }
++        final BoundingBox searchBox = this.portalOwnershipBox(exitPos, result.searchRadius()); // ShreddedPaper - async teleportation
++        return this.loadPortalChunksAsync(level, exitPos, result.searchRadius(), net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY).thenCompose(ignored -> // ShreddedPaper - async teleportation
++            CompletableFuture.supplyAsync(() -> level.getPortalForcer().findClosestPortalPosition(exitPos, worldBorder, result.searchRadius()), r -> ShreddedPaper.ensureSync(level, searchBox, r)) // CraftBukkit // ShreddedPaper - async teleportation
++        ).thenCompose(optional -> { // ShreddedPaper - async teleportation
++            if (optional.isPresent()) { // ShreddedPaper - async teleportation
++                BlockPos blockPos = optional.get(); // ShreddedPaper - async teleportation
++                final BoundingBox foundBox = this.portalOwnershipBox(blockPos, 21); // ShreddedPaper - async teleportation
++                return this.loadPortalChunksAsync(level, blockPos, 21, net.minecraft.world.level.chunk.status.ChunkStatus.FULL).thenApplyAsync(ignored -> { // ShreddedPaper - async teleportation
++                    BlockState blockState = level.getBlockState(blockPos); // ShreddedPaper - async teleportation
++                    BlockUtil.FoundRectangle largestRectangleAround = BlockUtil.getLargestRectangleAround( // ShreddedPaper - async teleportation
++                        blockPos, // ShreddedPaper - async teleportation
++                        blockState.getValue(BlockStateProperties.HORIZONTAL_AXIS), // ShreddedPaper - async teleportation
++                        21, // ShreddedPaper - async teleportation
++                        Direction.Axis.Y, // ShreddedPaper - async teleportation
++                        21, // ShreddedPaper - async teleportation
++                        blockPos1 -> level.getBlockState(blockPos1) == blockState // ShreddedPaper - async teleportation
++                    ); // ShreddedPaper - async teleportation
++                    TeleportTransition.PostTeleportTransition postTeleportTransition = TeleportTransition.PLAY_PORTAL_SOUND.then(entity1 -> entity1.placePortalTicket(blockPos)); // ShreddedPaper - async teleportation
++                    return createDimensionTransition(level, largestRectangleAround, sourceAxis, relativePortalPosition, entity, postTeleportTransition); // ShreddedPaper - async teleportation
++                }, r -> ShreddedPaper.ensureSync(entity, level, foundBox, r)); // ShreddedPaper - async teleportation
++            } else if (result.canCreatePortal()) { // CraftBukkit
++                final BoundingBox createBox = this.portalOwnershipBox(exitPos, result.createRadius() + 4); // ShreddedPaper - async teleportation
++                return this.loadPortalChunksAsync(level, exitPos, result.createRadius() + 4, net.minecraft.world.level.chunk.status.ChunkStatus.FULL).thenApplyAsync(ignored -> { // ShreddedPaper - async teleportation
++                    Optional<BlockUtil.FoundRectangle> optional1 = level.getPortalForcer().createPortal(exitPos, sourceAxis, entity, result.createRadius()); // CraftBukkit // ShreddedPaper - async teleportation
++                    if (optional1.isEmpty()) { // ShreddedPaper - async teleportation
++                        // LOGGER.error("Unable to create a portal, likely target out of worldborder"); // CraftBukkit
++                        return null; // ShreddedPaper - async teleportation
++                    } // ShreddedPaper - async teleportation
++
++                    BlockUtil.FoundRectangle largestRectangleAround = optional1.get(); // ShreddedPaper - async teleportation
++                    TeleportTransition.PostTeleportTransition postTeleportTransition = TeleportTransition.PLAY_PORTAL_SOUND.then(TeleportTransition.PLACE_PORTAL_TICKET); // ShreddedPaper - async teleportation
++                    return createDimensionTransition(level, largestRectangleAround, sourceAxis, relativePortalPosition, entity, postTeleportTransition); // ShreddedPaper - async teleportation
++                }, r -> ShreddedPaper.ensureSync(entity, level, createBox, r)); // ShreddedPaper - async teleportation
++            } // ShreddedPaper - async teleportation
++            // CraftBukkit start
++            return CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
++            // CraftBukkit end
++        }); // ShreddedPaper - async teleportation
++    }
++    private BoundingBox portalOwnershipBox(BlockPos center, int radius) { // ShreddedPaper - async teleportation
++        final int safeRadius = Math.max(0, radius); // ShreddedPaper - async teleportation
++        return new BoundingBox( // ShreddedPaper - async teleportation
++            center.getX() - safeRadius, // ShreddedPaper - async teleportation
++            center.getY(), // ShreddedPaper - async teleportation
++            center.getZ() - safeRadius, // ShreddedPaper - async teleportation
++            center.getX() + safeRadius, // ShreddedPaper - async teleportation
++            center.getY(), // ShreddedPaper - async teleportation
++            center.getZ() + safeRadius // ShreddedPaper - async teleportation
++        ); // ShreddedPaper - async teleportation
++    } // ShreddedPaper - async teleportation
++
++    private CompletableFuture<Void> loadPortalChunksAsync(ServerLevel level, BlockPos center, int radius, net.minecraft.world.level.chunk.status.ChunkStatus status) { // ShreddedPaper - async teleportation
++        final int safeRadius = Math.max(0, radius); // ShreddedPaper - async teleportation
++        final int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() - safeRadius); // ShreddedPaper - async teleportation
++        final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() - safeRadius); // ShreddedPaper - async teleportation
++        final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() + safeRadius); // ShreddedPaper - async teleportation
++        final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() + safeRadius); // ShreddedPaper - async teleportation
++        final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
++        for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
++            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
++                chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, status, true)); // ShreddedPaper - async teleportation
++            } // ShreddedPaper - async teleportation
++        } // ShreddedPaper - async teleportation
++
++        return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenRun(() -> { // ShreddedPaper - async teleportation
++            for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
++                if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
++                    throw new IllegalStateException("Could not load Nether portal chunk for " + center + " at status " + status); // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
++            } // ShreddedPaper - async teleportation
++        }); // ShreddedPaper - async teleportation
++    }
++
  
      private static TeleportTransition getDimensionTransitionFromExit(
+         Entity entity, BlockPos pos, BlockUtil.FoundRectangle rectangle, ServerLevel level, TeleportTransition.PostTeleportTransition postTeleportTransition

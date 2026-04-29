@@ -7,13 +7,14 @@
  import com.google.common.base.Splitter;
  import com.google.common.collect.ImmutableList;
  import com.google.common.collect.Lists;
-@@ -10,6 +_,9 @@
+@@ -10,6 +_,10 @@
  import com.mojang.jtracy.DiscontinuousFrame;
  import com.mojang.jtracy.TracyClient;
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperPlayerTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ObjectArraySet;
  import java.io.File;
@@ -67,16 +68,15 @@
          this.forceTicks = true;
          // CraftBukkit end
          ChunkLoadCounter chunkLoadCounter = new ChunkLoadCounter();
-@@ -1018,6 +_,8 @@
+@@ -1018,6 +_,7 @@
  
          LOGGER.info("Stopping server");
          Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
 +        org.bxteam.divinemc.async.pathfinding.AsyncPath.shutdownExecutor(); // DivineMC - Async Pathfinding
-+        ShreddedPaperTickThread.stopServer(); // ShreddedPaper
          // Purpur start - UPnP Port Forwarding
          if (upnp) {
              if (dev.omega24.upnp4j.UPnP4J.close(this.getPort(), dev.omega24.upnp4j.util.Protocol.TCP)) {
-@@ -1057,7 +_,7 @@
+@@ -1057,11 +_,16 @@
  
              for (ServerLevel serverLevelx : this.getAllLevels()) {
                  serverLevelx.getChunkSource().deactivateTicketsOnClosing();
@@ -85,13 +85,46 @@
              }
  
              this.waitUntilNextTick();
+         }
++        try { // ShreddedPaper start - stop independent region ticks before final world save
++            RegionTickScheduler.shutdownGlobal();
++        } catch (final Throwable throwable) {
++            LOGGER.error("Failed to stop independent ShreddedPaper region scheduler cleanly; continuing server shutdown", throwable);
++        } // ShreddedPaper end
+         // Paper start - rewrite chunk system
+         // note: make sure we call deactivateTicketsOnClosing
+         for (final ServerLevel world : this.getAllLevels()) {
+@@ -1093,6 +_,11 @@
+         LOGGER.info("Waiting for all RegionFile I/O tasks to complete...");
+         ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO.flush((MinecraftServer)(Object)this);
+         LOGGER.info("All RegionFile I/O tasks to complete");
++        try { // ShreddedPaper start - stop shared tick executor after RegionFile I/O has drained
++            ShreddedPaperTickThread.stopServer();
++        } catch (final Throwable throwable) {
++            LOGGER.error("Failed to stop ShreddedPaper tick threads cleanly; continuing server shutdown", throwable);
++        } // ShreddedPaper end
+         if ((Object)this instanceof net.minecraft.server.dedicated.DedicatedServer) {
+             ca.spottedleaf.moonrise.common.util.MoonriseCommon.haltExecutors();
+         }
+@@ -1100,6 +_,7 @@
+         // Paper start - Improved watchdog support - move final shutdown items here
+         Util.shutdownExecutors();
+         this.onServerExit();
++        this.hasFullyShutdown = true; // ShreddedPaper - Watchdog emergency shutdown completion marker
+         // Paper end - Improved watchdog support - move final shutdown items here
+     }
+ 
 @@ -1622,7 +_,9 @@
                      this.autoSave();
                  }
  
-+                MinecraftServer.isBukkitSchedulerHearbeat = true; // ShreddedPaper
-                 this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
-+                MinecraftServer.isBukkitSchedulerHearbeat = false; // ShreddedPaper
++                try { // ShreddedPaper start - track Bukkit scheduler heartbeat
++                    MinecraftServer.isBukkitSchedulerHearbeat = true;
+-                this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++                    this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++                } finally {
++                    MinecraftServer.isBukkitSchedulerHearbeat = false;
++                } // ShreddedPaper end - track Bukkit scheduler heartbeat
                  // Paper start - avoid issues with certain tasks not processing during sleep
                  Runnable task;
                  while ((task = this.processQueue.poll()) != null) {
@@ -108,9 +141,13 @@
      protected void tickChildren(BooleanSupplier hasTimeLeft) {
          ProfilerFiller profilerFiller = Profiler.get();
          this.getPlayerList().getPlayers().forEach(serverPlayer1 -> serverPlayer1.connection.suspendFlushing());
-+        MinecraftServer.isBukkitSchedulerHearbeat = true; // ShreddedPaper
-         this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
-+        MinecraftServer.isBukkitSchedulerHearbeat = false; // ShreddedPaper
++        try { // ShreddedPaper start - track Bukkit scheduler heartbeat
++            MinecraftServer.isBukkitSchedulerHearbeat = true;
+-        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++            this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++        } finally {
++            MinecraftServer.isBukkitSchedulerHearbeat = false;
++        } // ShreddedPaper end - track Bukkit scheduler heartbeat
          // Paper start - optimise Folia entity scheduler
 -        ((io.papermc.paper.threadedregions.scheduler.FoliaGlobalRegionScheduler)org.bukkit.Bukkit.getGlobalRegionScheduler()).tick();
 -        for (io.papermc.paper.threadedregions.EntityScheduler scheduler : this.entitySchedulerTickList.getAllSchedulers()) {
@@ -143,7 +180,7 @@
 +        for (ServerPlayer player : this.playerList.getPlayers()) {
 +            if (player.isRemoved()) {
 +                ShreddedPaper.runSync((ServerLevel) player.level(), player.chunkPosition(), () -> {
-+                    if (TickThread.isTickThreadFor(player)) {
++                    if (TickThread.isTickThreadFor(player) && !player.getBukkitEntity().taskScheduler.isRetired()) {
 +                        player.getBukkitEntity().taskScheduler.executeTick();
 +                        ShreddedPaperPlayerTicker.tickPlayer(player);
 +                    }
@@ -192,17 +229,19 @@
          profilerFiller.popPush("players");
          this.playerList.tick();
          profilerFiller.popPush("debugSubscribers");
-@@ -1887,6 +_,9 @@
+@@ -1885,9 +_,12 @@
+ 
+         profilerFiller.popPush("send chunks");
  
 -        for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
 -            serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
 -            serverPlayer.connection.resumeFlushing();
--        }
 +        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) { // ShreddedPaper - independent regions flush owner players inside region tick
 +            for (ServerPlayer serverPlayer : this.playerList.getPlayers()) {
 +                serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
 +                serverPlayer.connection.keepConnectionAlive(); // ShreddedPaper - send the ping packet right before flushing
 +                serverPlayer.connection.resumeFlushing();
 +            }
-+        }
+         }
  
+         profilerFiller.pop();

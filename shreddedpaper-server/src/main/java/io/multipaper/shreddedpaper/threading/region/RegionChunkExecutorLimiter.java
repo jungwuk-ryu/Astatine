@@ -4,6 +4,7 @@ import ca.spottedleaf.concurrentutil.executor.PrioritisedExecutor;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.RegionPos;
+import io.multipaper.shreddedpaper.threading.region.events.ChunkGenerationTaskEvent;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -13,9 +14,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class RegionChunkExecutorLimiter {
 
+    private static final AtomicLong GENERATION_TIMING_SAMPLE_COUNTER = new AtomicLong();
     private static final ThreadPoolExecutor EMERGENCY_EXECUTOR = new ThreadPoolExecutor(
             1,
             Math.max(1, Runtime.getRuntime().availableProcessors() / 8),
@@ -91,7 +94,7 @@ public final class RegionChunkExecutorLimiter {
 
         final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
         final RegionRuntimeState state = level.chunkSource.tickingRegions.getOrCreateRuntimeStateForCell(regionPos);
-        return new PermitTask(chunkX, chunkZ, state.chunkIoTracker(), executor, runnable, priority, workType);
+        return new PermitTask(level, chunkX, chunkZ, regionPos, state.ownerId(), state.chunkIoTracker(), executor, runnable, priority, workType);
     }
 
     public enum WorkType {
@@ -116,9 +119,10 @@ public final class RegionChunkExecutorLimiter {
         private static final int CANCELLED = 3;
         private static final int COMPLETED = 4;
 
+        private final ServerLevel level;
         private final int chunkX;
         private final int chunkZ;
-        private final RegionChunkIoTracker tracker;
+        private final RegionPos regionPos;
         private final WorkType workType;
         private final PrioritisedExecutor.PrioritisedTask delegate;
         private final AtomicInteger state = new AtomicInteger(NEW);
@@ -131,29 +135,44 @@ public final class RegionChunkExecutorLimiter {
         private final AtomicBoolean backpressureRetryOutstanding = new AtomicBoolean();
         private final Object deferredLock = new Object();
         private volatile Priority requestedPriority;
+        private volatile long trackerOwnerId;
+        private volatile RegionChunkIoTracker tracker;
         private volatile BacklogRetry backlogRetry;
         private volatile BackpressureRetry backpressureRetry;
+        private volatile boolean timingSampled;
+        private volatile long timingQueuedNanos;
+        private volatile long timingAdmittedNanos;
+        private volatile long timingOwnerAtAdmission = Long.MIN_VALUE;
+        private volatile Priority timingAdmittedPriority;
+        private volatile String timingAdmissionPath = "unknown";
         private boolean deferredOutstanding;
 
         private PermitTask(
+                final ServerLevel level,
                 final int chunkX,
                 final int chunkZ,
+                final RegionPos regionPos,
+                final long trackerOwnerId,
                 final RegionChunkIoTracker tracker,
                 final PrioritisedExecutor executor,
                 final Runnable runnable,
                 final Priority priority,
                 final WorkType workType
         ) {
+            this.level = level;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
+            this.regionPos = regionPos;
+            this.trackerOwnerId = trackerOwnerId;
             this.tracker = tracker;
             this.workType = workType;
             this.requestedPriority = priority;
             this.delegate = executor.createTask(() -> {
+                final long startedNanos = this.timingSampled ? System.nanoTime() : 0L;
                 try {
                     runnable.run();
                 } finally {
-                    this.completeAfterRun();
+                    this.completeAfterRun(startedNanos);
                 }
             }, priority);
         }
@@ -168,6 +187,7 @@ public final class RegionChunkExecutorLimiter {
             if (!this.state.compareAndSet(NEW, WAITING)) {
                 return false;
             }
+            this.beginTimingSample();
             return this.acquireWaitingOrBacklog(false);
         }
 
@@ -209,6 +229,7 @@ public final class RegionChunkExecutorLimiter {
             if (!this.state.compareAndSet(NEW, WAITING)) {
                 return false;
             }
+            this.beginTimingSample();
             return this.acquireWaitingOrBacklog(true);
         }
 
@@ -292,6 +313,9 @@ public final class RegionChunkExecutorLimiter {
             if (this.state.get() != WAITING) {
                 return false;
             }
+            if (!this.ensureWaitingOnCurrentOwner()) {
+                return this.deferBacklogAdmission(executeNow);
+            }
 
             final Priority requestedPriority = this.requestedPriority;
             final RegionChunkIoTracker.Admission admission = this.tracker.tryAcquireExecutor(
@@ -319,6 +343,7 @@ public final class RegionChunkExecutorLimiter {
             if (admission.priority() != requestedPriority) {
                 this.delegate.setPriority(admission.priority());
             }
+            this.recordTimingAdmission("normal", admission.priority());
 
             final boolean started = executeNow ? this.delegate.execute() : this.delegate.queue();
             if (!started) {
@@ -400,6 +425,7 @@ public final class RegionChunkExecutorLimiter {
             if (fallbackPriority != this.requestedPriority) {
                 this.delegate.setPriority(fallbackPriority);
             }
+            this.recordTimingAdmission("overflow", fallbackPriority);
 
             final boolean started = executeNow ? this.delegate.execute() : this.delegate.queue();
             if (!started) {
@@ -414,12 +440,24 @@ public final class RegionChunkExecutorLimiter {
             if (this.state.get() != WAITING) {
                 return;
             }
+            if (this.hasOwnerChanged()) {
+                this.releaseWaiting();
+                this.refreshTrackerForCurrentOwner();
+                this.acquireWaitingOrBacklog(executeNow);
+                return;
+            }
             this.tryStart(executeNow);
         }
 
         private void retryBackpressured(final boolean executeNow, final BackpressureRetry retry) {
             if (this.state.get() != WAITING) {
                 this.clearBackpressureRetry();
+                return;
+            }
+            if (this.hasOwnerChanged()) {
+                this.clearBackpressureRetry();
+                this.refreshTrackerForCurrentOwner();
+                this.startOverflowOrBackpressure(executeNow);
                 return;
             }
             if (this.tracker.hasExecutorDeferredRetryCapacity()) {
@@ -440,9 +478,11 @@ public final class RegionChunkExecutorLimiter {
             this.tracker.requeueExecutorBackpressureRetry(retry);
         }
 
-        private void completeAfterRun() {
+        private void completeAfterRun(final long startedNanos) {
+            final long completedNanos = this.timingSampled ? System.nanoTime() : 0L;
             this.releasePermit();
             this.releaseOverflow();
+            this.emitTimingEvent(startedNanos, completedNanos);
             this.state.set(COMPLETED);
         }
 
@@ -468,6 +508,7 @@ public final class RegionChunkExecutorLimiter {
         }
 
         private boolean acquireWaitingOrBacklog(final boolean executeNow) {
+            this.refreshTrackerForCurrentOwner();
             if (this.acquireWaiting()) {
                 return this.tryStart(executeNow);
             }
@@ -499,6 +540,12 @@ public final class RegionChunkExecutorLimiter {
                 this.clearBacklogRetry();
                 return;
             }
+            if (this.hasOwnerChanged()) {
+                this.clearBacklogRetry();
+                this.refreshTrackerForCurrentOwner();
+                this.acquireWaitingOrBacklog(executeNow);
+                return;
+            }
             if (this.acquireWaiting()) {
                 this.clearBacklogRetry();
                 this.tryStart(executeNow);
@@ -512,6 +559,7 @@ public final class RegionChunkExecutorLimiter {
                 return false;
             }
             this.tracker.executorBacklogEmergencyStarted(this.chunkX, this.chunkZ, this.workType.eventName, this.requestedPriority);
+            this.recordTimingAdmission("emergency", this.requestedPriority);
             try {
                 EMERGENCY_EXECUTOR.execute(() -> {
                     try {
@@ -585,6 +633,31 @@ public final class RegionChunkExecutorLimiter {
             }
         }
 
+        private boolean ensureWaitingOnCurrentOwner() {
+            if (!this.hasOwnerChanged()) {
+                return true;
+            }
+
+            this.releaseWaiting();
+            this.refreshTrackerForCurrentOwner();
+            return this.acquireWaiting();
+        }
+
+        private boolean hasOwnerChanged() {
+            final RegionRuntimeState currentState = this.level.chunkSource.tickingRegions.runtimeStateForCellOrNull(this.regionPos);
+            return currentState != null && currentState.ownerId() != this.trackerOwnerId;
+        }
+
+        private void refreshTrackerForCurrentOwner() {
+            final RegionRuntimeState currentState = this.level.chunkSource.tickingRegions.runtimeStateForCellOrNull(this.regionPos);
+            if (currentState == null || currentState.ownerId() == this.trackerOwnerId) {
+                return;
+            }
+
+            this.tracker = currentState.chunkIoTracker();
+            this.trackerOwnerId = currentState.ownerId();
+        }
+
         private boolean acquireWaiting() {
             if (!this.tracker.tryBeginExecutorWaiting(this.chunkX, this.chunkZ, this.workType.eventName, this.requestedPriority)) {
                 return false;
@@ -597,6 +670,61 @@ public final class RegionChunkExecutorLimiter {
             if (this.waitingHeld.getAndSet(false)) {
                 this.tracker.endExecutorWaiting();
             }
+        }
+
+        private void beginTimingSample() {
+            if (this.workType != WorkType.GENERATION) {
+                return;
+            }
+
+            final ShreddedPaperConfiguration.Performance.Chunks.WorldgenComputationCache config = ShreddedPaperConfiguration.get().performance.chunks.worldgenComputationCache;
+            if (!config.instrumentationEnabled) {
+                return;
+            }
+
+            final int sampleRate = Math.max(1, config.instrumentationSampleRate);
+            final long count = GENERATION_TIMING_SAMPLE_COUNTER.incrementAndGet();
+            if (sampleRate != 1 && count % sampleRate != 0L) {
+                return;
+            }
+
+            this.timingQueuedNanos = System.nanoTime();
+            this.timingSampled = true;
+        }
+
+        private void recordTimingAdmission(final String path, final Priority admittedPriority) {
+            if (!this.timingSampled) {
+                return;
+            }
+            this.timingAdmittedNanos = System.nanoTime();
+            this.timingOwnerAtAdmission = this.trackerOwnerId;
+            this.timingAdmittedPriority = admittedPriority;
+            this.timingAdmissionPath = path;
+        }
+
+        private void emitTimingEvent(final long startedNanos, final long completedNanos) {
+            if (!this.timingSampled || startedNanos == 0L) {
+                return;
+            }
+
+            final long admittedNanos = this.timingAdmittedNanos;
+            final ChunkGenerationTaskEvent event = new ChunkGenerationTaskEvent();
+            event.world = ca.spottedleaf.moonrise.common.util.WorldUtil.getWorldName(this.level);
+            event.regionX = this.regionPos.x;
+            event.regionZ = this.regionPos.z;
+            event.chunkX = this.chunkX;
+            event.chunkZ = this.chunkZ;
+            event.workType = this.workType.eventName;
+            event.admissionPath = this.timingAdmissionPath;
+            event.thread = Thread.currentThread().getName();
+            event.requestedPriority = this.requestedPriority.name();
+            event.admittedPriority = (this.timingAdmittedPriority == null ? this.requestedPriority : this.timingAdmittedPriority).name();
+            event.ownerAtAdmission = this.timingOwnerAtAdmission;
+            event.ownerAtExecution = this.trackerOwnerId;
+            event.queueWaitNanos = Math.max(0L, startedNanos - this.timingQueuedNanos);
+            event.runNanos = Math.max(0L, completedNanos - startedNanos);
+            event.permitHeldNanos = admittedNanos == 0L ? 0L : Math.max(0L, completedNanos - admittedNanos);
+            event.commit();
         }
 
         private BacklogRetry backlogRetry(final boolean executeNow) {

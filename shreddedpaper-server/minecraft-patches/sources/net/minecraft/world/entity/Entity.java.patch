@@ -23,6 +23,14 @@
  import java.util.concurrent.atomic.AtomicInteger;
  import java.util.function.BiConsumer;
  import java.util.function.Predicate;
+@@ -120,6 +_,7 @@
+ import net.minecraft.world.level.block.SoundType;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.border.WorldBorder;
++import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.entity.EntityAccess;
+ import net.minecraft.world.level.entity.EntityInLevelCallback;
+ import net.minecraft.world.level.gameevent.DynamicGameEventListener;
 @@ -148,6 +_,7 @@
  import net.minecraft.world.scores.ScoreHolder;
  import net.minecraft.world.scores.Team;
@@ -40,7 +48,8 @@
      public float maxUpStep; // Purpur - Add option to set armorstand step height
      public boolean noPhysics;
      public final RandomSource random; // Paper - Share random for entities to make them more random // Add toggle for RNG manipulation
-@@ -370,5 +_,7 @@
+@@ -369,6 +_,8 @@
+     public boolean fixedPose = false; // Paper - Expand Pose API
      private final int despawnTime; // Paper - entity despawn time limit
      public int totalEntityAge; // Paper - age-like counter for all entities
 +    public boolean activatedPriorityReset = false; // ShreddedPaper - DivineMC: Dynamic Activation of Brain
@@ -48,7 +57,10 @@
      public final io.papermc.paper.entity.activation.ActivationType activationType = io.papermc.paper.entity.activation.ActivationType.activationTypeFor(this); // Paper - EAR 2/tracking ranges
      // Paper start - EAR 2
      public final boolean defaultActivationState;
-@@ -565,9 +_,16 @@
+@@ -562,6 +_,37 @@
+     }
+     // Purpur end - copied from Mob - API for any mob to burn daylight
+ 
 +    private static UUID createRegionThreadSafeUUID() { // ShreddedPaper - avoid shared entity RNG under parallel region spawn
 +        final java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
 +        final long most = random.nextLong() & -61441L | 16384L;
@@ -56,16 +68,42 @@
 +        return new UUID(most, least);
 +    }
 +
++    private boolean shreddedpaper$canMutateAt(BlockPos pos) { // ShreddedPaper - region-owned entity mutation guard
++        return !(this.level instanceof ServerLevel serverLevel) || TickThread.isTickThreadFor(serverLevel, pos);
++    }
++
++    private Vec3 shreddedpaper$clipMovementToOwnedRegion(Vec3 movement) { // ShreddedPaper - keep region ticks from crossing ownership in a single move
++        if (!(this.level instanceof ServerLevel) || movement.horizontalDistanceSqr() == 0.0D) {
++            return movement;
++        }
++
++        final BlockPos target = BlockPos.containing(this.getX() + movement.x, this.getY() + movement.y, this.getZ() + movement.z);
++        if (this.shreddedpaper$canMutateAt(target)) {
++            return movement;
++        }
++
++        final RegionPos currentRegion = RegionPos.forChunk(this.chunkPosition());
++        final double minX = currentRegion.getLowerChunkX() * 16.0D + 1.0E-7D;
++        final double maxX = (currentRegion.getUpperChunkX() + 1) * 16.0D - 1.0E-7D;
++        final double minZ = currentRegion.getLowerChunkZ() * 16.0D + 1.0E-7D;
++        final double maxZ = (currentRegion.getUpperChunkZ() + 1) * 16.0D - 1.0E-7D;
++        final double clippedX = Mth.clamp(this.getX() + movement.x, minX, maxX) - this.getX();
++        final double clippedZ = Mth.clamp(this.getZ() + movement.z, minZ, maxZ) - this.getZ();
++        return new Vec3(clippedX, movement.y, clippedZ);
++    }
++
      public Entity(EntityType<?> type, Level level) {
          this.type = type;
          this.level = level;
-         this.dimensions = type.getDimensions();
+@@ -569,7 +_,7 @@
          this.maxAirTicks = level == null || this.getDefaultMaxAirSupply() != Entity.TOTAL_AIR_SUPPLY ? this.getDefaultMaxAirSupply() : this.level.purpurConfig.drowningAirTicks; // Purpur - Drowning Settings
          // Purpur start - Add toggle for RNG manipulation
          this.random = level == null || level.purpurConfig.entitySharedRandom ? SHARED_RANDOM : RandomSource.create();
 -        this.uuid = Mth.createInsecureUUID(this.random);
 +        this.uuid = createRegionThreadSafeUUID(); // ShreddedPaper - avoid shared entity RNG under parallel region spawn
          this.stringUUID = this.uuid.toString();
+         // Purpur end - Add toggle for RNG manipulation
+         this.position = Vec3.ZERO;
 @@ -709,7 +_,7 @@
      public void resendPossiblyDesyncedEntityData(net.minecraft.server.level.ServerPlayer player) {
          if (player.getBukkitEntity().canSee(this.getBukkitEntity())) {
@@ -81,7 +119,7 @@
      public void setPos(double x, double y, double z) {
 +        // ShreddedPaper start
 +        Vec3 vec3 = new Vec3(x, y, z);
-+        if (!this.firstTick && !this.blockPosition().equals(BlockPos.containing(vec3)) && (!TickThread.isTickThreadFor(level, vec3) || !TickThread.isTickThreadFor(this))) {
++        if (!this.firstTick && !this.blockPosition().equals(BlockPos.containing(vec3)) && (!this.shreddedpaper$canMutateAt(BlockPos.containing(vec3)) || !TickThread.isTickThreadFor(this))) {
 +            LOGGER.error("Trying to async move {} to {} {} {}", this, x, y, z);
 +            TickThread.ensureTickThread(this, "Cannot async move entity");
 +            TickThread.ensureTickThread(level, BlockPos.containing(vec3), "Cannot move entity to async destination");
@@ -90,18 +128,52 @@
          this.setPosRaw(x, y, z, true); // Paper - Block invalid positions and bounding box; force update
          // this.setBoundingBox(this.makeBoundingBox()); // Paper - Block invalid positions and bounding box; move into setPosRaw
      }
-@@ -1148,7 +_,9 @@
+@@ -1148,7 +_,10 @@
      public void move(MoverType type, Vec3 movement) {
          final Vec3 originalMovement = movement; // Paper - Expose pre-collision velocity
          // Paper start - detailed watchdog information
 -        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread("Cannot move an entity off-main");
 +        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this, "Cannot move an entity off-main"); // ShreddedPaper
-+        BlockPos newPos = new BlockPos((int) (this.getX() + movement.x), (int) (this.getY() + movement.y), (int) (this.getZ() + movement.z)); // ShreddedPaper - check destination region
-+        TickThread.ensureTickThread((ServerLevel) this.level, newPos, "Cannot move an entity into off-main"); // ShreddedPaper - check destination region
++        BlockPos newPos = BlockPos.containing(this.getX() + movement.x, this.getY() + movement.y, this.getZ() + movement.z); // ShreddedPaper - check destination region
++        if (!this.shreddedpaper$canMutateAt(newPos)) { movement = this.shreddedpaper$clipMovementToOwnedRegion(movement); newPos = BlockPos.containing(this.getX() + movement.x, this.getY() + movement.y, this.getZ() + movement.z); } // ShreddedPaper - clip boundary-crossing movement
++        if (!this.shreddedpaper$canMutateAt(newPos)) TickThread.ensureTickThread((ServerLevel) this.level, newPos, "Cannot move an entity into off-main"); // ShreddedPaper - check destination region
          synchronized (this.posLock) {
              this.moveStartX = this.getX();
              this.moveStartY = this.getY();
-@@ -1476,7 +_,7 @@
+@@ -1231,7 +_,8 @@
+             }
+ 
+             BlockPos onPosLegacy = this.getOnPosLegacy();
+-            BlockState blockState = this.level().getBlockState(onPosLegacy);
++            BlockState blockState = this.level().getBlockStateIfLoaded(onPosLegacy); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            if (blockState == null) blockState = Blocks.AIR.defaultBlockState(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
+             if (this.isLocalInstanceAuthoritative()) {
+                 this.checkFallDamage(vec3.y, this.onGround(), blockState, onPosLegacy);
+             }
+@@ -1298,7 +_,8 @@
+         float f1 = (float)(movement.length() * 0.6F);
+         float f2 = (float)(movement.horizontalDistance() * 0.6F);
+         BlockPos onPos = this.getOnPos();
+-        BlockState blockState = this.level().getBlockState(onPos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(onPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        if (blockState == null) blockState = Blocks.AIR.defaultBlockState(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
+         boolean isStateClimbable = this.isStateClimbable(blockState);
+         this.moveDist += isStateClimbable ? f1 : f2;
+         this.flyDist += f1;
+@@ -1372,8 +_,10 @@
+         if (this.isAffectedByBlocks()) {
+             if (this.onGround()) {
+                 BlockPos onPosLegacy = this.getOnPosLegacy();
+-                BlockState blockState = this.level().getBlockState(onPosLegacy);
+-                blockState.getBlock().stepOn(this.level(), onPosLegacy, blockState, this);
++                BlockState blockState = this.level().getBlockStateIfLoaded(onPosLegacy); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                if (blockState != null) { // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                    blockState.getBlock().stepOn(this.level(), onPosLegacy, blockState, this);
++                }
+             }
+ 
+             boolean isOnFire = this.isOnFire();
+@@ -1476,12 +_,13 @@
      }
  
      protected BlockPos getOnPos(float yOffset) {
@@ -110,7 +182,147 @@
              BlockPos blockPos = this.mainSupportingBlockPos.get();
              if (!(yOffset > 1.0E-5F)) {
                  return blockPos;
-@@ -2116,7 +_,10 @@
+             } else {
+-                BlockState blockState = this.level().getBlockState(blockPos);
++                BlockState blockState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                if (blockState == null) return blockPos; // ShreddedPaper - avoid sync chunk loads during independent region ticks
+                 return (!(yOffset <= 0.5) || !blockState.is(BlockTags.FENCES))
+                         && !blockState.is(BlockTags.WALLS)
+                         && !(blockState.getBlock() instanceof FenceGateBlock)
+@@ -1497,16 +_,23 @@
+     }
+ 
+     protected float getBlockJumpFactor() {
+-        float jumpFactor = this.level().getBlockState(this.blockPosition()).getBlock().getJumpFactor();
+-        float jumpFactor1 = this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getJumpFactor();
++        BlockState blockState = this.level().getBlockStateIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        float jumpFactor = blockState == null ? 1.0F : blockState.getBlock().getJumpFactor(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        BlockState belowState = this.level().getBlockStateIfLoaded(this.getBlockPosBelowThatAffectsMyMovement()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        float jumpFactor1 = belowState == null ? 1.0F : belowState.getBlock().getJumpFactor(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
+         return jumpFactor == 1.0 ? jumpFactor1 : jumpFactor;
+     }
+ 
+     protected float getBlockSpeedFactor() {
+-        BlockState blockState = this.level().getBlockState(this.blockPosition());
++        BlockState blockState = this.level().getBlockStateIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            return 1.0F;
++        }
+         float speedFactor = blockState.getBlock().getSpeedFactor();
+         if (!blockState.is(Blocks.WATER) && !blockState.is(Blocks.BUBBLE_COLUMN)) {
+-            return speedFactor == 1.0 ? this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getSpeedFactor() : speedFactor;
++            if (speedFactor != 1.0F) return speedFactor; // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            BlockState belowState = this.level().getBlockStateIfLoaded(this.getBlockPosBelowThatAffectsMyMovement()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            return belowState == null ? 1.0F : belowState.getBlock().getSpeedFactor(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
+         } else {
+             return speedFactor;
+         }
+@@ -1757,8 +_,8 @@
+                     return false;
+                 } else {
+                     atomicInteger.set(index);
+-                    BlockState blockState = this.level().getBlockState(pos);
+-                    if (blockState.isAir()) {
++                    BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                    if (blockState == null || blockState.isAir()) { // ShreddedPaper - avoid sync chunk loads during independent region ticks
+                         if (flag1) {
+                             this.debugBlockIntersection((ServerLevel)this.level(), pos.immutable(), false, false);
+                         }
+@@ -1836,7 +_,8 @@
+     public BlockPos adjustSpawnLocation(ServerLevel level, BlockPos pos) {
+         BlockPos blockPos = level.getRespawnData().pos();
+         Vec3 center = blockPos.getCenter();
+-        int i = level.getChunkAt(blockPos).getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockPos.getX(), blockPos.getZ()) + 1;
++        final LevelChunk chunk = level.getChunkIfLoaded(blockPos);
++        int i = chunk == null ? blockPos.getY() : chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockPos.getX(), blockPos.getZ()) + 1;
+         return BlockPos.containing(center.x, i, center.z);
+     }
+ 
+@@ -1867,7 +_,8 @@
+ 
+     protected BlockPos getPrimaryStepSoundBlockPos(BlockPos pos) {
+         BlockPos blockPos = pos.above();
+-        BlockState blockState = this.level().getBlockState(blockPos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        if (blockState == null) return pos; // ShreddedPaper - avoid sync chunk loads during independent region ticks
+         return !blockState.is(BlockTags.INSIDE_STEP_SOUND_BLOCKS) && !blockState.is(BlockTags.COMBINATION_STEP_SOUND_BLOCKS) ? pos : blockPos;
+     }
+ 
+@@ -1966,7 +_,8 @@
+         if (!this.touchingUnloadedChunk()) {
+             this.checkSupportingBlock(onGround, new Vec3(x, y, z));
+             BlockPos onPosLegacy = this.getOnPosLegacy();
+-            BlockState blockState = this.level().getBlockState(onPosLegacy);
++            BlockState blockState = this.level().getBlockStateIfLoaded(onPosLegacy); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            if (blockState == null) blockState = Blocks.AIR.defaultBlockState(); // ShreddedPaper - avoid sync chunk loads during independent region ticks
+             this.checkFallDamage(y, onGround, blockState, onPosLegacy);
+         }
+     }
+@@ -1984,7 +_,10 @@
+                         GameEvent.HIT_GROUND,
+                         this.position,
+                         GameEvent.Context.of(
+-                            this, this.mainSupportingBlockPos.<BlockState>map(supportingPos -> this.level().getBlockState(supportingPos)).orElse(state)
++                            this, this.mainSupportingBlockPos.<BlockState>map(supportingPos -> {
++                                final BlockState supportingState = this.level().getBlockStateIfLoaded(supportingPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                                return supportingState == null ? state : supportingState; // ShreddedPaper - avoid sync chunk loads during independent region ticks
++                            }).orElse(state)
+                         )
+                     );
+             }
+@@ -2065,6 +_,9 @@
+     }
+ 
+     protected boolean updateInWaterStateAndDoFluidPushing() {
++        if (this.shreddedpaper$deferFluidPushingIfNeeded()) { // ShreddedPaper - async fluid ownership
++            return this.wasTouchingWater || this.fluidHeight.getDouble(FluidTags.LAVA) > 0.0D; // ShreddedPaper - async fluid ownership
++        } // ShreddedPaper - async fluid ownership
+         this.fluidHeight.clear();
+         this.updateInWaterStateAndDoWaterCurrentPushing();
+         double d = this.level.environmentAttributes().getDimensionValue(EnvironmentAttributes.FAST_LAVA) ? 0.007 : 0.0023333333333333335;
+@@ -2072,6 +_,40 @@
+         return this.isInWater() || flag;
+     }
+ 
++    private boolean shreddedpaper$deferFluidPushingIfNeeded() { // ShreddedPaper - async fluid ownership
++        if (!(this.level instanceof ServerLevel serverLevel) || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - async fluid ownership
++            return false; // ShreddedPaper - async fluid ownership
++        } // ShreddedPaper - async fluid ownership
++        net.minecraft.world.level.levelgen.structure.BoundingBox fluidBox = this.shreddedpaper$fluidPushingOwnershipBox(); // ShreddedPaper - async fluid ownership
++        if (ShreddedPaper.isSync(serverLevel, fluidBox)) { // ShreddedPaper - async fluid ownership
++            return false; // ShreddedPaper - async fluid ownership
++        } // ShreddedPaper - async fluid ownership
++        ShreddedPaper.ensureSync(this, serverLevel, fluidBox, () -> { // ShreddedPaper - async fluid ownership
++            if (!this.isRemoved()) { // ShreddedPaper - async fluid ownership
++                this.updateInWaterStateAndDoFluidPushing(); // ShreddedPaper - async fluid ownership
++            } // ShreddedPaper - async fluid ownership
++        }); // ShreddedPaper - async fluid ownership
++        return true; // ShreddedPaper - async fluid ownership
++    } // ShreddedPaper - async fluid ownership
++
++    private net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$fluidPushingOwnershipBox() { // ShreddedPaper - async fluid ownership
++        final AABB boundingBox = this.getBoundingBox().deflate(1.0E-3); // ShreddedPaper - async fluid ownership
++        final Level world = this.level; // ShreddedPaper - async fluid ownership
++        final int minSection = ca.spottedleaf.moonrise.common.util.WorldUtil.getMinSection(world); // ShreddedPaper - async fluid ownership
++        final int minBlockX = Mth.floor(boundingBox.minX); // ShreddedPaper - async fluid ownership
++        final int minBlockY = Math.max((minSection << 4), Mth.floor(boundingBox.minY)); // ShreddedPaper - async fluid ownership
++        final int minBlockZ = Mth.floor(boundingBox.minZ); // ShreddedPaper - async fluid ownership
++        final int maxBlockX = Mth.ceil(boundingBox.maxX) - 1; // ShreddedPaper - async fluid ownership
++        final int maxBlockY = Math.min((ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(world) << 4) | 15, Mth.ceil(boundingBox.maxY) - 1); // ShreddedPaper - async fluid ownership
++        final int maxBlockZ = Mth.ceil(boundingBox.maxZ) - 1; // ShreddedPaper - async fluid ownership
++        final int minOwnedY = Math.max((minSection << 4), minBlockY - 1); // ShreddedPaper - async fluid ownership
++        final int maxOwnedY = Math.min((ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(world) << 4) | 15, maxBlockY + 1); // ShreddedPaper - async fluid ownership
++        return net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners( // ShreddedPaper - async fluid ownership
++            new BlockPos(minBlockX - 1, minOwnedY, minBlockZ - 1), // ShreddedPaper - async fluid ownership
++            new BlockPos(maxBlockX + 1, maxOwnedY, maxBlockZ + 1) // ShreddedPaper - async fluid ownership
++        ); // ShreddedPaper - async fluid ownership
++    } // ShreddedPaper - async fluid ownership
++
+     public void updateInWaterStateAndDoWaterCurrentPushing() {
+         if (this.getVehicle() instanceof AbstractBoat abstractBoat && !abstractBoat.isUnderWater()) {
+             this.wasTouchingWater = false;
+@@ -2098,7 +_,10 @@
+                 && abstractBoat.getBoundingBox().minY <= eyeY
          )) {
              BlockPos blockPos = BlockPos.containing(this.getX(), eyeY, this.getZ());
 -            FluidState fluidState = this.level().getFluidState(blockPos);
@@ -121,7 +333,52 @@
              double d = blockPos.getY() + fluidState.getHeight(this.level(), blockPos);
              if (d > eyeY) {
                  fluidState.getTags().forEach(this.fluidOnEyes::add);
-             }
+@@ -2147,11 +_,13 @@
+ 
+     @Deprecated
+     protected BlockState getBlockStateOnLegacy() {
+-        return this.level().getBlockState(this.getOnPosLegacy());
++        final BlockState blockState = this.level().getBlockStateIfLoaded(this.getOnPosLegacy()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        return blockState == null ? Blocks.AIR.defaultBlockState() : blockState; // ShreddedPaper - avoid sync chunk loads during independent region ticks
+     }
+ 
+     public BlockState getBlockStateOn() {
+-        return this.level().getBlockState(this.getOnPos());
++        final BlockState blockState = this.level().getBlockStateIfLoaded(this.getOnPos()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++        return blockState == null ? Blocks.AIR.defaultBlockState() : blockState; // ShreddedPaper - avoid sync chunk loads during independent region ticks
+     }
+ 
+     public boolean canSpawnSprintParticle() {
+@@ -2160,7 +_,8 @@
+ 
+     protected void spawnSprintParticle() {
+         BlockPos onPosLegacy = this.getOnPosLegacy();
+-        BlockState blockState = this.level().getBlockState(onPosLegacy);
++        BlockState blockState = this.level().getBlockStateIfLoaded(onPosLegacy); // ShreddedPaper - avoid sync-loading sprint particle blocks
++        if (blockState == null) return; // ShreddedPaper - avoid sync-loading sprint particle blocks
+         if (blockState.getRenderShape() != RenderShape.INVISIBLE) {
+             Vec3 deltaMovement = this.getDeltaMovement();
+             BlockPos blockPos = this.blockPosition();
+@@ -2233,7 +_,18 @@
+         this.yo = y;
+         this.zo = d1;
+         this.setPos(d, y, d1);
+-        if (this.valid) this.level.getChunk((int) Math.floor(this.getX()) >> 4, (int) Math.floor(this.getZ()) >> 4); // CraftBukkit
++        // ShreddedPaper start - do not sync-load teleport target chunks on independent region workers
++        if (this.valid) {
++            final int chunkX = (int)Math.floor(this.getX()) >> 4;
++            final int chunkZ = (int)Math.floor(this.getZ()) >> 4;
++            if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++                this.level.getChunkIfLoadedImmediately(chunkX, chunkZ);
++            } else {
++                this.level.getChunk(chunkX, chunkZ); // CraftBukkit
++            }
++        }
++        // ShreddedPaper end - do not sync-load teleport target chunks on independent region workers
+     }
+ 
+     public void snapTo(Vec3 pos) {
 @@ -2377,7 +_,7 @@
                  }
                  delta = event.getKnockback();
@@ -131,7 +388,8 @@
              // Paper end - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
              this.needsSync = true;
          }
-@@ -2995,3 +_,7 @@
+@@ -2964,7 +_,11 @@
+ 
          for (int currChunkZ = minChunkZ; currChunkZ <= maxChunkZ; ++currChunkZ) {
              for (int currChunkX = minChunkX; currChunkX <= maxChunkX; ++currChunkX) {
 -                final net.minecraft.world.level.chunk.LevelChunkSection[] sections = chunkSource.getChunk(currChunkX, currChunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true).getSections();
@@ -140,24 +398,42 @@
 +                    continue;
 +                }
 +                final net.minecraft.world.level.chunk.LevelChunkSection[] sections = chunk.getSections();
-@@ -3546,7 +_,9 @@
+ 
+                 for (int currChunkY = minChunkY; currChunkY <= maxChunkY; ++currChunkY) {
+                     final int sectionIdx = currChunkY - minSection;
+@@ -3531,7 +_,9 @@
+     }
+ 
+     public BlockPos portalPos = BlockPos.ZERO; // Purpur - Fix stuck in portals
++    private int shreddedpaper$lastPortalInsideTick = Integer.MIN_VALUE; // ShreddedPaper - async teleportation stale completion guard
+     public void setAsInsidePortal(Portal portal, BlockPos pos) {
++        this.shreddedpaper$lastPortalInsideTick = this.tickCount; // ShreddedPaper - async teleportation stale completion guard
+         if (this.isOnPortalCooldown()) {
+             if (!(level().purpurConfig.playerFixStuckPortal && this instanceof Player && !pos.equals(this.portalPos))) // Purpur - Fix stuck in portals
+             this.setPortalCooldown();
+@@ -3546,7 +_,10 @@
          }
      }
  
 +    private @Nullable CompletableFuture<Void> beingPortalled = null; // ShreddedPaper - async teleportation
++
      protected void handlePortal() {
 +        if (this.beingPortalled != null && !this.beingPortalled.isDone()) return; // Currently being teleported by a portal // ShreddedPaper - async teleportation
          if (this.level() instanceof ServerLevel serverLevel) {
              this.processPortalCooldown();
              if (this.portalProcess != null) {
-@@ -3554,15 +_,19 @@
+@@ -3554,15 +_,39 @@
                      ProfilerFiller profilerFiller = Profiler.get();
                      profilerFiller.push("portal");
                      this.setPortalCooldown();
 -                    TeleportTransition portalDestination = this.portalProcess.getPortalDestination(serverLevel, this);
-+                    this.beingPortalled = this.portalProcess.getPortalDestinationAsync(serverLevel, this).thenCompose(portalDestination -> { // ShreddedPaper - async teleportation
++                    final PortalProcessor portalProcess = this.portalProcess; // ShreddedPaper - async teleportation
++                    final BlockPos portalEntry = portalProcess.getEntryPosition(); // ShreddedPaper - async teleportation
++                    final int portalStartTick = this.tickCount; // ShreddedPaper - async teleportation stale completion guard
++                    final CompletableFuture<Void> portalFuture = portalProcess.getPortalDestinationAsync(serverLevel, this).thenCompose(portalDestination -> { // ShreddedPaper - async teleportation
                      if (portalDestination != null) {
 +                        return CompletableFuture.runAsync(() -> { // ShreddedPaper - async teleportation
++                        if (this.isRemoved() || this.portalProcess == null || this.portalProcess != portalProcess || !portalEntry.equals(this.portalProcess.getEntryPosition()) || this.shreddedpaper$lastPortalInsideTick < portalStartTick || this.tickCount - this.shreddedpaper$lastPortalInsideTick > 1) return; // ShreddedPaper - ignore stale portal handoff
                          ServerLevel level = portalDestination.newLevel();
                          if (serverLevel.isAllowedToEnterPortal(level) && (level.dimension() == serverLevel.dimension() || this.canTeleport(serverLevel, level))
                              )
@@ -167,10 +443,36 @@
 +                        }, r -> ShreddedPaper.ensureSync(this, portalDestination.newLevel(), ChunkPos.of(BlockPos.containing(portalDestination.position())), r)); // ShreddedPaper - async teleportation
                      }
 +                    return CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
-+                    }).thenRun(() -> this.beingPortalled = null); // ShreddedPaper - async teleportation
++                    }); // ShreddedPaper - async teleportation
++                    this.beingPortalled = portalFuture; // ShreddedPaper - async teleportation
++                    portalFuture.whenComplete((ignored, throwable) -> { // ShreddedPaper - async teleportation
++                        Runnable finishPortal = () -> { // ShreddedPaper - async teleportation
++                            if (throwable != null) { // ShreddedPaper - async teleportation
++                                LOGGER.error("Async portal teleport failed for {} from {} portal at {}", this, serverLevel.dimension(), portalEntry, throwable); // ShreddedPaper - async teleportation
++                            } // ShreddedPaper - async teleportation
++                            if (this.beingPortalled == portalFuture) { // ShreddedPaper - async teleportation
++                                this.beingPortalled = null; // ShreddedPaper - async teleportation
++                            } // ShreddedPaper - async teleportation
++                        }; // ShreddedPaper - async teleportation
++                        if (this.level() instanceof ServerLevel && TickThread.isTickThreadFor(this)) { // ShreddedPaper - async teleportation
++                            finishPortal.run(); // ShreddedPaper - async teleportation
++                        } else { // ShreddedPaper - async teleportation
++                            ShreddedPaper.runSync(this, finishPortal, finishPortal); // ShreddedPaper - async teleportation
++                        } // ShreddedPaper - async teleportation
++                    }); // ShreddedPaper - async teleportation
  
                      profilerFiller.pop();
                  } else if (this.portalProcess.hasExpired()) {
+@@ -3913,7 +_,8 @@
+ 
+         for (Direction direction1 : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, Direction.UP}) {
+             mutableBlockPos.setWithOffset(blockPos, direction1);
+-            if (!this.level().getBlockState(mutableBlockPos).isCollisionShapeFullBlock(this.level(), mutableBlockPos)) {
++            final BlockState blockState = this.level().getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            if (blockState != null && !blockState.isCollisionShapeFullBlock(this.level(), mutableBlockPos)) { // ShreddedPaper - avoid sync chunk loads during independent region ticks
+                 double d1 = vec3.get(direction1.getAxis());
+                 double d2 = direction1.getAxisDirection() == Direction.AxisDirection.POSITIVE ? 1.0 - d1 : d1;
+                 if (d2 < d) {
 @@ -4064,6 +_,11 @@
              PositionMoveRotation absolutePosition = PositionMoveRotation.calculateAbsolute(PositionMoveRotation.of(this), PositionMoveRotation.of(teleportTransition), teleportTransition.relatives());
              Vec3 velocity = absolutePosition.deltaMovement(); // Paper
@@ -183,6 +485,59 @@
              // Paper start - gateway-specific teleport event
              final org.bukkit.event.entity.EntityTeleportEvent teleEvent;
              if (this.portalProcess != null && this.portalProcess.isSamePortal(((net.minecraft.world.level.block.EndGatewayBlock) Blocks.END_GATEWAY)) && this.level.getBlockEntity(this.portalProcess.getEntryPosition()) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity theEndGatewayBlockEntity) {
+@@ -4826,6 +_,23 @@
+         final int maxBlockY = Math.min((ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(world) << 4) | 15, Mth.ceil(boundingBox.maxY) - 1);
+         final int maxBlockZ = Mth.ceil(boundingBox.maxZ) - 1;
+ 
++        if (world instanceof ServerLevel serverLevel && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) { // ShreddedPaper - async fluid ownership
++            final int minOwnedY = Math.max((minSection << 4), minBlockY - 1); // ShreddedPaper - async fluid ownership
++            final int maxOwnedY = Math.min((ca.spottedleaf.moonrise.common.util.WorldUtil.getMaxSection(world) << 4) | 15, maxBlockY + 1); // ShreddedPaper - async fluid ownership
++            net.minecraft.world.level.levelgen.structure.BoundingBox fluidBox = net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners( // ShreddedPaper - async fluid ownership
++                new BlockPos(minBlockX - 1, minOwnedY, minBlockZ - 1), // ShreddedPaper - async fluid ownership
++                new BlockPos(maxBlockX + 1, maxOwnedY, maxBlockZ + 1) // ShreddedPaper - async fluid ownership
++            ); // ShreddedPaper - async fluid ownership
++            if (!ShreddedPaper.isSync(serverLevel, fluidBox)) { // ShreddedPaper - async fluid ownership
++                ShreddedPaper.ensureSync(this, serverLevel, fluidBox, () -> { // ShreddedPaper - async fluid ownership
++                    if (!this.isRemoved()) { // ShreddedPaper - async fluid ownership
++                        this.updateInWaterStateAndDoFluidPushing(); // ShreddedPaper - async fluid ownership
++                    } // ShreddedPaper - async fluid ownership
++                }); // ShreddedPaper - async fluid ownership
++                return this.fluidHeight.getDouble(fluid) > 0.0D; // ShreddedPaper - async fluid ownership
++            } // ShreddedPaper - async fluid ownership
++        } // ShreddedPaper - async fluid ownership
++
+         final boolean isPushable = this.isPushedByFluid();
+         final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
+ 
+@@ -4834,11 +_,11 @@
+         double maxHeightDiff = 0.0;
+         boolean inFluid = false;
+ 
+-        final int minChunkX = minBlockX >> 4;
+-        final int maxChunkX = maxBlockX >> 4;
++        final int minChunkX = (minBlockX - 1) >> 4; // ShreddedPaper - async fluid ownership
++        final int maxChunkX = (maxBlockX + 1) >> 4; // ShreddedPaper - async fluid ownership
+ 
+-        final int minChunkZ = minBlockZ >> 4;
+-        final int maxChunkZ = maxBlockZ >> 4;
++        final int minChunkZ = (minBlockZ - 1) >> 4; // ShreddedPaper - async fluid ownership
++        final int maxChunkZ = (maxBlockZ + 1) >> 4; // ShreddedPaper - async fluid ownership
+ 
+         final net.minecraft.world.level.chunk.ChunkSource chunkSource = world.getChunkSource();
+ 
+@@ -4852,7 +_,11 @@
+         // init chunks
+         for (int currChunkZ = minChunkZ; currChunkZ <= maxChunkZ; ++currChunkZ) {
+             for (int currChunkX = minChunkX; currChunkX <= maxChunkX; ++currChunkX) {
+-                sections[currChunkX + chunkLenX*currChunkZ + chunkOffset] = chunkSource.getChunk(currChunkX, currChunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false).getSections();
++                final net.minecraft.world.level.chunk.ChunkAccess chunk = chunkSource.getChunk(currChunkX, currChunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false); // ShreddedPaper - async fluid ownership
++                if (chunk == null) { // ShreddedPaper - async fluid ownership
++                    return false; // ShreddedPaper - async fluid ownership
++                } // ShreddedPaper - async fluid ownership
++                sections[currChunkX + chunkLenX*currChunkZ + chunkOffset] = chunk.getSections(); // ShreddedPaper - async fluid ownership
+             }
+         }
+ 
 @@ -4920,7 +_,7 @@
              pushVector = pushVector.normalize().scale(0.0045000000000000005);
          }
@@ -192,6 +547,16 @@
  
          // note: inFluid = true here as pushVector != 0
          return true;
+@@ -4980,7 +_,8 @@
+ 
+     public BlockState getInBlockState() {
+         if (this.inBlockState == null) {
+-            this.inBlockState = this.level().getBlockState(this.blockPosition());
++            BlockState blockState = this.level().getBlockStateIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads during independent region ticks
++            this.inBlockState = blockState == null ? Blocks.AIR.defaultBlockState() : blockState; // ShreddedPaper - avoid sync chunk loads during independent region ticks
+         }
+ 
+         return this.inBlockState;
 @@ -4996,6 +_,12 @@
  
      public void setDeltaMovement(Vec3 deltaMovement) {

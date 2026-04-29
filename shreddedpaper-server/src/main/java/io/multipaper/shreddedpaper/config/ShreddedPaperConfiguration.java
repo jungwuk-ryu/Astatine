@@ -50,6 +50,8 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
         public int playerActionRegionMailboxCapacity = 2048;
+        @Comment("Maximum queued cross-owner world mutation handoffs per region. Values below 0 use regionMailboxCapacity.")
+        public int ownerHandoffRegionMailboxCapacity = 2048;
         @Comment("Maximum queued deferred chunk load/generation retry tasks per region before async chunk request backpressure rejects plugin/external requests.")
         public int chunkIoLoadRegionMailboxCapacity = 1024;
         @Comment("Maximum in-flight ticketed async chunk load/generation requests per normal region owner before requests are deferred.")
@@ -86,7 +88,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int trackerBroadcastRegionMailboxCapacity = 1024;
         @Comment("Maximum queued explosion/physics tasks per region.")
         public int explosionPhysicsRegionMailboxCapacity = 2048;
-        @Comment("Target per-region cooperative work budget in milliseconds.")
+        @Comment("Target per-region cooperative auxiliary-work budget in milliseconds. Core game tick phases are not interrupted by this budget.")
         public long regionTickBudgetMs = 45;
         @Comment("Maximum deferred TNT explosions kept as frozen live entities per world. Overflow TNT is discarded without exploding to prevent hostile-load entity/save debt.")
         public int deferredTntBacklogPerWorld = 1024;
@@ -171,6 +173,9 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public long trackerFullUpdateFrequency = 20;
         public long purgeStaleTicketsFrequency = 20;
         public boolean writePlayerSavesAsync = true;
+        @Setting("scheduled-tick-presence-guard")
+        @Comment("Skips per-cell loaded chunk scans during independent region scheduled ticks when neither block nor fluid tick data exists for the region cell.")
+        public boolean scheduledTickPresenceGuard = true;
         public ChunkPacketCaching chunkPacketCaching = new ChunkPacketCaching();
 
         public class ChunkPacketCaching extends ConfigurationPart {
@@ -312,8 +317,21 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
             @Setting("end-biome-cache-capacity")
             public int endBiomeCacheCapacity = 2048;
 
+            @Setting("worldgen-computation-cache")
+            public WorldgenComputationCache worldgenComputationCache = new WorldgenComputationCache();
+
             @Setting("experimental")
             public Experimental experimental = new Experimental();
+
+            public class WorldgenComputationCache extends ConfigurationPart {
+                @Comment("Emit sampled JFR events for region-limited parallel chunk generation tasks. This is instrumentation-only and is disabled by default.")
+                @Setting("instrumentation-enabled")
+                public boolean instrumentationEnabled = false;
+
+                @Comment("Emit one chunk generation task timing event per N submitted generation tasks when instrumentation is enabled.")
+                @Setting("instrumentation-sample-rate")
+                public int instrumentationSampleRate = 256;
+            }
 
             public class Experimental extends ConfigurationPart {
                 @Comment("Use the C2ME density function compiler to accelerate world generation.")

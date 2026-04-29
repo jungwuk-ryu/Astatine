@@ -21,15 +21,23 @@
                  Vec3 handHoldingItemAngle;
                  if (this.attachedToEntity.isFallFlying()) {
                      Vec3 lookAngle = this.attachedToEntity.getLookAngle();
-@@ -167,2 +_,5 @@
+@@ -164,6 +_,9 @@
+                 this.setDeltaMovement(this.attachedToEntity.getDeltaMovement());
+             }
+ 
 +            if (this.shreddedpaper$shouldDeferProjectileMove(this.getDeltaMovement())) {
 +                return;
 +            }
              hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
          } else {
-@@ -174,2 +_,5 @@
+             if (!this.isShotAtAngle()) {
+@@ -172,6 +_,9 @@
+             }
+ 
              Vec3 handHoldingItemAngle = this.getDeltaMovement();
 +            if (this.shreddedpaper$shouldDeferProjectileMove(handHoldingItemAngle)) {
 +                return;
 +            }
              hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+             this.move(MoverType.SELF, handHoldingItemAngle);
+             this.applyEffectsFromBlocks();

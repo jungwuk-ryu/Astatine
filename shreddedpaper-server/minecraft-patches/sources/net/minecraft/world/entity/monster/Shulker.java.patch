@@ -1,0 +1,90 @@
+--- a/net/minecraft/world/entity/monster/Shulker.java
++++ b/net/minecraft/world/entity/monster/Shulker.java
+@@ -86,6 +_,7 @@
+     private @Nullable BlockPos clientOldAttachPosition;
+     private int clientSideTeleportInterpolation;
+     private static final float MAX_LID_OPEN = 1.0F;
++    private volatile boolean shreddedpaper$pendingRegionTeleport; // ShreddedPaper - avoid duplicate deferred random teleports
+ 
+     public Shulker(EntityType<? extends Shulker> type, Level level) {
+         super(type, level);
+@@ -408,21 +_,25 @@
+     }
+ 
+     boolean canStayAt(BlockPos pos, Direction facing) {
+-        if (this.isPositionBlocked(pos)) {
++        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), pos) || this.isPositionBlocked(pos)) {
+             return false;
+         } else {
+             Direction opposite = facing.getOpposite();
+-            if (!this.level().loadedAndEntityCanStandOnFace(pos.relative(facing), this, opposite)) {
++            BlockPos supportPos = pos.relative(facing);
++            if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), supportPos) || !this.level().loadedAndEntityCanStandOnFace(supportPos, this, opposite)) {
+                 return false;
+             } else {
+                 AABB aabb = getProgressAabb(this.getScale(), opposite, 1.0F, pos.getBottomCenter()).deflate(1.0E-6);
+-                return this.level().noCollision(this, aabb);
++                return ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), aabb) && this.level().noCollision(this, aabb);
+             }
+         }
+     }
+ 
+     private boolean isPositionBlocked(BlockPos pos) {
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - loaded-only teleport fallback
++        if (blockState == null) {
++            return true;
++        }
+         if (blockState.isAir()) {
+             return false;
+         } else {
+@@ -441,10 +_,29 @@
+                     Mth.randomBetweenInclusive(this.random, -8, 8),
+                     Mth.randomBetweenInclusive(this.random, -8, 8)
+                 );
++                if (this.level() instanceof ServerLevel serverLevel
++                    && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this)
++                        || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos1))) {
++                    if (!this.shreddedpaper$pendingRegionTeleport) {
++                        this.shreddedpaper$pendingRegionTeleport = true;
++                        io.multipaper.shreddedpaper.ShreddedPaper.ensureSync(this, serverLevel, net.minecraft.world.level.ChunkPos.of(blockPos1), () -> {
++                            this.shreddedpaper$pendingRegionTeleport = false;
++                            if (this.isAlive() && this.level() == serverLevel) {
++                                this.teleportSomewhere();
++                            }
++                        });
++                    }
++                    return false;
++                }
+                 if (blockPos1.getY() > this.level().getMinY()
+-                    && this.level().isEmptyBlock(blockPos1)
++                    && ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), blockPos1)
+                     && this.level().getWorldBorder().isWithinBounds(blockPos1)
+-                    && this.level().noCollision(this, new AABB(blockPos1).deflate(1.0E-6))) {
++                    && ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), new AABB(blockPos1).deflate(1.0E-6))) {
++                    BlockState destinationState = this.level().getBlockStateIfLoaded(blockPos1);
++                    AABB teleportBox = new AABB(blockPos1).deflate(1.0E-6);
++                    if (destinationState == null || !destinationState.isAir() || !this.level().noCollision(this, teleportBox)) {
++                        continue;
++                    }
+                     Direction direction = this.findAttachableSurface(blockPos1);
+                     // CraftBukkit start
+                     org.bukkit.event.entity.EntityTeleportEvent teleportEvent = org.bukkit.craftbukkit.event.CraftEventFactory.callEntityTeleportEvent(this, blockPos1.getX(), blockPos1.getY(), blockPos1.getZ());
+@@ -454,6 +_,17 @@
+                         blockPos1 = org.bukkit.craftbukkit.util.CraftLocation.toBlockPosition(teleportEvent.getTo());
+                     }
+                     // CraftBukkit end
++                    if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), blockPos1)
++                        || !this.level().getWorldBorder().isWithinBounds(blockPos1)
++                        || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), new AABB(blockPos1).deflate(1.0E-6))) {
++                        return false;
++                    }
++                    destinationState = this.level().getBlockStateIfLoaded(blockPos1);
++                    teleportBox = new AABB(blockPos1).deflate(1.0E-6);
++                    if (destinationState == null || !destinationState.isAir() || !this.level().noCollision(this, teleportBox)) {
++                        return false;
++                    }
++                    direction = this.findAttachableSurface(blockPos1);
+                     if (direction != null) {
+                         this.unRide();
+                         this.setAttachFace(direction);

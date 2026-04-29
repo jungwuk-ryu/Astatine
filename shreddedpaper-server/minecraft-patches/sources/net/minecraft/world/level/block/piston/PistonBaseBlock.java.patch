@@ -1,0 +1,181 @@
+--- a/net/minecraft/world/level/block/piston/PistonBaseBlock.java
++++ b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+@@ -5,6 +_,11 @@
+ import com.mojang.serialization.Codec;
+ import com.mojang.serialization.MapCodec;
+ import com.mojang.serialization.codecs.RecordCodecBuilder;
++import ca.spottedleaf.moonrise.common.util.TickThread;
++import io.multipaper.shreddedpaper.ShreddedPaper;
++import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Map.Entry;
+@@ -34,6 +_,7 @@
+ import net.minecraft.world.level.block.state.properties.BooleanProperty;
+ import net.minecraft.world.level.block.state.properties.PistonType;
+ import net.minecraft.world.level.gameevent.GameEvent;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.material.PushReaction;
+ import net.minecraft.world.level.pathfinder.PathComputationType;
+ import net.minecraft.world.level.redstone.ExperimentalRedstoneUtils;
+@@ -102,6 +_,9 @@
+ 
+     private void checkIfExtend(Level level, BlockPos pos, BlockState state) {
+         Direction direction = state.getValue(FACING);
++        if (!this.shreddedpaper$ensurePistonCheckOwnership(level, pos, direction)) {
++            return;
++        }
+         boolean neighborSignal = this.getNeighborSignal(level, pos, direction);
+         if (neighborSignal && !state.getValue(EXTENDED)) {
+             if (new PistonStructureResolver(level, pos, direction, true).resolve()) {
+@@ -149,9 +_,83 @@
+         }
+     }
+ 
++    // ShreddedPaper start - execute cross-region piston block events with all affected write locks
++    private boolean shreddedpaper$ensurePistonEventOwnership(BlockState state, Level level, BlockPos pos, Direction direction, int id, int param) {
++        if (!(level instanceof ServerLevel serverLevel) || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++
++        final BoundingBox affectedBox = this.shreddedpaper$pistonAffectedBox(level, pos, direction);
++        if (ShreddedPaper.isSync(serverLevel, affectedBox)) {
++            return true;
++        }
++
++        ShreddedPaper.runSync(serverLevel, affectedBox, () -> {
++            final BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this) && currentState.triggerEvent(serverLevel, pos, id, param)) {
++                serverLevel.getServer()
++                    .getPlayerList()
++                    .broadcast(
++                        null,
++                        pos.getX(),
++                        pos.getY(),
++                        pos.getZ(),
++                        64.0,
++                        serverLevel.dimension(),
++                        new net.minecraft.network.protocol.game.ClientboundBlockEventPacket(pos, this, id, param)
++                    );
++            }
++        });
++        return false;
++    }
++
++    private boolean shreddedpaper$ensurePistonCheckOwnership(Level level, BlockPos pos, Direction direction) {
++        if (!(level instanceof ServerLevel serverLevel) || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++
++        final BoundingBox affectedBox = this.shreddedpaper$pistonAffectedBox(level, pos, direction);
++        if (ShreddedPaper.isSync(serverLevel, affectedBox)) {
++            return true;
++        }
++
++        ShreddedPaper.runSync(serverLevel, affectedBox, () -> {
++            final BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.checkIfExtend(serverLevel, pos, currentState);
++            }
++        });
++        return false;
++    }
++
++    private boolean shreddedpaper$ensurePistonMoveResolveOwnership(Level level, BlockPos pos, Direction facing, boolean extending) {
++        if (!(level instanceof ServerLevel serverLevel) || !ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++
++        final BoundingBox affectedBox = this.shreddedpaper$pistonAffectedBox(level, pos, facing);
++        if (ShreddedPaper.isSync(serverLevel, affectedBox)) {
++            return true;
++        }
++
++        ShreddedPaper.runSync(serverLevel, affectedBox, () -> this.moveBlocks(serverLevel, pos, facing, extending));
++        return false;
++    }
++
++    private BoundingBox shreddedpaper$pistonAffectedBox(Level level, BlockPos pos, Direction direction) {
++        final int scan = Math.max(16, level.purpurConfig.pistonBlockPushLimit + 2);
++        final BlockPos end = pos.relative(direction, scan);
++        return BoundingBox.fromCorners(
++            new BlockPos(Math.min(pos.getX(), end.getX()) - scan, pos.getY() - scan, Math.min(pos.getZ(), end.getZ()) - scan),
++            new BlockPos(Math.max(pos.getX(), end.getX()) + scan, pos.getY() + scan, Math.max(pos.getZ(), end.getZ()) + scan)
++        );
++    }
++    // ShreddedPaper end - execute cross-region piston block events with all affected write locks
++
+     @Override
+     protected boolean triggerEvent(BlockState state, Level level, BlockPos pos, int id, int param) {
+         Direction direction = state.getValue(FACING);
++        if (!this.shreddedpaper$ensurePistonEventOwnership(state, level, pos, direction, id, param)) return false; // ShreddedPaper - execute cross-region piston block events with all affected write locks
+         // Paper start - Protect Bedrock and End Portal/Frames from being destroyed; prevent retracting when we're facing the wrong way (we were replaced before retraction could occur)
+         Direction directionQueuedAs = Direction.from3DDataValue(param & 7); // Paper - copied from below
+         if (!io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.allowPermanentBlockBreakExploits && direction != directionQueuedAs) {
+@@ -287,6 +_,9 @@
+     }
+ 
+     private boolean moveBlocks(Level level, BlockPos pos, Direction facing, boolean extending) {
++        if (!this.shreddedpaper$ensurePistonMoveResolveOwnership(level, pos, facing, extending)) {
++            return false;
++        }
+         BlockPos blockPos = pos.relative(facing);
+         if (!extending && level.getBlockState(blockPos).is(Blocks.PISTON_HEAD)) {
+             level.setBlock(blockPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_NONE | Block.UPDATE_KNOWN_SHAPE);
+@@ -299,6 +_,9 @@
+             Map<BlockPos, BlockState> map = Maps.newHashMap();
+             List<BlockPos> toPush = pistonStructureResolver.getToPush();
+             List<BlockState> list = Lists.newArrayList();
++            if (!this.shreddedpaper$ensurePistonMoveOwnership(level, pos, facing, extending, toPush, pistonStructureResolver.getToDestroy())) {
++                return false;
++            }
+ 
+             for (BlockPos blockPos1 : toPush) {
+                 BlockState blockState = level.getBlockState(blockPos1);
+@@ -444,6 +_,44 @@
+ 
+             return true;
+         }
++    }
++
++    private boolean shreddedpaper$ensurePistonMoveOwnership(Level level, BlockPos pos, Direction facing, boolean extending, List<BlockPos> toPush, List<BlockPos> toDestroy) {
++        if (!(level instanceof ServerLevel serverLevel)) {
++            return true;
++        }
++        LongOpenHashSet regionKeys = new LongOpenHashSet();
++        this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, pos);
++        BlockPos headPos = pos.relative(facing);
++        this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, headPos);
++        if (!extending) {
++            this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, headPos.relative(facing));
++        }
++        Direction movementDirection = extending ? facing : facing.getOpposite();
++        for (BlockPos pushPos : toPush) {
++            this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, pushPos);
++            this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, pushPos.relative(movementDirection));
++        }
++        for (BlockPos destroyPos : toDestroy) {
++            this.shreddedpaper$addPistonRegionIfNeeded(serverLevel, regionKeys, destroyPos);
++        }
++        if (regionKeys.isEmpty()) {
++            return true;
++        }
++        RegionPos[] regions = new RegionPos[regionKeys.size()];
++        int i = 0;
++        for (it.unimi.dsi.fastutil.longs.LongIterator iterator = regionKeys.iterator(); iterator.hasNext();) {
++            regions[i++] = new RegionPos(iterator.nextLong());
++        }
++        serverLevel.chunkScheduler.scheduleOnMany(() -> this.moveBlocks(level, pos, facing, extending), regions);
++        return false;
++    }
++
++    private void shreddedpaper$addPistonRegionIfNeeded(ServerLevel level, LongOpenHashSet regionKeys, BlockPos pos) {
++        if (level.getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4) == null || TickThread.isTickThreadFor(level, pos)) {
++            return;
++        }
++        regionKeys.add(RegionPos.asLongForBlockPos(pos));
+     }
+ 
+     @Override

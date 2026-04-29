@@ -1,0 +1,113 @@
+--- a/net/minecraft/world/level/block/DiodeBlock.java
++++ b/net/minecraft/world/level/block/DiodeBlock.java
+@@ -43,7 +_,8 @@
+     @Override
+     protected boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        return this.canSurviveOn(level, blockPos, level.getBlockState(blockPos));
++        BlockState supportState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only diode support probe
++        return supportState != null && this.canSurviveOn(level, blockPos, supportState);
+     }
+ 
+     protected boolean canSurviveOn(LevelReader level, BlockPos pos, BlockState state) {
+@@ -52,6 +_,14 @@
+ 
+     @Override
+     protected void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.tick(currentState, level, pos, random);
++            }
++        })) {
++            return;
++        }
+         if (!this.isLocked(level, pos, state)) {
+             boolean poweredValue = state.getValue(POWERED);
+             boolean shouldTurnOn = this.shouldTurnOn(level, pos, state);
+@@ -92,6 +_,14 @@
+ 
+     @Override
+     protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock, @Nullable Orientation orientation, boolean movedByPiston) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.neighborChanged(currentState, level, pos, neighborBlock, orientation, movedByPiston);
++            }
++        })) {
++            return;
++        }
+         if (state.canSurvive(level, pos)) {
+             this.checkTickOnNeighbor(level, pos, state);
+         } else {
+@@ -106,6 +_,14 @@
+     }
+ 
+     protected void checkTickOnNeighbor(Level level, BlockPos pos, BlockState state) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> {
++            BlockState currentState = level.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.checkTickOnNeighbor(level, pos, currentState);
++            }
++        })) {
++            return;
++        }
+         if (!this.isLocked(level, pos, state)) {
+             boolean poweredValue = state.getValue(POWERED);
+             boolean shouldTurnOn = this.shouldTurnOn(level, pos, state);
+@@ -133,11 +_,15 @@
+     protected int getInputSignal(Level level, BlockPos pos, BlockState state) {
+         Direction direction = state.getValue(FACING);
+         BlockPos blockPos = pos.relative(direction);
++        if (level instanceof ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) { // ShreddedPaper - avoid off-owner redstone diode input
++            return 0;
++        }
+         int signal = level.getSignal(blockPos, direction);
+         if (signal >= 15) {
+             return signal;
+         } else {
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading redstone diode input
++            if (blockState == null) return signal; // ShreddedPaper - avoid sync-loading redstone diode input
+             return Math.max(signal, blockState.is(Blocks.REDSTONE_WIRE) ? blockState.getValue(RedStoneWireBlock.POWER) : 0);
+         }
+     }
+@@ -165,6 +_,14 @@
+ 
+     @Override
+     public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
++        if (!this.shreddedpaper$ensureRedstoneEvaluationOwner(level, pos, state, () -> { // ShreddedPaper - defer initial diode input read
++            BlockState currentState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - defer initial diode input read
++            if (currentState != null && currentState.is(this)) { // ShreddedPaper - defer initial diode input read
++                this.setPlacedBy(level, pos, currentState, placer, stack); // ShreddedPaper - defer initial diode input read
++            } // ShreddedPaper - defer initial diode input read
++        })) { // ShreddedPaper - defer initial diode input read
++            return; // ShreddedPaper - defer initial diode input read
++        } // ShreddedPaper - defer initial diode input read
+         if (this.shouldTurnOn(level, pos, state)) {
+             level.scheduleTick(pos, this, 1);
+         }
+@@ -204,9 +_,22 @@
+ 
+     public boolean shouldPrioritize(BlockGetter level, BlockPos pos, BlockState state) {
+         Direction opposite = state.getValue(FACING).getOpposite();
+-        BlockState blockState = level.getBlockState(pos.relative(opposite));
++        BlockState blockState = level.getBlockStateIfLoaded(pos.relative(opposite)); // ShreddedPaper - avoid sync-loading redstone diode priority checks
++        if (blockState == null) return false; // ShreddedPaper - avoid sync-loading redstone diode priority checks
+         return isDiode(blockState) && blockState.getValue(FACING) != opposite;
+     }
+ 
+     protected abstract int getDelay(BlockState state);
++
++    protected boolean shreddedpaper$ensureRedstoneEvaluationOwner(Level level, BlockPos pos, BlockState state, Runnable task) {
++        if (!(level instanceof ServerLevel serverLevel) || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++        net.minecraft.world.level.levelgen.structure.BoundingBox box = net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-2, -1, -2), pos.offset(2, 1, 2));
++        if (io.multipaper.shreddedpaper.ShreddedPaper.isSync(serverLevel, box)) {
++            return true;
++        }
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, box, task);
++        return false;
++    }
+ }

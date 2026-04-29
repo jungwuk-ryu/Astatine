@@ -1,5 +1,13 @@
 --- a/net/minecraft/world/entity/item/ItemEntity.java
 +++ b/net/minecraft/world/entity/item/ItemEntity.java
+@@ -60,6 +_,7 @@
+     public boolean immuneToFire = false;
+     public boolean immuneToLightning = false;
+     // Purpur end - Item entity immunities
++    private boolean shreddedpaper$itemMergeScheduled; // ShreddedPaper - defer cross-owner item merge
+ 
+     public ItemEntity(EntityType<? extends ItemEntity> type, Level level) {
+         super(type, level);
 @@ -165,7 +_,7 @@
              } else if (this.isInLava() && this.getFluidHeight(FluidTags.LAVA) > 0.1F) {
                  this.setUnderLavaMovement();
@@ -9,3 +17,91 @@
              }
  
              if (this.level().isClientSide()) {
+@@ -277,6 +_,7 @@
+     }
+ 
+     private void tryToMerge(ItemEntity itemEntity) {
++        if (this.shreddedpaper$shouldDeferItemMerge(itemEntity)) return; // ShreddedPaper - defer cross-owner item merge
+         ItemStack item = this.getItem();
+         ItemStack item1 = itemEntity.getItem();
+         if (Objects.equals(this.target, itemEntity.target) && areMergable(item, item1)) {
+@@ -288,6 +_,52 @@
+         }
+     }
+ 
++    // ShreddedPaper start - defer cross-owner item merge
++    private boolean shreddedpaper$shouldDeferItemMerge(ItemEntity itemEntity) {
++        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                || this.isRemoved()
++                || itemEntity.isRemoved()
++                || !(this.level() instanceof ServerLevel sourceLevel)
++                || !(itemEntity.level() instanceof ServerLevel targetLevel)) {
++            return false;
++        }
++
++        if (io.multipaper.shreddedpaper.ShreddedPaper.isSync(sourceLevel, this.chunkPosition())
++                && io.multipaper.shreddedpaper.ShreddedPaper.isSync(targetLevel, itemEntity.chunkPosition())) {
++            return false;
++        }
++
++        if (this.shreddedpaper$itemMergeScheduled || itemEntity.shreddedpaper$itemMergeScheduled) {
++            return true;
++        }
++        this.shreddedpaper$itemMergeScheduled = true;
++        itemEntity.shreddedpaper$itemMergeScheduled = true;
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(sourceLevel, this.chunkPosition(), targetLevel, itemEntity.chunkPosition(), () -> {
++            this.shreddedpaper$itemMergeScheduled = false;
++            itemEntity.shreddedpaper$itemMergeScheduled = false;
++            if (!this.isRemoved()
++                    && !itemEntity.isRemoved()
++                    && this.level() == sourceLevel
++                    && itemEntity.level() == targetLevel
++                    && this.shreddedpaper$isStillMergeNeighbour(itemEntity)) {
++                this.tryToMerge(itemEntity);
++            }
++        });
++        return true;
++    }
++
++    private boolean shreddedpaper$isStillMergeNeighbour(ItemEntity itemEntity) {
++        if (this.level() != itemEntity.level()) {
++            return false;
++        }
++        final double radius = this.level().spigotConfig.itemMerge;
++        return this.getBoundingBox()
++            .inflate(radius, this.level().paperConfig().entities.behavior.onlyMergeItemsHorizontally ? 0 : radius - 0.5D, radius)
++            .intersects(itemEntity.getBoundingBox());
++    }
++    // ShreddedPaper end - defer cross-owner item merge
++
+     public static boolean areMergable(ItemStack destinationStack, ItemStack originStack) {
+         return originStack.getCount() + destinationStack.getCount() <= originStack.getMaxStackSize()
+             && ItemStack.isSameItemSameComponents(destinationStack, originStack);
+@@ -416,6 +_,26 @@
+     @Override
+     public void playerTouch(Player entity) {
+         if (!this.level().isClientSide()) {
++            // ShreddedPaper start - item pickup mutates both player and item ownership
++            if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                    && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                    && this.level() instanceof ServerLevel serverLevel) {
++                final net.minecraft.world.level.levelgen.structure.BoundingBox ownershipBox =
++                    net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(this.blockPosition(), entity.blockPosition());
++                if (!io.multipaper.shreddedpaper.ShreddedPaper.isSync(serverLevel, ownershipBox)) {
++                    io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, ownershipBox, () -> {
++                        if (!this.isRemoved()
++                                && !entity.isRemoved()
++                                && this.level() == entity.level()
++                                && entity.getBoundingBox().inflate(1.0, 0.5, 1.0).intersects(this.getBoundingBox())) {
++                            this.playerTouch(entity);
++                        }
++                    });
++                    return;
++                }
++            }
++            // ShreddedPaper end - item pickup mutates both player and item ownership
++
+             ItemStack item = this.getItem();
+             Item item1 = item.getItem();
+             int count = item.getCount();

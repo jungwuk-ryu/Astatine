@@ -1,6 +1,5 @@
 package io.multipaper.shreddedpaper.threading;
 
-import ca.spottedleaf.moonrise.common.util.TickThread;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import io.multipaper.shreddedpaper.region.RegionPos;
 
@@ -39,12 +38,13 @@ public class ShreddedPaperRegionLocker {
     private final ThreadLocal<Set<RegionPos>> readOnlyLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> writeLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> unmodifiableLocalLocks = ThreadLocal.withInitial(() -> Collections.unmodifiableSet(localLocks.get()));
+    private final ThreadLocal<CurrentThreadWritePromotion> currentThreadWritePromotion = ThreadLocal.withInitial(CurrentThreadWritePromotion::new);
 
     /**
      * Checks if the current thread holds a read lock for the given region
      */
     public boolean hasLock(RegionPos regionPos) {
-        return localLocks.get().contains(regionPos) || TickThread.canBypassTickThreadCheck();
+        return localLocks.get().contains(regionPos);
     }
 
     /**
@@ -53,7 +53,7 @@ public class ShreddedPaperRegionLocker {
      * syncing conflicts with other servers.
      */
     public boolean hasWriteLock(RegionPos regionPos) {
-        return writeLocks.get().contains(regionPos) || TickThread.canBypassTickThreadCheck();
+        return writeLocks.get().contains(regionPos) || this.currentThreadWritePromotion.get().isActiveFor(regionPos);
     }
 
     /**
@@ -63,7 +63,9 @@ public class ShreddedPaperRegionLocker {
      * that is held as an isolation lock.
      */
     public ScopedWriteAccess promoteCurrentThreadLocksToWrite() {
-        return this.promoteLocalLocksToWrite(new ArrayList<>(this.localLocks.get()));
+        final CurrentThreadWritePromotion promotion = this.currentThreadWritePromotion.get();
+        promotion.open();
+        return promotion;
     }
 
     public ScopedWriteAccess promoteLocalLocksToWrite(final Collection<RegionPos> regionPositions) {
@@ -96,8 +98,8 @@ public class ShreddedPaperRegionLocker {
             if (owner != Thread.currentThread()) {
                 throw new IllegalStateException("Cannot close write promotion from a different thread [expected=%s,got=%s]".formatted(owner, Thread.currentThread()));
             }
-            writes.removeAll(promoted);
             for (final RegionPos regionPos : promoted) {
+                writes.remove(regionPos);
                 if (local.contains(regionPos)) {
                     readOnly.add(regionPos);
                 }
@@ -267,6 +269,9 @@ public class ShreddedPaperRegionLocker {
 
     @Nullable
     public WriteRegionLock internalTryTakeExactLockNow(Collection<RegionPos> writeRegionPositions, Collection<RegionPos> isolationRegionPositions) {
+        if (writeRegionPositions.isEmpty() || isolationRegionPositions.isEmpty()) {
+            return null;
+        }
         final ReadOnlyRegionLock lock = internalTryTakeExactReadOnlyLockNow(isolationRegionPositions);
         return lock == null ? null : new WriteRegionLock(lock, sortedUniqueRegions(writeRegionPositions));
     }
@@ -369,6 +374,39 @@ public class ShreddedPaperRegionLocker {
         void close();
     }
 
+    private final class CurrentThreadWritePromotion implements ScopedWriteAccess {
+        private Thread owner;
+        private int depth;
+
+        private void open() {
+            final Thread current = Thread.currentThread();
+            if (this.depth == 0) {
+                this.owner = current;
+            } else if (this.owner != current) {
+                throw new IllegalStateException("Cannot share write promotion across threads [expected=%s,got=%s]".formatted(this.owner, current));
+            }
+            this.depth++;
+        }
+
+        private boolean isActiveFor(final RegionPos regionPos) {
+            return this.depth > 0 && ShreddedPaperRegionLocker.this.localLocks.get().contains(regionPos);
+        }
+
+        @Override
+        public void close() {
+            final Thread current = Thread.currentThread();
+            if (this.depth <= 0) {
+                throw new IllegalStateException("Cannot close inactive write promotion");
+            }
+            if (this.owner != current) {
+                throw new IllegalStateException("Cannot close write promotion from a different thread [expected=%s,got=%s]".formatted(this.owner, current));
+            }
+            if (--this.depth == 0) {
+                this.owner = null;
+            }
+        }
+    }
+
     public class ReadOnlyRegionLock implements RegionLock {
         private final List<LockedRegion> readLocks;
         private final Thread thread;
@@ -446,16 +484,22 @@ public class ShreddedPaperRegionLocker {
         private WriteRegionLock(ReadOnlyRegionLock superLock, Collection<RegionPos> writeRegions) {
             this.superLock = superLock;
 
-            final Collection<RegionPos> newlyLockedRegions = superLock.lockedRegions();
+            final Set<RegionPos> local = ShreddedPaperRegionLocker.this.localLocks.get();
+            final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
             this.writeLocks = new ArrayList<>(writeRegions.size());
             for (final RegionPos writeRegion : writeRegions) {
-                if (newlyLockedRegions.contains(writeRegion)
-                    || ShreddedPaperRegionLocker.this.localLocks.get().contains(writeRegion)) {
+                if (local.contains(writeRegion)) {
+                    if (writes.contains(writeRegion)) {
+                        continue;
+                    }
                     this.writeLocks.add(writeRegion);
                 }
             }
-            ShreddedPaperRegionLocker.this.writeLocks.get().addAll(this.writeLocks);
-            ShreddedPaperRegionLocker.this.readOnlyLocks.get().removeAll(this.writeLocks);
+            writes.addAll(this.writeLocks);
+            final Set<RegionPos> readOnly = ShreddedPaperRegionLocker.this.readOnlyLocks.get();
+            for (final RegionPos writeRegion : this.writeLocks) {
+                readOnly.remove(writeRegion);
+            }
         }
 
         @Override
@@ -470,8 +514,12 @@ public class ShreddedPaperRegionLocker {
 
         @Override
         public void unlock() {
-            ShreddedPaperRegionLocker.this.writeLocks.get().removeAll(this.writeLocks);
-            ShreddedPaperRegionLocker.this.readOnlyLocks.get().addAll(this.writeLocks);
+            final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
+            final Set<RegionPos> readOnly = ShreddedPaperRegionLocker.this.readOnlyLocks.get();
+            for (final RegionPos writeRegion : this.writeLocks) {
+                writes.remove(writeRegion);
+                readOnly.add(writeRegion);
+            }
             this.superLock.unlock();
         }
     }
@@ -499,8 +547,8 @@ public class ShreddedPaperRegionLocker {
             headUnlockFuture.complete(null);
         }
 
-        public CompletableFuture<Void> onUnlock(Supplier<CompletableFuture<Void>> nextTask) {
-            return tailUnlockFuture = tailUnlockFuture.thenCompose(v -> nextTask.get());
+        public synchronized CompletableFuture<Void> onUnlock(Supplier<CompletableFuture<Void>> nextTask) {
+            return tailUnlockFuture = tailUnlockFuture.handle((ignored, throwable) -> null).thenCompose(v -> nextTask.get());
         }
     }
 

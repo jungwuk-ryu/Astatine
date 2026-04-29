@@ -1,0 +1,37 @@
+--- a/alternate/current/wire/WireNode.java
++++ b/alternate/current/wire/WireNode.java
+@@ -97,6 +_,34 @@
+     }
+ 
+     boolean setPower() {
++        if (io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                && !io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess.isOwned(level, pos)) {
++            final BlockPos queuedPos = this.pos;
++            final BlockState queuedState = this.state;
++            final boolean queuedRemoval = this.removed;
++            final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult =
++                    io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess.runWithWriteLockIfHeldOrDeferToOwner(
++                            level,
++                            queuedPos,
++                            io.multipaper.shreddedpaper.threading.region.RegionTaskClass.OWNER_HANDOFF,
++                            () -> {
++                                if (queuedRemoval) {
++                                    level.getWireHandler().onWireRemoved(queuedPos, queuedState);
++                                    return;
++                                }
++                                final BlockState currentState = level.getBlockStateIfLoaded(queuedPos);
++                                if (currentState != null && currentState.is(Blocks.REDSTONE_WIRE)) {
++                                    level.getWireHandler().onWireUpdated(queuedPos, currentState, null);
++                                }
++                            }
++                    );
++            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED
++                    || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
++                throw new IllegalStateException("Failed to hand off cross-owner redstone wire update; world=" + level.getWorld().getName() + ", pos=" + queuedPos);
++            }
++            return false;
++        }
++
+         if (removed) {
+             return true;
+         }

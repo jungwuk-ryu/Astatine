@@ -15,7 +15,20 @@
  import it.unimi.dsi.fastutil.longs.LongSet;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
-@@ -103,4 +_,27 @@
+@@ -73,7 +_,9 @@
+     private final @Nullable ChunkStatus[] lastChunkStatus = new ChunkStatus[4];
+     private final @Nullable ChunkAccess[] lastChunk = new ChunkAccess[4];
+     private final List<LevelChunk> spawningChunks = new ObjectArrayList<>();
+-    private final Set<ChunkHolder> chunkHoldersToBroadcast = new ReferenceOpenHashSet<>();
++    // private final Set<ChunkHolder> chunkHoldersToBroadcast = new ReferenceOpenHashSet<>(); // ShreddedPaper  - handled by the regions
++    private final ShreddedPaperChunkTicker shreddedPaperChunkTicker = new ShreddedPaperChunkTicker(this); // ShreddedPaper
++    public final LevelChunkRegionMap tickingRegions; // ShreddedPaper
+     @VisibleForDebug
+     private NaturalSpawner.@Nullable SpawnState lastSpawnState;
+     // Paper start
+@@ -101,6 +_,42 @@
+     }
+ 
      private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
 +        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking && ShreddedPaperTickThread.isShreddedPaperTickThread()) {
 +            final RegionPos regionPos = RegionPos.forChunk(chunkX, chunkZ);
@@ -45,20 +58,17 @@
 +                    + ", chunk=[" + chunkX + "," + chunkZ + "], status=" + toStatus
 +            );
 +        }
++        final io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker.RegionLock syncLoadRegionLock;
++        if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++            && !TickThread.isTickThreadFor(this.level, chunkX, chunkZ)) {
++            syncLoadRegionLock = this.level.chunkScheduler.getRegionLocker().lockRegion(RegionPos.forChunk(chunkX, chunkZ));
++        } else {
++            syncLoadRegionLock = null;
++        }
++        try {
          final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler chunkTaskScheduler = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)this.level).moonrise$getChunkTaskScheduler();
          final CompletableFuture<ChunkAccess> completable = new CompletableFuture<>();
          chunkTaskScheduler.scheduleChunkLoad(
-@@ -73,7 +_,9 @@
-     private final @Nullable ChunkStatus[] lastChunkStatus = new ChunkStatus[4];
-     private final @Nullable ChunkAccess[] lastChunk = new ChunkAccess[4];
-     private final List<LevelChunk> spawningChunks = new ObjectArrayList<>();
--    private final Set<ChunkHolder> chunkHoldersToBroadcast = new ReferenceOpenHashSet<>();
-+    // private final Set<ChunkHolder> chunkHoldersToBroadcast = new ReferenceOpenHashSet<>(); // ShreddedPaper  - handled by the regions
-+    private final ShreddedPaperChunkTicker shreddedPaperChunkTicker = new ShreddedPaperChunkTicker(this); // ShreddedPaper
-+    public final LevelChunkRegionMap tickingRegions; // ShreddedPaper
-     @VisibleForDebug
-     private NaturalSpawner.@Nullable SpawnState lastSpawnState;
-     // Paper start
 @@ -115,7 +_,7 @@
              );
          }
@@ -68,6 +78,18 @@
              ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.pushChunkWait(this.level, chunkX, chunkZ);
              this.mainThreadProcessor.managedBlock(completable::isDone);
              ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.popChunkWait();
+@@ -127,6 +_,11 @@
+         }
+ 
+         return ret;
++        } finally {
++            if (syncLoadRegionLock != null) {
++                syncLoadRegionLock.unlock();
++            }
++        }
+     }
+ 
+     private ChunkAccess getChunkFallback(final int chunkX, final int chunkZ, final ChunkStatus toStatus,
 @@ -198,6 +_,7 @@
          Supplier<DimensionDataStorage> overworldDataStorage
      ) {

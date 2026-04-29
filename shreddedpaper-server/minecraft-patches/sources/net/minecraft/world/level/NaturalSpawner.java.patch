@@ -1,5 +1,15 @@
 --- a/net/minecraft/world/level/NaturalSpawner.java
 +++ b/net/minecraft/world/level/NaturalSpawner.java
+@@ -1,6 +_,9 @@
+ package net.minecraft.world.level;
+ 
+ import com.mojang.logging.LogUtils;
++import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+ import it.unimi.dsi.fastutil.objects.Object2IntMap;
+ import it.unimi.dsi.fastutil.objects.Object2IntMaps;
+ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 @@ -177,7 +_,9 @@
                  if (inRange != null) {
                      final net.minecraft.server.level.ServerPlayer[] backingSet = inRange.getRawDataUnchecked();
@@ -10,3 +20,13 @@
                      }
                  }
  
+@@ -300,6 +_,9 @@
+ 
+                                 mobForSpawn.snapTo(d, y, d1, level.random.nextFloat() * 360.0F, 0.0F);
+                                 if (isValidPositionForMob(level, mobForSpawn, d2)) {
++                                    if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(level, RegionPos.forBlockPos(mutableBlockPos))) { // ShreddedPaper
++                                        continue; // ShreddedPaper - let the target region own cross-boundary natural spawns
++                                    }
+                                     spawnGroupData = mobForSpawn.finalizeSpawn(
+                                         level, level.getCurrentDifficultyAt(mobForSpawn.blockPosition()), EntitySpawnReason.NATURAL, spawnGroupData
+                                     );

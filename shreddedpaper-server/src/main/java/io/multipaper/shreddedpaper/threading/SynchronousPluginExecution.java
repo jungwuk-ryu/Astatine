@@ -44,37 +44,44 @@ public class SynchronousPluginExecution {
 
     public static void execute(Plugin plugin, RunnableWithException runnable) throws Exception {
         ShreddedPaperConfiguration config = ShreddedPaperConfiguration.get();
-        if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || plugin.getDescription().isFoliaSupported() || TickThread.isShutdownThread()) {
-            // Multi-thread safe plugin, run it straight away
-            runnable.run();
-            return;
-        }
-
-        // Lock the plugins in a predictable order to prevent deadlocks
-        List<String> pluginsToLock = cachedDependencyLists.get(plugin.getName());
-
-        if (pluginsToLock == null) {
-            // computeIfAbsent requires an expensive synchronized call even if the value is already present, so check with a get first
-            pluginsToLock = cachedDependencyLists.computeIfAbsent(plugin.getName(), (name) -> {
-                TreeSet<String> dependencyList = new TreeSet<>(Comparator.naturalOrder());
-                LOGGER.info("Plugin {} does not support Folia! Initializing synchronous execution. This may cause a performance degradation.", plugin);
-                fillPluginsToLock(plugin, dependencyList, new ArrayList<>());
-                LOGGER.info("Dependency list calculated for {}: {}", plugin, dependencyList);
-                return new ArrayList<>(dependencyList);
-            });
-        }
-
-        lock(pluginsToLock);
-
         WeakReference<Plugin> parentPlugin = currentPlugin.get();
-        try {
+        if (plugin != null) {
             currentPlugin.set(new WeakReference<>(plugin));
-            runnable.run();
+        }
+        try {
+            if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || isFoliaSupported(plugin) || TickThread.isShutdownThread()) {
+                // Multi-thread safe plugin, run it straight away
+                runnable.run();
+                return;
+            }
+
+            // Lock the plugins in a predictable order to prevent deadlocks
+            List<String> pluginsToLock = cachedDependencyLists.get(plugin.getName());
+
+            if (pluginsToLock == null) {
+                // computeIfAbsent requires an expensive synchronized call even if the value is already present, so check with a get first
+                pluginsToLock = cachedDependencyLists.computeIfAbsent(plugin.getName(), (name) -> {
+                    TreeSet<String> dependencyList = new TreeSet<>(Comparator.naturalOrder());
+                    LOGGER.info("Plugin {} does not support Folia! Initializing synchronous execution. This may cause a performance degradation.", plugin);
+                    fillPluginsToLock(plugin, dependencyList, new ArrayList<>());
+                    LOGGER.info("Dependency list calculated for {}: {}", plugin, dependencyList);
+                    return new ArrayList<>(dependencyList);
+                });
+            }
+
+            lock(pluginsToLock);
+
+            try {
+                runnable.run();
+            } finally {
+                for (String pluginToLock : pluginsToLock) {
+                    getLock(pluginToLock).unlock();
+                    heldPluginLocks.get().remove(pluginToLock);
+                }
+            }
         } finally {
-            currentPlugin.set(parentPlugin);
-            for (String pluginToLock : pluginsToLock) {
-                getLock(pluginToLock).unlock();
-                heldPluginLocks.get().remove(pluginToLock);
+            if (plugin != null) {
+                currentPlugin.set(parentPlugin);
             }
         }
     }
@@ -88,6 +95,14 @@ public class SynchronousPluginExecution {
         }
 
         return lock;
+    }
+
+    private static boolean isFoliaSupported(Plugin plugin) {
+        try {
+            return plugin.getDescription().isFoliaSupported();
+        } catch (UnsupportedOperationException ignored) {
+            return true;
+        }
     }
 
     private static void lock(List<String> pluginsToLock) {

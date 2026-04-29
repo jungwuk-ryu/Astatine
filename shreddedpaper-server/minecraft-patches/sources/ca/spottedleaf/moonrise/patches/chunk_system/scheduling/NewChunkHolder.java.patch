@@ -71,9 +71,14 @@
                          this.updateCurrentState(FullChunkStatus.ENTITY_TICKING);
                          this.changeEntityChunkStatus(FullChunkStatus.ENTITY_TICKING);
                          PlatformHooks.get().onChunkEntityTicking(chunk, this.vanillaChunkHolder);
-@@ -1641,1 +_,5 @@
+@@ -1639,6 +_,10 @@
+     }
+ 
      public long lastAutoSave;
 +    // ShreddedPaper start - coalesce background owner-thread chunk saves
 +    public final AtomicBoolean shreddedPaperAutoSaveQueued = new AtomicBoolean();
 +    public volatile boolean shreddedPaperAutoSaveRetry;
 +    // ShreddedPaper end - coalesce background owner-thread chunk saves
+ 
+     public static final record SaveStat(boolean savedChunk, boolean savedEntityChunk, boolean savedPoiChunk) {}
+ 

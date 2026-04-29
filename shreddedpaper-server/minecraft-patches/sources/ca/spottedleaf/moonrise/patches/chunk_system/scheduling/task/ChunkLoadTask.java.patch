@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLoadTask.java
 +++ b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/task/ChunkLoadTask.java
-@@ -11,6 +11,7 @@ import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
+@@ -11,6 +_,7 @@
  import ca.spottedleaf.moonrise.patches.chunk_system.level.poi.PoiChunk;
  import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler;
  import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder;
@@ -8,7 +8,7 @@
  import net.minecraft.core.registries.Registries;
  import net.minecraft.nbt.CompoundTag;
  import net.minecraft.server.level.ServerLevel;
-@@ -294,7 +295,10 @@ public final class ChunkLoadTask extends ChunkProgressionTask {
+@@ -294,7 +_,10 @@
  
          @Override
          protected PrioritisedExecutor.PrioritisedTask createOffMain(final Runnable run, final Priority priority) {
@@ -20,7 +20,7 @@
          }
  
          @Override
-@@ -391,7 +395,10 @@ public final class ChunkLoadTask extends ChunkProgressionTask {
+@@ -391,7 +_,10 @@
  
          @Override
          protected PrioritisedExecutor.PrioritisedTask createOffMain(final Runnable run, final Priority priority) {
@@ -32,7 +32,7 @@
          }
  
          @Override
-@@ -453,7 +460,10 @@ public final class ChunkLoadTask extends ChunkProgressionTask {
+@@ -453,7 +_,10 @@
  
          @Override
          protected PrioritisedExecutor.PrioritisedTask createOffMain(final Runnable run, final Priority priority) {

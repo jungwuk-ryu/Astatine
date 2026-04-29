@@ -9,16 +9,16 @@
  import joptsimple.OptionParser;
  import joptsimple.OptionSet;
  import joptsimple.OptionSpec;
-@@ -104,6 +_,8 @@
-             if (optionSet.has("jfrProfile")) { // CraftBukkit
+@@ -105,6 +_,8 @@
                  JvmProfiler.INSTANCE.start(Environment.SERVER);
              }
-+
-+            ShreddedPaperConfigurationLoader.init((File) optionSet.valueOf("shreddedpaper-settings")); // ShreddedPaper
  
++            ShreddedPaperConfigurationLoader.init((File) optionSet.valueOf("shreddedpaper-settings")); // ShreddedPaper
++
              // Purpur start - Add toggle for enchant level clamping - load config files early
              org.bukkit.configuration.file.YamlConfiguration purpurConfiguration = io.papermc.paper.configuration.PaperConfigurations.loadLegacyConfigFile((File) optionSet.valueOf("purpur-settings"));
-@@ -118,6 +_,7 @@
+             org.purpurmc.purpur.PurpurConfig.clampEnchantLevels = purpurConfiguration.getBoolean("settings.enchantment.clamp-levels", true);
+@@ -114,6 +_,7 @@
  
              io.papermc.paper.plugin.PluginInitializerManager.load(optionSet); // Paper
              Bootstrap.bootStrap();

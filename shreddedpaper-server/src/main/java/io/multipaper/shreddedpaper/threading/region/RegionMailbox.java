@@ -27,12 +27,14 @@ public final class RegionMailbox {
     private static final RegionTaskClass[] DRAIN_ORDER = {
             RegionTaskClass.CRITICAL_SYSTEM,
             RegionTaskClass.PLAYER_ACTION,
+            RegionTaskClass.OWNER_HANDOFF,
             RegionTaskClass.CHUNK_IO_LOAD,
             RegionTaskClass.CHUNK_IO_SAVE,
             RegionTaskClass.PLUGIN,
             RegionTaskClass.TRACKER_BROADCAST,
             RegionTaskClass.EXPLOSION_PHYSICS
     };
+    private static final RegionTaskClass[] ALL_CLASSES = RegionTaskClass.values();
 
     private final ServerLevel level;
     private final RegionPos regionPos;
@@ -63,7 +65,7 @@ public final class RegionMailbox {
         this.ownerEpochSupplier = ownerEpochSupplier;
         this.ownerOwnsCell = ownerOwnsCell;
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
-        for (final RegionTaskClass taskClass : RegionTaskClass.values()) {
+        for (final RegionTaskClass taskClass : ALL_CLASSES) {
             final int capacity = this.capacityFor(config, taskClass);
             this.capacityByClass.put(taskClass, capacity);
             this.queuedByClass.put(taskClass, new AtomicInteger());
@@ -106,6 +108,28 @@ public final class RegionMailbox {
             );
         }
         return true;
+    }
+
+    public boolean offerNonDropping(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
+        if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
+            return this.offer(taskClass, runnable, delayTicks, affinityRegionPos);
+        }
+
+        final long normalizedDelayTicks = Math.max(1L, delayTicks);
+        final int queuedAfterReserve = this.reserveSlot(taskClass);
+        if (queuedAfterReserve < 0) {
+            return this.offerTransferred(taskClass, runnable, normalizedDelayTicks, affinityRegionPos);
+        }
+
+        final long readyTick = this.currentTick + normalizedDelayTicks;
+        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey);
+        final boolean accepted = this.ingress.get(taskClass).offer(task);
+        if (accepted) {
+            return true;
+        }
+
+        this.releaseSlot(taskClass);
+        return this.offerTransferred(taskClass, runnable, normalizedDelayTicks, affinityRegionPos);
     }
 
     public boolean offer(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
@@ -206,6 +230,7 @@ public final class RegionMailbox {
         final int configured = switch (taskClass) {
             case CRITICAL_SYSTEM -> config.criticalRegionMailboxCapacity;
             case PLAYER_ACTION -> config.playerActionRegionMailboxCapacity;
+            case OWNER_HANDOFF -> config.ownerHandoffRegionMailboxCapacity;
             case CHUNK_IO_LOAD -> config.chunkIoLoadRegionMailboxCapacity;
             case CHUNK_IO_SAVE -> config.chunkIoSaveRegionMailboxCapacity;
             case PLUGIN -> config.pluginRegionMailboxCapacity;
@@ -374,7 +399,7 @@ public final class RegionMailbox {
             case CRITICAL_SYSTEM -> 64;
             case CHUNK_IO_LOAD -> 8;
             case CHUNK_IO_SAVE -> 4;
-            case PLAYER_ACTION, TRACKER_BROADCAST, EXPLOSION_PHYSICS -> 32;
+            case PLAYER_ACTION, OWNER_HANDOFF, TRACKER_BROADCAST, EXPLOSION_PHYSICS -> 32;
             case PLUGIN -> 16;
         };
     }
@@ -463,7 +488,7 @@ public final class RegionMailbox {
 
     public double maxClassPressure() {
         double pressure = 0.0D;
-        for (final RegionTaskClass taskClass : RegionTaskClass.values()) {
+        for (final RegionTaskClass taskClass : ALL_CLASSES) {
             pressure = Math.max(pressure, this.queued(taskClass) / (double) Math.max(1, this.capacity(taskClass)));
         }
         return pressure;

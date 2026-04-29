@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
+@@ -28,7 +_,7 @@
+         }
+         if (oldPower != i) {
+             // CraftBukkit end
+-            if (level.getBlockState(pos) == state) {
++            if (level.getBlockStateIfLoaded(pos) == state) { // ShreddedPaper - avoid sync-loading redstone neighbors
+                 level.setBlock(pos, state.setValue(RedStoneWireBlock.POWER, i), Block.UPDATE_CLIENTS);
+             }
+ 

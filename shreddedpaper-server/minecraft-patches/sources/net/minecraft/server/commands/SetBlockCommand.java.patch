@@ -12,7 +12,7 @@
          } else if (filter != null && !filter.test(new BlockInWorld(level, pos, true))) {
              throw ERROR_FAILED.create();
          } else {
-+            ShreddedPaper.ensureSync(level, pos, () -> { // ShreddedPaper - run on correct region thread
++            ShreddedPaper.ensureSync(level, net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)), () -> { // ShreddedPaper - run on correct region thread
              boolean flag;
              if (mode == SetBlockCommand.Mode.DESTROY) {
                  level.destroyBlock(pos, true);

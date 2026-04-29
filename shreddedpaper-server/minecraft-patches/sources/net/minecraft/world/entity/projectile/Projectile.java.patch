@@ -1,10 +1,9 @@
 --- a/net/minecraft/world/entity/projectile/Projectile.java
 +++ b/net/minecraft/world/entity/projectile/Projectile.java
-@@ -50,7 +_,163 @@
+@@ -49,6 +_,162 @@
      protected Projectile(EntityType<? extends Projectile> type, Level level) {
          super(type, level);
      }
--
 +    // ShreddedPaper start - Pufferfish: reduce projectile chunk loading
 +    private int shreddedpaper$chunksLoadedByProjectile;
 +    private boolean shreddedpaper$projectileChunkLoadLimitReached;
@@ -161,7 +160,6 @@
 +        return ((long)tick << 32) | (loads & 0xFFFFFFFFL);
 +    }
 +    // ShreddedPaper end - Pufferfish: reduce projectile chunk loading
-+
+ 
      protected void setOwner(@Nullable EntityReference<Entity> owner) {
          this.owner = owner;
-         this.refreshProjectileSource(false); // Paper

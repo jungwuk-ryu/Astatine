@@ -1,6 +1,6 @@
 --- a/src/main/java/ca/spottedleaf/moonrise/common/util/TickThread.java
 +++ b/src/main/java/ca/spottedleaf/moonrise/common/util/TickThread.java
-@@ -1,14 +_,25 @@
+@@ -1,14 +_,26 @@
  package ca.spottedleaf.moonrise.common.util;
  
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
@@ -71,7 +71,7 @@
      /**
       * @deprecated
       */
-@@ -119,54 +_,88 @@
+@@ -119,54 +_,101 @@
      }
  
      public static boolean isTickThread() {

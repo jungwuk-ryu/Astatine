@@ -31,7 +31,7 @@
          } else if (this.path != null && !this.path.isDone() && targets.contains(this.targetPos)) {
              return this.path;
          } else {
-@@ -187,12 +_,30 @@
+@@ -187,12 +_,38 @@
              int i = (int)(followRange + regionOffset);
              PathNavigationRegion pathNavigationRegion = new PathNavigationRegion(this.level, blockPos.offset(-i, -i, -i), blockPos.offset(i, i, i));
              Path path = this.pathFinder.findPath(pathNavigationRegion, this.mob, targets, followRange, reachRange, this.maxVisitedNodesMultiplier);
@@ -42,19 +42,27 @@
 -                this.resetStuckTimeout();
 +            // DivineMC start - Async Pathfinding
 +            if (org.bxteam.divinemc.config.DivineConfig.AsyncCategory.asyncPathfinding) {
++                profilerFiller.pop();
 +                // assign early a target position. most calls will only have 1 position
 +                if (!targets.isEmpty()) this.targetPos = targets.iterator().next();
 +
-+                org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(path, processedPath -> {
++                if (path != null && path.isProcessed()) {
++                    if (path.getTarget() != null) {
++                        this.targetPos = path.getTarget();
++                        this.reachRange = reachRange;
++                        this.resetStuckTimeout();
++                    }
++                } else {
++                    org.bxteam.divinemc.async.pathfinding.AsyncPath.applyAfterProcessing(path, (net.minecraft.server.level.ServerLevel)this.level, this.mob, processedPath -> {
 +                    if (processedPath != this.path) return;
 +
 +                    if (processedPath != null && processedPath.getTarget() != null) {
-+                        profilerFiller.pop();
 +                        this.targetPos = processedPath.getTarget();
 +                        this.reachRange = reachRange;
 +                        this.resetStuckTimeout();
 +                    }
-+                });
++                    });
++                }
 +            } else {
 +                profilerFiller.pop();
 +                if (path != null && path.getTarget() != null) {
@@ -86,7 +94,18 @@
  
          if (!this.isDone()) {
              if (this.canUpdatePath()) {
-@@ -294,6 +_,7 @@
+@@ -290,10 +_,17 @@
+ 
+     protected double getGroundY(Vec3 pos) {
+         BlockPos blockPos = BlockPos.containing(pos);
+-        return this.level.getBlockState(blockPos.below()).isAir() ? pos.y : WalkNodeEvaluator.getFloorLevel(this.level, blockPos);
++        BlockPos belowPos = blockPos.below();
++        BlockState belowState = this.level.getBlockStateIfLoaded(belowPos);
++        if (belowState == null || belowState.isAir()) {
++            return pos.y;
++        }
++        net.minecraft.world.phys.shapes.VoxelShape collisionShape = belowState.getCollisionShape(this.level, belowPos);
++        return belowPos.getY() + (collisionShape.isEmpty() ? 0.0 : collisionShape.max(net.minecraft.core.Direction.Axis.Y));
      }
  
      protected void followThePath() {

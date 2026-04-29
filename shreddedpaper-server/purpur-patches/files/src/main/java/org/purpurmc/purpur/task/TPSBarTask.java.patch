@@ -59,7 +59,7 @@
 +        return title;
 +    }
  
-@@ -44,39 +52,53 @@
+@@ -44,39 +59,53 @@
          }
          tick = 0;
  
@@ -139,7 +139,7 @@
          } else if (mode == FillMode.PING) {
              return ping < 100;
          } else {
-@@ -84,15 +100,11 @@
+@@ -84,15 +113,11 @@
          }
      }
  
@@ -158,7 +158,7 @@
          } else if (mode == FillMode.PING) {
              return ping < 200;
          } else {
-@@ -100,35 +112,35 @@
+@@ -100,35 +125,35 @@
          }
      }
  
@@ -204,7 +204,7 @@
              color = PurpurConfig.commandTPSBarTextColorMedium;
          } else {
              color = PurpurConfig.commandTPSBarTextColorLow;
-@@ -139,4 +151,19 @@
+@@ -139,4 +164,19 @@
      public enum FillMode {
          TPS, MSPT, PING
      }

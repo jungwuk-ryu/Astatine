@@ -1,5 +1,6 @@
 package io.multipaper.shreddedpaper.util;
 
+import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.LevelChunkRegion;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
@@ -169,7 +170,13 @@ public final class ShreddedPaperLagCompensation {
     private static boolean isRegionLagging(final RegionOverloadController controller) {
         return controller.ewmaMspt() >= DivineConfig.MiscCategory.regionLagMsptThreshold
                 || controller.ewmaScheduleLagMs() >= DivineConfig.MiscCategory.regionLagScheduleLagThresholdMs
+                || isBudgetSaturated(controller)
                 || applicableMissedTicks(controller) > 0;
+    }
+
+    private static boolean isBudgetSaturated(final RegionOverloadController controller) {
+        final double budgetMs = Math.max(1.0D, ShreddedPaperConfiguration.get().multithreading.regionTickBudgetMs);
+        return controller.ewmaMspt() >= budgetMs * 0.95D;
     }
 
     private static int clampMissedTicks(final int missedTicks) {
