@@ -176,7 +176,7 @@ public final class ShreddedPaperLagCompensation {
 
     private static boolean isBudgetSaturated(final RegionOverloadController controller) {
         final double budgetMs = Math.max(1.0D, ShreddedPaperConfiguration.get().multithreading.regionTickBudgetMs);
-        return controller.lastDeferredWork() > 0L && controller.ewmaMspt() >= budgetMs * 0.95D;
+        return controller.ewmaMspt() >= budgetMs * 0.95D;
     }
 
     private static int clampMissedTicks(final int missedTicks) {
