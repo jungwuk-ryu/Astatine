@@ -328,6 +328,13 @@ public final class RegionTickScheduler {
             double ewmaScheduleLagMs,
             int mailboxDepth,
             double mailboxClassPressure,
+            int criticalSystemPeakQueued,
+            long criticalSystemOldestAgeNanos,
+            String criticalSystemPeakProducer,
+            int transferredQueued,
+            int transferredPeakQueued,
+            long transferredOldestAgeNanos,
+            String transferredPeakProducer,
             int chunkIoInFlight,
             int chunkIoDeferred,
             int chunkIoCapacity,
@@ -600,14 +607,23 @@ public final class RegionTickScheduler {
         private RegionTickSnapshot snapshot() {
             final RegionOverloadController overload = this.state.overloadController();
             final RegionChunkIoTracker.Snapshot chunkIo = this.state.chunkIoTracker().snapshot();
+            final RegionMailbox mailbox = this.state.mailbox();
+            final RegionMailbox.PressureDiagnostics mailboxPressure = mailbox.pressureDiagnostics();
             return new RegionTickSnapshot(
                     this.level.getWorld().getName(),
                     this.state.regionPos(),
                     overload.loadClass(),
                     overload.ewmaMspt(),
                     overload.ewmaScheduleLagMs(),
-                    this.state.mailbox().depth(),
-                    this.state.mailbox().maxClassPressure(),
+                    mailbox.depth(),
+                    mailbox.maxClassPressure(),
+                    mailboxPressure.criticalSystem().peakDepth(),
+                    mailboxPressure.criticalSystem().oldestAgeNanos(),
+                    mailboxPressure.criticalSystem().peakProducerContext(),
+                    mailboxPressure.transferred().queued(),
+                    mailboxPressure.transferred().peakDepth(),
+                    mailboxPressure.transferred().oldestAgeNanos(),
+                    mailboxPressure.transferred().peakProducerContext(),
                     overload.lastChunkIoInFlight(),
                     overload.lastChunkIoDeferred(),
                     chunkIo.capacity(),
@@ -678,6 +694,7 @@ public final class RegionTickScheduler {
             if (!RegionTickEvent.isEventEnabled()) {
                 return;
             }
+            final RegionMailbox.PressureDiagnostics mailboxPressure = this.state.mailbox().pressureDiagnostics();
             final RegionTickEvent event = new RegionTickEvent();
             event.world = this.level.getWorld().getName();
             event.regionX = this.state.regionPos().x;
@@ -689,6 +706,13 @@ public final class RegionTickScheduler {
             event.scheduleLagNanos = scheduleLag;
             event.mailboxDepth = mailboxDepth;
             event.criticalSystemQueued = this.state.mailbox().queued(RegionTaskClass.CRITICAL_SYSTEM);
+            event.criticalSystemPeakQueued = mailboxPressure.criticalSystem().peakDepth();
+            event.criticalSystemOldestAgeNanos = mailboxPressure.criticalSystem().oldestAgeNanos();
+            event.criticalSystemPeakProducer = mailboxPressure.criticalSystem().peakProducerContext();
+            event.transferredQueued = mailboxPressure.transferred().queued();
+            event.transferredPeakQueued = mailboxPressure.transferred().peakDepth();
+            event.transferredOldestAgeNanos = mailboxPressure.transferred().oldestAgeNanos();
+            event.transferredPeakProducer = mailboxPressure.transferred().peakProducerContext();
             event.playerActionQueued = this.state.mailbox().queued(RegionTaskClass.PLAYER_ACTION);
             event.ownerHandoffQueued = this.state.mailbox().queued(RegionTaskClass.OWNER_HANDOFF);
             event.chunkIoLoadQueued = this.state.mailbox().queued(RegionTaskClass.CHUNK_IO_LOAD);

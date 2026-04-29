@@ -175,6 +175,20 @@ public final class RegionCommand extends Command {
                 this.metric("rejected", Long.toString(snapshot.rejectedTasks()), this.countColor(snapshot.rejectedTasks()))
         ));
         sender.sendMessage(this.metricLine(
+                "mailbox pressure",
+                this.metric("criticalPeak", Integer.toString(snapshot.criticalSystemPeakQueued()), this.countColor(snapshot.criticalSystemPeakQueued())),
+                this.metric("criticalAge", this.millis(snapshot.criticalSystemOldestAgeNanos()) + "ms", this.countColor(snapshot.criticalSystemOldestAgeNanos())),
+                this.metric("transferred", this.ratio(snapshot.transferredQueued(), snapshot.transferredPeakQueued()), this.countColor(snapshot.transferredQueued())),
+                this.metric("transferAge", this.millis(snapshot.transferredOldestAgeNanos()) + "ms", this.countColor(snapshot.transferredOldestAgeNanos()))
+        ));
+        if (!snapshot.criticalSystemPeakProducer().isEmpty() || !snapshot.transferredPeakProducer().isEmpty()) {
+            sender.sendMessage(Component.text("  producers | ", NamedTextColor.DARK_AQUA)
+                    .append(Component.text("critical=", NamedTextColor.GRAY))
+                    .append(Component.text(snapshot.criticalSystemPeakProducer().isEmpty() ? "n/a" : snapshot.criticalSystemPeakProducer(), NamedTextColor.YELLOW))
+                    .append(Component.text("  transferred=", NamedTextColor.GRAY))
+                    .append(Component.text(snapshot.transferredPeakProducer().isEmpty() ? "n/a" : snapshot.transferredPeakProducer(), NamedTextColor.YELLOW)));
+        }
+        sender.sendMessage(this.metricLine(
                 "chunk requests",
                 this.metric("inFlight", this.ratio(snapshot.chunkIoInFlight(), snapshot.chunkIoCapacity()), this.pressureColor(snapshot.chunkIoPressure())),
                 this.metric("pressure", this.percent(snapshot.chunkIoPressure()), this.pressureColor(snapshot.chunkIoPressure())),
@@ -350,6 +364,10 @@ public final class RegionCommand extends Command {
 
     private String decimal(final double value) {
         return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private String millis(final long nanos) {
+        return this.decimal(nanos / 1_000_000.0D);
     }
 
     private String percent(final double value) {

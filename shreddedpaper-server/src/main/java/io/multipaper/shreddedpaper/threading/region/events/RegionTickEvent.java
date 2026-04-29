@@ -25,6 +25,13 @@ public final class RegionTickEvent extends Event {
     public long scheduleLagNanos;
     public int mailboxDepth;
     public int criticalSystemQueued;
+    public int criticalSystemPeakQueued;
+    public long criticalSystemOldestAgeNanos;
+    public String criticalSystemPeakProducer;
+    public int transferredQueued;
+    public int transferredPeakQueued;
+    public long transferredOldestAgeNanos;
+    public String transferredPeakProducer;
     public int playerActionQueued;
     public int ownerHandoffQueued;
     public int chunkIoLoadQueued;

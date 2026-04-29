@@ -56,6 +56,29 @@ class RegionMailboxTest {
         assertEquals(0L, mailbox.rejected());
     }
 
+    @Test
+    void pressureDiagnosticsTrackCriticalAndTransferredQueues() {
+        final RegionMailbox mailbox = mailbox();
+
+        assertTrue(mailbox.offer(RegionTaskClass.CRITICAL_SYSTEM, () -> {}, 0L));
+        assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)));
+
+        final RegionMailbox.PressureDiagnostics pressure = mailbox.pressureDiagnostics();
+        assertEquals(1, pressure.criticalSystem().queued());
+        assertEquals(1, pressure.criticalSystem().peakDepth());
+        assertTrue(pressure.criticalSystem().oldestAgeNanos() >= 0L);
+        assertTrue(pressure.criticalSystem().peakProducerContext().contains("taskClass=CRITICAL_SYSTEM"));
+        assertEquals(1, pressure.transferred().queued());
+        assertEquals(1, pressure.transferred().peakDepth());
+        assertTrue(pressure.transferred().oldestAgeNanos() >= 0L);
+        assertTrue(pressure.transferred().peakProducerContext().contains("taskClass=OWNER_HANDOFF"));
+
+        mailbox.runDue(null);
+
+        assertEquals(0, mailbox.pressureDiagnostics().transferred().queued());
+        assertEquals(1, mailbox.pressureDiagnostics().transferred().peakDepth());
+    }
+
     private static RegionMailbox mailbox() {
         return new RegionMailbox("world", REGION_POS, 1L, () -> 1L, ignored -> true);
     }

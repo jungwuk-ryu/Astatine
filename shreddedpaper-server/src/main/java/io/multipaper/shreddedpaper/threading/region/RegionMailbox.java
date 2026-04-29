@@ -49,6 +49,9 @@ public final class RegionMailbox {
     private final PriorityQueue<RegionTask> delayed = new PriorityQueue<>();
     private final AtomicLong rejected = new AtomicLong();
     private final AtomicLong executed = new AtomicLong();
+    private final AtomicInteger transferredDepth = new AtomicInteger();
+    private final QueuePressureDiagnostics criticalSystemPressure = new QueuePressureDiagnostics();
+    private final QueuePressureDiagnostics transferredPressure = new QueuePressureDiagnostics();
     private volatile long currentTick;
 
     public RegionMailbox(
@@ -113,6 +116,45 @@ public final class RegionMailbox {
         return taskClass.ordinal();
     }
 
+    private void recordQueuePressurePeak(
+            final QueuePressureDiagnostics diagnostics,
+            final int queued,
+            final RegionTaskClass taskClass,
+            final RegionPos affinityRegionPos
+    ) {
+        int peak;
+        do {
+            peak = diagnostics.peakDepth.get();
+            if (queued <= peak) {
+                return;
+            }
+        } while (!diagnostics.peakDepth.compareAndSet(peak, queued));
+        diagnostics.peakProducerContext = this.producerContext(taskClass, affinityRegionPos);
+    }
+
+    private String producerContext(final RegionTaskClass taskClass, final RegionPos affinityRegionPos) {
+        final LevelChunkRegion sourceRegion = ShreddedPaperChunkTicker.currentlyTickingRegion();
+        if (sourceRegion == null) {
+            return "thread=%s taskClass=%s affinity=[%d,%d]".formatted(
+                    Thread.currentThread().getName(),
+                    taskClass,
+                    affinityRegionPos.x,
+                    affinityRegionPos.z
+            );
+        }
+        final RegionPos sourcePrimary = sourceRegion.getOwner().primaryCell();
+        return "thread=%s source=%s[%d,%d] owner=%d taskClass=%s affinity=[%d,%d]".formatted(
+                Thread.currentThread().getName(),
+                sourceRegion.getLevel().getWorld().getName(),
+                sourcePrimary.x,
+                sourcePrimary.z,
+                sourceRegion.getOwner().id(),
+                taskClass,
+                affinityRegionPos.x,
+                affinityRegionPos.z
+        );
+    }
+
     public boolean offer(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks) {
         return this.offer(taskClass, runnable, delayTicks, this.regionPos);
     }
@@ -120,9 +162,11 @@ public final class RegionMailbox {
     public boolean offerTransferred(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final int queuedAfter = this.reserveTransferSlot(taskClass);
+        final int transferredQueued = this.transferredDepth.incrementAndGet();
+        this.recordQueuePressurePeak(this.transferredPressure, transferredQueued, taskClass, affinityRegionPos);
         final int capacity = this.capacityByClass[index(taskClass)];
         final long readyTick = this.currentTick + normalizedDelayTicks;
-        this.transferred.offer(new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey));
+        this.transferred.offer(new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, System.nanoTime()));
         if (this.shouldCommitCrossRegionTaskEvent(true, queuedAfter, capacity)) {
             this.commitCrossRegionTaskEvent(
                     "transferred",
@@ -159,7 +203,7 @@ public final class RegionMailbox {
         }
 
         final long readyTick = this.currentTick + normalizedDelayTicks;
-        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey);
+        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, 0L);
         final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (accepted) {
             return true;
@@ -211,9 +255,20 @@ public final class RegionMailbox {
             this.reject(taskClass, "per-class capacity is full");
             return false;
         }
+        if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
+            this.recordQueuePressurePeak(this.criticalSystemPressure, queuedAfterReserve, taskClass, affinityRegionPos);
+        }
 
         final long readyTick = this.currentTick + normalizedDelayTicks;
-        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, targetOwnerEpoch, affinityRegionPos.longKey);
+        final RegionTask task = new RegionTask(
+                taskClass,
+                runnable,
+                readyTick,
+                this.ownerId,
+                targetOwnerEpoch,
+                affinityRegionPos.longKey,
+                taskClass == RegionTaskClass.CRITICAL_SYSTEM ? System.nanoTime() : 0L
+        );
         final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (!accepted) {
             this.releaseSlot(taskClass);
@@ -403,6 +458,7 @@ public final class RegionMailbox {
         int ran = 0;
         RegionTask task;
         while (ran < maxTasks && (task = this.transferred.poll()) != null) {
+            this.decrementTransferredDepth();
             if (task.readyTick() > this.currentTick) {
                 this.delayed.add(task);
                 continue;
@@ -415,6 +471,14 @@ public final class RegionMailbox {
             ran++;
         }
         return ran;
+    }
+
+    private void decrementTransferredDepth() {
+        final int remaining = this.transferredDepth.decrementAndGet();
+        if (remaining < 0) {
+            this.transferredDepth.compareAndSet(remaining, 0);
+            LOGGER.error("Transferred mailbox accounting underflow for {} {}", this.worldName, this.regionPos);
+        }
     }
 
     private int drainDelayed(final RegionTickBudget budget, final int maxTasks) {
@@ -518,6 +582,31 @@ public final class RegionMailbox {
         return depth;
     }
 
+    public PressureDiagnostics pressureDiagnostics() {
+        final long now = System.nanoTime();
+        return new PressureDiagnostics(
+                new QueuePressureSnapshot(
+                        this.queued(RegionTaskClass.CRITICAL_SYSTEM),
+                        this.criticalSystemPressure.peakDepth.get(),
+                        this.oldestAgeNanos(this.ingress[index(RegionTaskClass.CRITICAL_SYSTEM)].peek(), now),
+                        this.criticalSystemPressure.peakProducerContext
+                ),
+                new QueuePressureSnapshot(
+                        Math.max(0, this.transferredDepth.get()),
+                        this.transferredPressure.peakDepth.get(),
+                        this.oldestAgeNanos(this.transferred.peek(), now),
+                        this.transferredPressure.peakProducerContext
+                )
+        );
+    }
+
+    private long oldestAgeNanos(final RegionTask task, final long now) {
+        if (task == null || task.enqueueNanos() <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, now - task.enqueueNanos());
+    }
+
     public int queued(final RegionTaskClass taskClass) {
         return Math.max(0, this.queuedByClass[index(taskClass)].get());
     }
@@ -608,5 +697,24 @@ public final class RegionMailbox {
         event.sameOwner = sameOwner;
         event.thread = Thread.currentThread().getName();
         event.commit();
+    }
+
+    private static final class QueuePressureDiagnostics {
+        private final AtomicInteger peakDepth = new AtomicInteger();
+        private volatile String peakProducerContext = "";
+    }
+
+    public record PressureDiagnostics(
+            QueuePressureSnapshot criticalSystem,
+            QueuePressureSnapshot transferred
+    ) {
+    }
+
+    public record QueuePressureSnapshot(
+            int queued,
+            int peakDepth,
+            long oldestAgeNanos,
+            String peakProducerContext
+    ) {
     }
 }

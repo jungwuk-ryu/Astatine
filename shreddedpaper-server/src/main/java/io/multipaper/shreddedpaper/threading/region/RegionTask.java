@@ -13,6 +13,7 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
     private final long targetOwnerId;
     private final long targetOwnerEpoch;
     private final long affinityCellKey;
+    private final long enqueueNanos;
 
     RegionTask(
             final RegionTaskClass taskClass,
@@ -20,7 +21,8 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
             final long readyTick,
             final long targetOwnerId,
             final long targetOwnerEpoch,
-            final long affinityCellKey
+            final long affinityCellKey,
+            final long enqueueNanos
     ) {
         this.taskClass = taskClass;
         this.runnable = runnable;
@@ -29,6 +31,7 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
         this.targetOwnerId = targetOwnerId;
         this.targetOwnerEpoch = targetOwnerEpoch;
         this.affinityCellKey = affinityCellKey;
+        this.enqueueNanos = enqueueNanos;
     }
 
     RegionTaskClass taskClass() {
@@ -49,6 +52,10 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
 
     long affinityCellKey() {
         return this.affinityCellKey;
+    }
+
+    long enqueueNanos() {
+        return this.enqueueNanos;
     }
 
     @Override
