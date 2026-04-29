@@ -173,6 +173,9 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public long trackerFullUpdateFrequency = 20;
         public long purgeStaleTicketsFrequency = 20;
         public boolean writePlayerSavesAsync = true;
+        @Setting("scheduled-tick-presence-guard")
+        @Comment("Skips per-cell loaded chunk scans during independent region scheduled ticks when neither block nor fluid tick data exists for the region cell.")
+        public boolean scheduledTickPresenceGuard = true;
         public ChunkPacketCaching chunkPacketCaching = new ChunkPacketCaching();
 
         public class ChunkPacketCaching extends ConfigurationPart {

@@ -276,11 +276,14 @@ public class ShreddedPaperChunkTicker {
         boolean fluidPhase = scheduledTickCursor != LevelChunkRegion.NO_CONTINUATION_CURSOR
                 && ownerCells.get(index).toLong() == scheduledTickCursor
                 && region.isScheduledTickFluidPhase();
+        final boolean scheduledTickPresenceGuard = ShreddedPaperConfiguration.get().optimizations.scheduledTickPresenceGuard;
 
         for (int processed = 0; processed < size; processed++) {
             final RegionPos cell = ownerCells.get(index);
             // Dynamic split/merge can leave stale scheduled tick cursors behind; never tick a cell through a read-only isolation lock.
-            if (!region.getOwner().ownsCell(cell) || !level.chunkScheduler.getRegionLocker().hasWriteLock(cell) || !hasLoadedChunkInCell(level, cell)) {
+            if (!region.getOwner().ownsCell(cell)
+                    || !level.chunkScheduler.getRegionLocker().hasWriteLock(cell)
+                    || !shouldProcessScheduledTicksInCell(level, cell, scheduledTickPresenceGuard)) {
                 fluidPhase = false;
                 index++;
                 if (index == size) {
@@ -302,6 +305,17 @@ public class ShreddedPaperChunkTicker {
         }
 
         region.clearScheduledTickCellCursor();
+    }
+
+    private static boolean shouldProcessScheduledTicksInCell(final ServerLevel level, final RegionPos cell, final boolean scheduledTickPresenceGuard) {
+        if (scheduledTickPresenceGuard && !hasScheduledTickData(level, cell)) {
+            return false;
+        }
+        return hasLoadedChunkInCell(level, cell);
+    }
+
+    private static boolean hasScheduledTickData(final ServerLevel level, final RegionPos cell) {
+        return level.blockTicks.hasRegionData(cell) || level.fluidTicks.hasRegionData(cell);
     }
 
     private static boolean hasLoadedChunkInCell(final ServerLevel level, final RegionPos cell) {
