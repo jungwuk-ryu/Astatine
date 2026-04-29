@@ -4,6 +4,44 @@ This file tracks the productionization work for the Folia-style independent
 region tick engine plus hostile-load isolation. Keep it updated as each commit
 lands, review feedback arrives, and load-test results change the next step.
 
+## Current PR Snapshot - 2026-04-29
+
+This document is now both a historical implementation ledger and a release
+readiness checklist for the 1.21.11 Astatine integration branch. Older entries
+mention the original Windows `D:\worldgen` validation server because that is
+where those specific tests were run; new validation should use the current
+local test root and record the absolute path in the result note.
+
+Current integration head includes:
+
+- Java 25 toolchain and preview compile/test flags.
+- DivineMC, C2ME, and Lithium-derived optimization wiring.
+- Independent deadline-based region ticking with normal/degraded lanes.
+- Dynamic region owners over exact fixed cells, owner epochs, merge/split
+  safety, and stale-owner retirement.
+- Region-local mailboxes, chunk IO QoS, autosave isolation, tracker/broadcast
+  budgeting, explosion/TNT deferral, and region diagnostics.
+- Async ownership handoff helpers across entity, player, redstone, fluid,
+  piston, rail, portal, chunk, POI, and spawn paths.
+- Region-aware lag compensation and movement checks for overloaded local
+  regions.
+- Watchdog and plugin compatibility fixes for blocking sync plugin teleports
+  and disconnect/kick paths.
+
+Before opening or updating the 1.21.11 PR, the active gate is:
+
+- [ ] `git diff --check` for the final staged diff.
+- [ ] `./gradlew applyAllPatches --no-configuration-cache --stacktrace`.
+- [ ] `./gradlew :shreddedpaper-server:compileJava --rerun-tasks --no-configuration-cache --stacktrace`.
+- [ ] `./gradlew :shreddedpaper-server:test --no-configuration-cache --stacktrace`.
+- [ ] `node tools/async-audit/scan-async-ownership.mjs --fail-on-critical`
+  when the async audit tooling is present.
+- [ ] Runtime smoke with the candidate paperclip jar in an isolated server root.
+- [ ] One hostile-load region scenario that verifies an unrelated world/region
+  keeps ticking when CPU headroom exists.
+- [ ] Review `logs/latest.log` and crash reports for wrong-thread, sync-load,
+  watchdog, and plugin lock signatures.
+
 ## Ground Rules
 
 - Treat every milestone as independently reviewable and buildable.
@@ -12,8 +50,8 @@ lands, review feedback arrives, and load-test results change the next step.
 - Keep region ownership explicit. Cross-region work must use mailbox/handoff
   protocols, not silent global locks.
 - Prefer correctness first, then hostile-load survival, then micro-optimization.
-- Validate with `applyAllPatches`, `compileJava`, and a `D:\worldgen` runtime
-  test before calling a milestone complete.
+- Validate with `applyAllPatches`, `compileJava`, and a real runtime smoke
+  before calling a milestone complete.
 - Each milestone must include: implementation TODO, self-review TODO,
   sub-agent review TODO, compile/runtime verification TODO, and commit TODO.
 

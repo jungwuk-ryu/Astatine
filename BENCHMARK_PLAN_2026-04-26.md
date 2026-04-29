@@ -1,5 +1,10 @@
 # ShreddedPaper Fork Benchmark Plan - 2026-04-26
 
+Historical note: this plan describes the first Windows benchmark pass that
+preceded the current Astatine 1.21.11 integration branch. The scenario design is
+still useful, but paths, jar names, and remote repositories should be updated to
+the active validation machine before a new run.
+
 ## Goal
 
 Compare the current ShreddedPaper fork against currently available 1.21.11-capable server builds:

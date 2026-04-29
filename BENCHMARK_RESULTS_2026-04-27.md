@@ -1,5 +1,10 @@
 # Benchmark Results - 2026-04-27
 
+Historical note: these results are the first comparative Windows benchmark
+snapshot before the later async ownership, watchdog, plugin teleport, disconnect,
+and region tick overhead fixes were merged. Treat the numbers as directional
+baseline evidence, not the final 1.21.11 Astatine PR benchmark.
+
 ## Run Metadata
 
 - Benchmark root: `D:\server-benchmarks`

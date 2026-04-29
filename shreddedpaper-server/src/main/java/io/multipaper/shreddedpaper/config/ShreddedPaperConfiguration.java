@@ -15,7 +15,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
             This is the main configuration file for ShreddedPaper.
             There's quite alot to configure. Read the docs for more information.
 
-            Docs: https://github.com/MultiPaper/ShreddedPaper/blob/main/SHREDDEDPAPER_YAML.md\s
+            Docs: https://github.com/jungwuk-ryu/Astatine/blob/main/SHREDDEDPAPER_YAML.md\s
             """;
 
     private static ShreddedPaperConfiguration instance;

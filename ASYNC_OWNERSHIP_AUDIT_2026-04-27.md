@@ -1,5 +1,11 @@
 # Async Ownership Audit - 2026-04-27
 
+Historical note: this audit records the first boundary post-processing crash.
+The current integration branch extends the same ownership pattern to additional
+redstone, fluid, entity, teleport, spawn, chunk IO, and plugin execution paths.
+Use this document as a concrete incident example, and use the async ownership
+scanner/runtime gates for current release validation.
+
 ## Incident
 
 Player teleport and chunk generation could crash an independent region worker with:
