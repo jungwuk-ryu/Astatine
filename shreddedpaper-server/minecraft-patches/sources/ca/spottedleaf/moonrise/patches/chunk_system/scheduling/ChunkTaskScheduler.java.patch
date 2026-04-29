@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java
 +++ b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java
-@@ -27,6 +_,17 @@
+@@ -27,6 +_,16 @@
  import com.google.gson.JsonArray;
  import com.google.gson.JsonObject;
  import com.mojang.logging.LogUtils;
@@ -25,7 +25,7 @@
  import java.util.List;
  import java.util.Map;
  import java.util.Objects;
-@@ -334,10 +_,67 @@
+@@ -334,10 +_,68 @@
      }
  
      public boolean executeMainThreadTask() {

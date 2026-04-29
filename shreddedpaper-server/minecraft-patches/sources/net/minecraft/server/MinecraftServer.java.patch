@@ -114,7 +114,7 @@
          // Paper end - Improved watchdog support - move final shutdown items here
      }
  
-@@ -1622,7 +_,9 @@
+@@ -1622,7 +_,12 @@
                      this.autoSave();
                  }
  
@@ -137,7 +137,7 @@
                  }
                  // Paper end - avoid issues with certain tasks not processing during sleep
                  this.server.spark.executeMainThreadTasks(); // Paper - spark
-@@ -1789,16 +_,20 @@
+@@ -1789,16 +_,23 @@
      protected void tickChildren(BooleanSupplier hasTimeLeft) {
          ProfilerFiller profilerFiller = Profiler.get();
          this.getPlayerList().getPlayers().forEach(serverPlayer1 -> serverPlayer1.connection.suspendFlushing());

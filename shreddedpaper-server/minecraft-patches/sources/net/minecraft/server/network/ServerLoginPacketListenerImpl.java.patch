@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-@@ -211,19 +_,37 @@
+@@ -211,18 +_,36 @@
              this.disconnect(component);
          } else {
              if (this.server.getCompressionThreshold() >= 0 && !this.connection.isMemoryConnection()) {
@@ -47,7 +47,6 @@
 +            this.finishLoginAndWaitForClient(profile);
          }
      }
-
 @@ -470,6 +_,7 @@
          AUTHENTICATING,
          NEGOTIATING,

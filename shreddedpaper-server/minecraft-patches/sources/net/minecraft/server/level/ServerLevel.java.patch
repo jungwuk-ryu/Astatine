@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -1,10 +_,25 @@
+@@ -1,10 +_,23 @@
  package net.minecraft.server.level;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -618,7 +618,7 @@
          this.explode0(source, damageSource, damageCalculator, x, y, z, radius, fire, explosionInteraction, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound);
      }
  
-@@ -2078,20 +_,64 @@
+@@ -2078,20 +_,62 @@
          return serverExplosion; // CraftBukkit
      }
  
