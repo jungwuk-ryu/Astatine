@@ -1,12 +1,13 @@
 --- a/net/minecraft/world/level/material/FlowingFluid.java
 +++ b/net/minecraft/world/level/material/FlowingFluid.java
-@@ -5,6 +_,9 @@
+@@ -5,6 +_,10 @@
  import it.unimi.dsi.fastutil.shorts.Short2BooleanMap;
  import it.unimi.dsi.fastutil.shorts.Short2BooleanOpenHashMap;
  import it.unimi.dsi.fastutil.shorts.Short2ObjectMap;
++import ca.spottedleaf.moonrise.common.util.TickThread;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
-+import io.multipaper.shreddedpaper.region.RegionPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
  import it.unimi.dsi.fastutil.shorts.Short2ObjectOpenHashMap;
  import java.util.Map;
  import java.util.Map.Entry;
@@ -18,25 +19,190 @@
  import net.minecraft.world.phys.shapes.VoxelShape;
  
  public abstract class FlowingFluid extends Fluid {
-@@ -328,6 +_,21 @@
+@@ -152,7 +_,47 @@
+             && (side == Direction.UP || !(blockState.getBlock() instanceof IceBlock) && blockState.isFaceSturdy(level, neighborPos, side));
+     }
+ 
++    // ShreddedPaper start - evaluate fluid flow only on the owning region set
++    private BoundingBox shreddedpaper$fluidEvaluationBox(ServerLevel level, BlockPos pos) {
++        final int radius = Math.max(3, this.getSlopeFindDistance(level) + 1);
++        return BoundingBox.fromCorners(pos.offset(-radius, -2, -radius), pos.offset(radius, 1, radius));
++    }
++
++    private boolean shreddedpaper$deferFluidEvaluationIfNeeded(ServerLevel level, BlockPos pos, Runnable task) {
++        if (!ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return false;
++        }
++        final BoundingBox ownershipBox = this.shreddedpaper$fluidEvaluationBox(level, pos);
++        if (ShreddedPaper.isSync(level, ownershipBox)) {
++            return false;
++        }
++        ShreddedPaper.runSync(level, ownershipBox, task);
++        return true;
++    }
++
++    private void shreddedpaper$tickIfStillFluid(ServerLevel level, BlockPos pos) {
++        final BlockState currentState = level.getBlockStateIfLoaded(pos);
++        final FluidState currentFluid = currentState == null ? Fluids.EMPTY.defaultFluidState() : currentState.getFluidState();
++        if (!currentFluid.isEmpty() && currentFluid.getType().isSame(this)) {
++            this.tick(level, pos, currentState, currentFluid);
++        }
++    }
++
++    private void shreddedpaper$spreadIfStillFluid(ServerLevel level, BlockPos pos) {
++        final BlockState currentState = level.getBlockStateIfLoaded(pos);
++        final FluidState currentFluid = currentState == null ? Fluids.EMPTY.defaultFluidState() : currentState.getFluidState();
++        if (!currentFluid.isEmpty() && currentFluid.getType().isSame(this)) {
++            this.spread(level, pos, currentState, currentFluid);
++        }
++    }
++    // ShreddedPaper end - evaluate fluid flow only on the owning region set
++
+     protected void spread(ServerLevel level, BlockPos pos, BlockState state, FluidState fluidState) {
++        final BlockPos queuedPos = pos.immutable();
++        if (this.shreddedpaper$deferFluidEvaluationIfNeeded(level, queuedPos, () -> this.shreddedpaper$spreadIfStillFluid(level, queuedPos))) {
++            return;
++        }
++
+         if (!fluidState.isEmpty()) {
+             BlockPos blockPos = pos.below();
+             BlockState blockState = level.getBlockState(blockPos);
+@@ -200,18 +_,38 @@
+                 BlockPos blockPos = pos.relative(direction);
+                 final BlockState blockStateIfLoaded = level.getBlockStateIfLoaded(blockPos); // Paper - Prevent chunk loading from fluid flowing
+                 if (blockStateIfLoaded == null) continue; // Paper - Prevent chunk loading from fluid flowing
++                if (!TickThread.isTickThreadFor(level, pos) || !TickThread.isTickThreadFor(level, blockPos)) { // ShreddedPaper - owner handoff for cross-cell fluid spread
++                    BlockPos sourcePos = pos.immutable();
++                    BlockPos targetPos = blockPos.immutable();
++                    Direction spreadDirection = direction;
++                    ShreddedPaper.runSync(level, this.shreddedpaper$fluidEvaluationBox(level, sourcePos), () -> {
++                        BlockState sourceState = level.getBlockStateIfLoaded(sourcePos);
++                        BlockState targetState = level.getBlockStateIfLoaded(targetPos);
++                        if (sourceState != null && targetState != null && sourceState.getFluidState().getType().isSame(this)) {
++                            FluidState currentTargetFluidState = this.getSpread(level, sourcePos, sourceState).get(spreadDirection);
++                            if (currentTargetFluidState != null) {
++                                this.spreadToSide(level, sourcePos, targetPos, targetState, spreadDirection, currentTargetFluidState);
++                            }
++                        }
++                    });
++                    continue;
++                }
++                this.spreadToSide(level, pos, blockPos, blockStateIfLoaded, direction, fluidState1); // ShreddedPaper - owner-safe fluid side spread
++            }
++        }
++    }
++
++    private void spreadToSide(ServerLevel level, BlockPos sourcePos, BlockPos targetPos, BlockState targetState, Direction direction, FluidState fluidState) {
+                 // CraftBukkit start
+-                org.bukkit.block.Block source = org.bukkit.craftbukkit.block.CraftBlock.at(level, pos);
++                org.bukkit.block.Block source = org.bukkit.craftbukkit.block.CraftBlock.at(level, sourcePos);
+                 org.bukkit.event.block.BlockFromToEvent event = new org.bukkit.event.block.BlockFromToEvent(source, org.bukkit.craftbukkit.block.CraftBlock.notchToBlockFace(direction));
+                 level.getCraftServer().getPluginManager().callEvent(event);
+ 
+                 if (event.isCancelled()) {
+-                    continue;
++                    return;
+                 }
+                 // CraftBukkit end
+-                this.spreadTo(level, blockPos, blockStateIfLoaded, direction, fluidState1); // Paper - Prevent chunk loading from fluid flowing
+-            }
+-        }
++                this.spreadTo(level, targetPos, targetState, direction, fluidState); // Paper - Prevent chunk loading from fluid flowing
+     }
+ 
+     protected FluidState getNewLiquid(ServerLevel level, BlockPos pos, BlockState state) {
+@@ -234,7 +_,11 @@
+         }
+ 
+         if (i1 >= this.getRequiredSources(level) && this.canConvertToSource(level)) { // Purpur - Implement infinite liquids
+-            BlockState blockState1 = level.getBlockState(mutableBlockPos.setWithOffset(pos, Direction.DOWN));
++            BlockState blockState1 = level.getBlockStateIfLoaded(mutableBlockPos.setWithOffset(pos, Direction.DOWN)); // ShreddedPaper - loaded-only fluid probe
++            if (blockState1 == null) {
++                int i2 = i - this.getDropOff(level);
++                return i2 <= 0 ? Fluids.EMPTY.defaultFluidState() : this.getFlowing(i2, false);
++            }
+             FluidState fluidState1 = blockState1.getFluidState();
+             if (blockState1.isSolid() || this.isSourceBlockOfThisType(fluidState1)) {
+                 return this.getSource(false);
+@@ -242,7 +_,11 @@
+         }
+ 
+         BlockPos blockPos1 = mutableBlockPos.setWithOffset(pos, Direction.UP);
+-        BlockState blockState2 = level.getBlockState(blockPos1);
++        BlockState blockState2 = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - loaded-only fluid probe
++        if (blockState2 == null) {
++            int i2 = i - this.getDropOff(level);
++            return i2 <= 0 ? Fluids.EMPTY.defaultFluidState() : this.getFlowing(i2, false);
++        }
+         FluidState fluidState2 = blockState2.getFluidState();
+         if (!fluidState2.isEmpty() && fluidState2.getType().isSame(this) && canPassThroughWall(Direction.UP, level, pos, state, blockPos1, blockState2)) {
+             return this.getFlowing(8, true);
+@@ -328,6 +_,28 @@
      // Purpur end - Implement infinite liquids
  
      protected void spreadTo(LevelAccessor level, BlockPos pos, BlockState state, Direction direction, FluidState fluidState) {
 +        // ShreddedPaper start - hand off cross-region fluid writes to the target owner
-+        if (level instanceof ServerLevel serverLevel && ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaper.isSync(serverLevel, RegionPos.forBlockPos(pos))) {
++        if (level instanceof ServerLevel serverLevel && ShreddedPaperTickThread.isShreddedPaperTickThread()) {
 +            final BlockPos targetPos = pos.immutable();
 +            final BlockPos sourcePos = targetPos.relative(direction.getOpposite()).immutable();
 +            final Direction spreadDirection = direction;
-+            final FluidState targetFluidState = fluidState;
-+            ShreddedPaper.runSync(serverLevel, BoundingBox.fromCorners(targetPos, sourcePos), () -> {
-+                final BlockState currentState = serverLevel.getBlockStateIfLoaded(targetPos);
-+                if (currentState != null) {
-+                    this.spreadTo(serverLevel, targetPos, currentState, spreadDirection, targetFluidState);
-+                }
-+            });
-+            return;
++            final BoundingBox ownershipBox = this.shreddedpaper$fluidEvaluationBox(serverLevel, targetPos);
++            if (!ShreddedPaper.isSync(serverLevel, ownershipBox)) {
++                ShreddedPaper.runSync(serverLevel, ownershipBox, () -> {
++                    final BlockState sourceState = serverLevel.getBlockStateIfLoaded(sourcePos);
++                    final BlockState currentState = serverLevel.getBlockStateIfLoaded(targetPos);
++                    final FluidState currentFluidState = currentState == null ? Fluids.EMPTY.defaultFluidState() : this.getNewLiquid(serverLevel, targetPos, currentState);
++                    if (sourceState != null && currentState != null && sourceState.getFluidState().getType().isSame(this)
++                        && !currentFluidState.isEmpty()
++                        && currentState.getFluidState().canBeReplacedWith(serverLevel, targetPos, currentFluidState.getType(), spreadDirection)
++                        && canHoldSpecificFluid(serverLevel, targetPos, currentState, currentFluidState.getType())) {
++                        this.spreadTo(serverLevel, targetPos, currentState, spreadDirection, currentFluidState);
++                    }
++                });
++                return;
++            }
 +        }
 +        // ShreddedPaper end - hand off cross-region fluid writes to the target owner
          if (state.getBlock() instanceof LiquidBlockContainer liquidBlockContainer) {
              liquidBlockContainer.placeLiquid(level, pos, state, fluidState);
          } else {
+@@ -401,7 +_,10 @@
+ 
+         for (Direction direction : Direction.Plane.HORIZONTAL) {
+             BlockPos blockPos = pos.relative(direction);
+-            FluidState fluidState = level.getFluidState(blockPos);
++            FluidState fluidState = level.getFluidIfLoaded(blockPos); // ShreddedPaper - loaded-only fluid probe
++            if (fluidState == null) {
++                continue;
++            }
+             if (this.isSourceBlockOfThisType(fluidState)) {
+                 i++;
+             }
+@@ -483,6 +_,11 @@
+ 
+     @Override
+     public void tick(ServerLevel level, BlockPos pos, BlockState state, FluidState fluidState) {
++        final BlockPos queuedPos = pos.immutable();
++        if (this.shreddedpaper$deferFluidEvaluationIfNeeded(level, queuedPos, () -> this.shreddedpaper$tickIfStillFluid(level, queuedPos))) {
++            return;
++        }
++
+         if (!fluidState.isSource()) {
+             FluidState newLiquid = this.getNewLiquid(level, pos, level.getBlockState(pos));
+             int spreadDelay = this.getSpreadDelay(level, pos, fluidState, newLiquid);
+@@ -600,8 +_,14 @@
+         public boolean isHole(BlockPos pos) {
+             return this.holeCache.computeIfAbsent(this.getCacheKey(pos), s -> {
+                 BlockState blockState = this.getBlockState(pos, s);
++                if (blockState == null) {
++                    return false;
++                }
+                 BlockPos blockPos = pos.below();
+-                BlockState blockState1 = this.level.getBlockState(blockPos);
++                BlockState blockState1 = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only fluid probe
++                if (blockState1 == null) {
++                    return false;
++                }
+                 return FlowingFluid.this.isWaterHole(this.level, pos, blockState, blockPos, blockState1);
+             });
+         }

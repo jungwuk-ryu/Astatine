@@ -1,0 +1,86 @@
+--- a/net/minecraft/world/level/block/RailState.java
++++ b/net/minecraft/world/level/block/RailState.java
+@@ -1,6 +_,9 @@
+ package net.minecraft.world.level.block;
+ 
+ import com.google.common.collect.Lists;
++import ca.spottedleaf.moonrise.common.util.TickThread;
++import io.multipaper.shreddedpaper.ShreddedPaper;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import java.util.List;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+@@ -19,7 +_,8 @@
+ 
+     // Paper start - Fix some rails connecting improperly
+     public boolean isValid() {
+-        return this.level.getBlockState(this.pos).getBlock() == this.state.getBlock();
++        BlockState currentState = this.level.getBlockStateIfLoaded(this.pos); // ShreddedPaper - loaded-only rail probe
++        return currentState != null && currentState.getBlock() == this.state.getBlock();
+     }
+     // Paper end - Fix some rails connecting improperly
+ 
+@@ -98,17 +_,17 @@
+     }
+ 
+     private @Nullable RailState getRail(BlockPos pos) {
+-        BlockState blockState = this.level.getBlockState(pos);
++        BlockState blockState = this.level.getBlockStateIfLoaded(pos); // ShreddedPaper - loaded-only rail probe
+         if (BaseRailBlock.isRail(blockState)) {
+             return new RailState(this.level, pos, blockState);
+         } else {
+             BlockPos blockPos = pos.above();
+-            blockState = this.level.getBlockState(blockPos);
++            blockState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only rail probe
+             if (BaseRailBlock.isRail(blockState)) {
+                 return new RailState(this.level, blockPos, blockState);
+             } else {
+                 blockPos = pos.below();
+-                blockState = this.level.getBlockState(blockPos);
++                blockState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - loaded-only rail probe
+                 return BaseRailBlock.isRail(blockState) ? new RailState(this.level, blockPos, blockState) : null;
+             }
+         }
+@@ -146,6 +_,23 @@
+     }
+ 
+     private void connectTo(RailState state) {
++        if (!TickThread.isTickThreadFor(this.level, this.pos) || !TickThread.isTickThreadFor(this.level, state.pos)) { // ShreddedPaper - owner handoff for cross-cell rail mutation
++            BlockPos targetPos = this.pos;
++            BlockPos sourcePos = state.pos;
++            ShreddedPaper.runSync((net.minecraft.server.level.ServerLevel)this.level, BoundingBox.fromCorners(targetPos, sourcePos), () -> {
++                BlockState targetState = this.level.getBlockStateIfLoaded(targetPos);
++                BlockState sourceState = this.level.getBlockStateIfLoaded(sourcePos);
++                if (targetState != null && sourceState != null && BaseRailBlock.isRail(targetState) && BaseRailBlock.isRail(sourceState)) {
++                    RailState targetRail = new RailState(this.level, targetPos, targetState);
++                    RailState sourceRail = new RailState(this.level, sourcePos, sourceState);
++                    targetRail.removeSoftConnections();
++                    if (targetRail.canConnectTo(sourceRail)) {
++                        targetRail.connectTo(sourceRail);
++                    }
++                }
++            });
++            return;
++        }
+         // Paper start - Fix some rails connecting improperly
+         if (!this.isValid() || !state.isValid()) {
+             return;
+@@ -339,7 +_,8 @@
+ 
+         this.updateConnections(railShape);
+         this.state = this.state.setValue(this.block.getShapeProperty(), railShape);
+-        if (alwaysPlace || this.level.getBlockState(this.pos) != this.state) {
++        BlockState currentState = this.level.getBlockStateIfLoaded(this.pos); // ShreddedPaper - loaded-only rail probe
++        if (alwaysPlace || currentState != this.state) {
+             this.level.setBlock(this.pos, this.state, Block.UPDATE_ALL);
+             // Paper start - Fix some rails connecting improperly
+             if (!this.isValid()) {
+@@ -362,6 +_,7 @@
+     }
+ 
+     public BlockState getState() {
+-        return this.level.getBlockState(this.pos); // Paper - Fix some rails connecting improperly
++        BlockState currentState = this.level.getBlockStateIfLoaded(this.pos); // Paper - Fix some rails connecting improperly // ShreddedPaper - loaded-only rail probe
++        return currentState == null ? this.state : currentState;
+     }
+ }

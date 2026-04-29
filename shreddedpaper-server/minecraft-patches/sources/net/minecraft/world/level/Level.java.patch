@@ -80,7 +80,7 @@
  
      // Purpur start - Add adjustable breeding cooldown to config
      private com.google.common.cache.Cache<BreedingCooldownPair, Object> playerBreedingCooldowns;
-@@ -478,10 +_,15 @@
+@@ -471,10 +_,15 @@
  
              if ((chunkDiff | chunkYDiff) != 0) {
                  if (chunkDiff != 0) {

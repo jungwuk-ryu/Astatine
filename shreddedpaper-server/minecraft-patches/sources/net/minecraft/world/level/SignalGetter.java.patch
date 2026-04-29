@@ -1,10 +1,19 @@
 --- a/net/minecraft/world/level/SignalGetter.java
 +++ b/net/minecraft/world/level/SignalGetter.java
-@@ -11,7 +_,11 @@
+@@ -10,8 +_,20 @@
+ public interface SignalGetter extends BlockGetter {
      Direction[] DIRECTIONS = Direction.values();
  
++    default boolean shreddedpaper$isOwnedRedstoneProbe(BlockPos pos) {
++        return !(this instanceof net.minecraft.server.level.ServerLevel serverLevel)
++            || ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, pos);
++    }
++
      default int getDirectSignal(BlockPos pos, Direction direction) {
 -        return this.getBlockState(pos).getDirectSignal(this, pos, direction);
++        if (!this.shreddedpaper$isOwnedRedstoneProbe(pos)) { // ShreddedPaper - avoid off-owner redstone probes on region workers
++            return 0;
++        }
 +        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +            return 0;
@@ -13,11 +22,14 @@
      }
  
      default int getDirectSignalTo(BlockPos pos) {
-@@ -46,7 +_,10 @@
+@@ -46,7 +_,13 @@
      }
  
      default int getControlInputSignal(BlockPos pos, Direction direction, boolean diodesOnly) {
 -        BlockState blockState = this.getBlockState(pos);
++        if (!this.shreddedpaper$isOwnedRedstoneProbe(pos)) { // ShreddedPaper - avoid off-owner redstone probes on region workers
++            return 0;
++        }
 +        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +            return 0;
@@ -25,11 +37,14 @@
          if (diodesOnly) {
              return DiodeBlock.isDiode(blockState) ? this.getDirectSignal(pos, direction) : 0;
          } else if (blockState.is(Blocks.REDSTONE_BLOCK)) {
-@@ -63,7 +_,10 @@
+@@ -63,7 +_,13 @@
      }
  
      default int getSignal(BlockPos pos, Direction direction) {
 -        BlockState blockState = this.getBlockState(pos);
++        if (!this.shreddedpaper$isOwnedRedstoneProbe(pos)) { // ShreddedPaper - avoid off-owner redstone probes on region workers
++            return 0;
++        }
 +        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +        if (blockState == null) { // ShreddedPaper - avoid sync-loading unloaded redstone neighbors on region workers
 +            return 0;

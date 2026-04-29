@@ -1,6 +1,6 @@
 --- a/ca/spottedleaf/moonrise/patches/starlight/light/StarLightInterface.java
 +++ b/ca/spottedleaf/moonrise/patches/starlight/light/StarLightInterface.java
-@@ -926,10 +_,59 @@
+@@ -927,10 +_,66 @@
  
              @Override
              public void run() {

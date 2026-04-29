@@ -180,7 +180,7 @@
  
      public void saveAllChunks(final boolean flush, final boolean shutdown, final boolean logProgress,
                                final boolean emergency) {
-@@ -305,7 +_,25 @@
+@@ -305,7 +_,35 @@
          for (int i = 0, len = holders.size(); i < len; ++i) {
              final NewChunkHolder holder = holders.get(i);
              try {
@@ -193,15 +193,25 @@
 +                } else {
 +                    final RegionPos saveRegionPos = RegionPos.forChunk(holder.vanillaChunkHolder.getPos());
 +                    ShreddedPaperRegionLocker.RegionLock saveLock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(saveRegionPos);
++                    final long saveLockDeadlineNanos = shutdown ? System.nanoTime() + TimeUnit.SECONDS.toNanos(5L) : Long.MAX_VALUE;
 +                    while (saveLock == null) {
++                        if (System.nanoTime() >= saveLockDeadlineNanos) {
++                            LOGGER.warn("Timed out waiting for region lock while saving chunk {},{} in world '{}' during shutdown; saving directly",
++                                holder.chunkX, holder.chunkZ, WorldUtil.getWorldName(this.world));
++                            break;
++                        }
 +                        world.chunkSource.mainThreadProcessor.pollTask();
 +                        LockSupport.parkNanos(100_000L);
 +                        saveLock = world.chunkScheduler.getRegionLocker().tryTakeLockNow(saveRegionPos);
 +                    }
-+                    try {
++                    if (saveLock == null) {
 +                        saveStat = holder.save(shutdown);
-+                    } finally {
-+                        saveLock.unlock();
++                    } else {
++                        try {
++                            saveStat = holder.save(shutdown);
++                        } finally {
++                            saveLock.unlock();
++                        }
 +                    }
 +                }
                  if (saveStat != null) {

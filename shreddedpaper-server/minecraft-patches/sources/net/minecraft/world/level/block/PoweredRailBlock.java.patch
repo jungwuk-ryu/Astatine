@@ -1,0 +1,61 @@
+--- a/net/minecraft/world/level/block/PoweredRailBlock.java
++++ b/net/minecraft/world/level/block/PoweredRailBlock.java
+@@ -102,7 +_,13 @@
+     }
+ 
+     protected boolean isSameRailWithPower(Level level, BlockPos state, boolean searchForward, int recursionCount, RailShape shape) {
+-        BlockState blockState = level.getBlockState(state);
++        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread() && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, state)) {
++            return false;
++        }
++        BlockState blockState = level.getBlockStateIfLoaded(state); // ShreddedPaper - loaded-only powered rail probe
++        if (blockState == null) {
++            return false;
++        }
+         if (!blockState.is(this)) {
+             return false;
+         } else {
+@@ -122,6 +_,10 @@
+ 
+     @Override
+     protected void updateState(BlockState state, Level level, BlockPos pos, Block block) {
++        if (!this.shreddedpaper$ownsPoweredRailEvaluation(level, pos)) {
++            this.shreddedpaper$deferPoweredRailEvaluation(level, pos);
++            return;
++        }
+         boolean poweredValue = state.getValue(POWERED);
+         boolean flag = level.hasNeighborSignal(pos)
+             || this.findPoweredRailSignal(level, pos, state, true, 0)
+@@ -140,6 +_,32 @@
+                 level.updateNeighborsAt(pos.above(), this);
+             }
+         }
++    }
++
++    private boolean shreddedpaper$ownsPoweredRailEvaluation(Level level, BlockPos pos) {
++        if (!(level instanceof net.minecraft.server.level.ServerLevel serverLevel) || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++        int radius = Math.max(9, level.purpurConfig.railActivationRange + 1);
++        return io.multipaper.shreddedpaper.ShreddedPaper.isSync(
++            serverLevel,
++            net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-radius, -radius, -radius), pos.offset(radius, radius, radius))
++        );
++    }
++
++    private void shreddedpaper$deferPoweredRailEvaluation(Level level, BlockPos pos) {
++        if (!(level instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
++            return;
++        }
++        int radius = Math.max(9, level.purpurConfig.railActivationRange + 1);
++        net.minecraft.world.level.levelgen.structure.BoundingBox box =
++            net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-radius, -radius, -radius), pos.offset(radius, radius, radius));
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, box, () -> {
++            BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.updateState(currentState, serverLevel, pos, currentState.getBlock());
++            }
++        });
+     }
+ 
+     @Override

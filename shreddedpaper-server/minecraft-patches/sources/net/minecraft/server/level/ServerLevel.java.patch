@@ -551,7 +551,7 @@
              }
          }
          } // Paper - option to disable pathfinding updates
-@@ -1949,17 +_,17 @@
+@@ -1949,35 +_,53 @@
      @Override
      public void updateNeighborsAt(BlockPos pos, Block block) {
          // CraftBukkit start
@@ -569,9 +569,45 @@
      public void updateNeighborsAt(BlockPos pos, Block block, @Nullable Orientation orientation) {
 -        if (captureBlockStates) { return; } // Paper - Cancel all physics during placement
 +        if (captureBlockStatesThreadLocal.get()) { return; } // Paper - Cancel all physics during placement // ShreddedPaper - use thread local
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.updateNeighborsAt(pos, block, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
          this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, block, null, orientation);
      }
  
+     @Override
+     public void updateNeighborsAtExceptFromFacing(BlockPos pos, Block block, Direction facing, @Nullable Orientation orientation) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.updateNeighborsAtExceptFromFacing(pos, block, facing, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, block, facing, orientation);
+     }
+ 
+     @Override
+     public void neighborChanged(BlockPos pos, Block block, @Nullable Orientation orientation) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.neighborChanged(pos, block, orientation))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.neighborChanged(pos, block, orientation);
+     }
+ 
+     @Override
+     public void neighborChanged(BlockState state, BlockPos pos, Block block, @Nullable Orientation orientation, boolean movedByPiston) {
++        if (!this.shreddedpaper$handoffNeighborUpdateIfNeeded(pos, () -> this.neighborChanged(state, pos, block, orientation, movedByPiston))) return; // ShreddedPaper - owner handoff for cross-cell neighbor updates
+         this.neighborUpdater.neighborChanged(state, pos, block, orientation, movedByPiston);
+     }
+ 
++    private boolean shreddedpaper$handoffNeighborUpdateIfNeeded(BlockPos pos, Runnable update) {
++        if (TickThread.isTickThreadFor(this, pos)) {
++            return true;
++        }
++        if (this.getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4) == null) {
++            return false;
++        }
++        RegionPos targetRegion = RegionPos.forBlockPos(pos);
++        if (!this.chunkSource.tickingRegions.scheduleTaskNonDropping(targetRegion, update, 0L, RegionTaskClass.OWNER_HANDOFF)) {
++            throw new IllegalStateException("Region mailbox rejected cross-cell neighbor update for " + pos);
++        }
++        return false;
++    }
++
+     @Override
+     public void broadcastEntityEvent(Entity entity, byte state) {
+         this.getChunkSource().sendToTrackingPlayersAndSelf(entity, new ClientboundEntityEventPacket(entity, state));
 @@ -2010,6 +_,11 @@
          Holder<SoundEvent> explosionSound
      ) {

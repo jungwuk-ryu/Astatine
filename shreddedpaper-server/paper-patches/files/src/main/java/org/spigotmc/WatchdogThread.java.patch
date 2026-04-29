@@ -31,10 +31,40 @@
      private static WatchdogThread instance;
      private long timeoutTime;
      private boolean restart;
-@@ -63,12 +_,15 @@
+@@ -23,3 +_,4 @@
+     private long lastEarlyWarning; // Paper - Keep track of short dump times to avoid spamming console with short dumps
+     private volatile long lastTick;
+     private volatile boolean stopping;
++    private volatile long shutdownStart; // ShreddedPaper - keep watchdog active until shutdown is fully complete
+@@ -54,5 +_,8 @@
+     public static void doStop() {
+         if (WatchdogThread.instance != null) {
++            WatchdogThread.instance.shutdownStart = WatchdogThread.monotonicMillis(); // ShreddedPaper - bound shutdown hangs
++            WatchdogThread.instance.lastTick = WatchdogThread.instance.shutdownStart; // ShreddedPaper - measure shutdown from stop request
+             WatchdogThread.instance.stopping = true;
++            WatchdogThread.instance.interrupt(); // ShreddedPaper - wake watchdog for shutdown monitoring
+         }
+     }
+@@ -60,15 +_,29 @@
+     @Override
+     public void run() {
+-        while (!this.stopping) {
++        while (!this.stopping || !MinecraftServer.getServer().hasFullyShutdown) { // ShreddedPaper - monitor shutdown until final exit hooks complete
              Logger logger = Bukkit.getServer().getLogger();
              long currentTime = WatchdogThread.monotonicMillis();
              MinecraftServer server = MinecraftServer.getServer();
++            if (this.stopping && (DISABLE_WATCHDOG || this.timeoutTime <= 0)) { // ShreddedPaper - preserve explicit watchdog disable
++                break;
++            }
++            if (this.stopping && !server.hasFullyShutdown && currentTime <= this.shutdownStart + this.timeoutTime) { // ShreddedPaper - allow bounded normal shutdown progress
++                try {
++                    sleep(1000);
++                } catch (InterruptedException ex) {
++                    // ShreddedPaper - doStop() interrupts to wake this thread; do not preserve
++                    // the flag while the shutdown grace loop is intentionally sleeping.
++                }
++                continue;
++            }
 -            if (this.lastTick != 0 && this.timeoutTime > 0 && WatchdogThread.hasStarted && (!server.isRunning() || (currentTime > this.lastTick + this.earlyWarningEvery && !DISABLE_WATCHDOG))) { // Paper - add property to disable
 -                boolean isLongTimeout = currentTime > this.lastTick + this.timeoutTime || (!server.isRunning() && !server.hasStopped() && currentTime > this.lastTick + 1000);
 +            final List<RegionTickScheduler.LongRunningRegionTick> longRunningRegionTicks = this.getLongRunningRegionTicks(server);
@@ -129,7 +159,7 @@
                      break;
                  }
                  // Paper end
-@@ -156,6 +_,98 @@
+@@ -156,6 +_,102 @@
          }
      }
  
@@ -234,9 +264,7 @@
 +    private List<ThreadInfo> getStuckTickWorkerThreads() {
 +        ThreadInfo[] threads = ManagementFactory.getThreadMXBean().dumpAllThreads( true, true );
 +        return Arrays.stream(threads)
-+                .filter(thread -> thread.getThreadName().startsWith("ShreddedPaperTickThread")
-+                        || thread.getThreadName().startsWith("ShreddedPaperRegionNormal-")
-+                        || thread.getThreadName().startsWith("ShreddedPaperRegionDegraded-"))
++                .filter(thread -> thread.getThreadName().startsWith("ShreddedPaperTickThread") || thread.getThreadName().startsWith("ShreddedPaperRegion"))
 +                .filter(thread -> Arrays.stream(thread.getStackTrace()).anyMatch(stack -> !stack.getClassName().startsWith("java") && !stack.getClassName().startsWith("jdk")))
 +                .toList();
 +    }
@@ -253,6 +281,10 @@
 +    // ShreddedPaper end
 +
      private static void dumpThread(ThreadInfo thread, Logger logger) {
++        if (thread == null) { // ShreddedPaper - thread may have exited between lookup and dump
++            logger.log(Level.SEVERE, "Thread dump unavailable; thread exited before it could be sampled");
++            return;
++        }
          logger.log(Level.SEVERE, "------------------------------");
  
 @@ -164,6 +_,16 @@

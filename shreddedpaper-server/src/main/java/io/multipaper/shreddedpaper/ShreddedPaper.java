@@ -3,6 +3,7 @@ package io.multipaper.shreddedpaper;
 import ca.spottedleaf.moonrise.common.util.TickThread;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
+import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
@@ -25,11 +26,19 @@ public class ShreddedPaper {
     }
 
     public static void runSync(Entity entity, Runnable runnable) {
-        entity.getBukkitEntity().taskScheduler.schedule(e -> runnable.run(), null, 1);
+        runSync(entity, runnable, null);
+    }
+
+    public static boolean runSync(Entity entity, Runnable runnable, Runnable retired) {
+        return entity.getBukkitEntity().taskScheduler.schedule(e -> runnable.run(), retired == null ? null : e -> retired.run(), 1);
     }
 
     public static void runSync(Entity entity, Consumer<Entity> consumer) {
-        entity.getBukkitEntity().taskScheduler.schedule(consumer, null, 1);
+        runSync(entity, consumer, null);
+    }
+
+    public static boolean runSync(Entity entity, Consumer<Entity> consumer, Runnable retired) {
+        return entity.getBukkitEntity().taskScheduler.schedule(consumer, retired == null ? null : e -> retired.run(), 1);
     }
 
     public static void runSync(ServerLevel serverLevel, BlockPos blockPos, Runnable runnable) {
@@ -37,7 +46,7 @@ public class ShreddedPaper {
     }
 
     public static void runSync(ServerLevel serverLevel, ChunkPos chunkPos, Runnable runnable) {
-        serverLevel.getChunkSource().tickingRegions.scheduleTask(RegionPos.forChunk(chunkPos), runnable);
+        serverLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(RegionPos.forChunk(chunkPos), runnable, 0L, RegionTaskClass.OWNER_HANDOFF);
     }
 
     public static void runSync(ServerLevel serverLevel, BoundingBox box, Runnable runnable) {
@@ -95,7 +104,20 @@ public class ShreddedPaper {
     public static void ensureSync(Entity entity, ServerLevel serverLevel, BoundingBox box, Runnable runnable) {
         final ServerLevel entityLevel = (ServerLevel) entity.level();
         if (entityLevel != serverLevel) {
-            ensureSync(entity, () -> ensureSync(serverLevel, box, runnable));
+            final RegionPos entityRegion = RegionPos.forChunk(entity.chunkPosition());
+            final RegionPos[] boxRegions = regionsForBox(box);
+            if (!isSync(entityLevel, entityRegion) || !isSync(serverLevel, box)) {
+                ShreddedPaperRegionScheduler.scheduleAcrossLevels(
+                        entityLevel,
+                        new RegionPos[]{entityRegion},
+                        serverLevel,
+                        boxRegions,
+                        () -> ensureSync(entity, serverLevel, box, runnable)
+                );
+                return;
+            }
+
+            runnable.run();
             return;
         }
 

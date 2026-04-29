@@ -7,13 +7,14 @@
  import com.google.common.base.Splitter;
  import com.google.common.collect.ImmutableList;
  import com.google.common.collect.Lists;
-@@ -10,6 +_,9 @@
+@@ -10,6 +_,10 @@
  import com.mojang.jtracy.DiscontinuousFrame;
  import com.mojang.jtracy.TracyClient;
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperPlayerTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
++import io.multipaper.shreddedpaper.threading.region.RegionTickScheduler;
  import it.unimi.dsi.fastutil.objects.ObjectArrayList;
  import it.unimi.dsi.fastutil.objects.ObjectArraySet;
  import java.io.File;
@@ -75,7 +76,7 @@
          // Purpur start - UPnP Port Forwarding
          if (upnp) {
              if (dev.omega24.upnp4j.UPnP4J.close(this.getPort(), dev.omega24.upnp4j.util.Protocol.TCP)) {
-@@ -1057,7 +_,7 @@
+@@ -1057,11 +_,16 @@
  
              for (ServerLevel serverLevelx : this.getAllLevels()) {
                  serverLevelx.getChunkSource().deactivateTicketsOnClosing();
@@ -84,14 +85,27 @@
              }
  
              this.waitUntilNextTick();
-@@ -1072,6 +_,7 @@
-         this.saveAllChunks(false, true, false, true); // Paper - rewrite chunk system
- 
-         this.isSaving = false;
-+        ShreddedPaperTickThread.stopServer(); // ShreddedPaper - stop region workers after chunk/world shutdown work has drained
-         this.resources.close();
- 
-         try {
+         }
++        try { // ShreddedPaper start - stop independent region ticks before final world save
++            RegionTickScheduler.shutdownGlobal();
++        } catch (final Throwable throwable) {
++            LOGGER.error("Failed to stop independent ShreddedPaper region scheduler cleanly; continuing server shutdown", throwable);
++        } // ShreddedPaper end
+         // Paper start - rewrite chunk system
+         // note: make sure we call deactivateTicketsOnClosing
+         for (final ServerLevel world : this.getAllLevels()) {
+@@ -1093,6 +_,11 @@
+         LOGGER.info("Waiting for all RegionFile I/O tasks to complete...");
+         ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO.flush((MinecraftServer)(Object)this);
+         LOGGER.info("All RegionFile I/O tasks to complete");
++        try { // ShreddedPaper start - stop shared tick executor after RegionFile I/O has drained
++            ShreddedPaperTickThread.stopServer();
++        } catch (final Throwable throwable) {
++            LOGGER.error("Failed to stop ShreddedPaper tick threads cleanly; continuing server shutdown", throwable);
++        } // ShreddedPaper end
+         if ((Object)this instanceof net.minecraft.server.dedicated.DedicatedServer) {
+             ca.spottedleaf.moonrise.common.util.MoonriseCommon.haltExecutors();
+         }
 @@ -1100,6 +_,7 @@
          // Paper start - Improved watchdog support - move final shutdown items here
          Util.shutdownExecutors();

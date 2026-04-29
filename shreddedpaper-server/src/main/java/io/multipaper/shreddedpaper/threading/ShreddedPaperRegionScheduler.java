@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 
 public class ShreddedPaperRegionScheduler {
@@ -26,9 +27,7 @@ public class ShreddedPaperRegionScheduler {
     public CompletableFuture<Void> schedule(RegionPos regionPos, Runnable runnable) {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        ShreddedPaperTickThread.getExecutor().execute(() -> {
-            run(regionPos, runnable, future);
-        });
+        submit(future, () -> run(regionPos, runnable, future));
 
         return future;
     }
@@ -39,9 +38,7 @@ public class ShreddedPaperRegionScheduler {
     public CompletableFuture<Void> scheduleOnMany(Runnable runnable, RegionPos... posArray) {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        ShreddedPaperTickThread.getExecutor().execute(() -> {
-            runOnMany(sortPredictably(posArray), runnable, future);
-        });
+        submit(future, () -> runOnMany(sortPredictably(posArray), runnable, future));
 
         return future;
     }
@@ -72,11 +69,62 @@ public class ShreddedPaperRegionScheduler {
 
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        ShreddedPaperTickThread.getExecutor().execute(() -> {
-            runAcrossLevels(finalLevel1, finalRegionPos1, finalLevel2, finalRegionPos2, runnable, future);
-        });
+        submit(future, () -> runAcrossLevels(finalLevel1, finalRegionPos1, finalLevel2, finalRegionPos2, runnable, future));
 
         return future;
+    }
+
+    public static CompletableFuture<Void> scheduleAcrossLevels(ServerLevel level1, RegionPos[] regionPosArray1, ServerLevel level2, RegionPos[] regionPosArray2, Runnable runnable) {
+        if (level1 == level2) {
+            RegionPos[] combinedRegions = new RegionPos[regionPosArray1.length + regionPosArray2.length];
+            System.arraycopy(regionPosArray1, 0, combinedRegions, 0, regionPosArray1.length);
+            System.arraycopy(regionPosArray2, 0, combinedRegions, regionPosArray1.length, regionPosArray2.length);
+            return level1.chunkScheduler.scheduleOnMany(runnable, combinedRegions);
+        }
+
+        ServerLevel finalLevel1;
+        RegionPos[] finalRegionPosArray1;
+        ServerLevel finalLevel2;
+        RegionPos[] finalRegionPosArray2;
+
+        // Sort predictably to avoid deadlocks
+        if (compare(level1, level2) > 0) {
+            finalLevel1 = level2;
+            finalRegionPosArray1 = regionPosArray2;
+            finalLevel2 = level1;
+            finalRegionPosArray2 = regionPosArray1;
+        } else {
+            finalLevel1 = level1;
+            finalRegionPosArray1 = regionPosArray1;
+            finalLevel2 = level2;
+            finalRegionPosArray2 = regionPosArray2;
+        }
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        submit(future, () -> runAcrossLevels(finalLevel1, finalRegionPosArray1, finalLevel2, finalRegionPosArray2, runnable, future));
+
+        return future;
+    }
+
+    private static CompletableFuture<Void> submit(CompletableFuture<Void> result, Runnable task) {
+        CompletableFuture<Void> submitted = new CompletableFuture<>();
+        try {
+            ShreddedPaperTickThread.getExecutor().execute(() -> {
+                try {
+                    task.run();
+                    submitted.complete(null);
+                } catch (Throwable throwable) {
+                    result.completeExceptionally(throwable);
+                    submitted.completeExceptionally(throwable);
+                    LOGGER.error("Region scheduler task failed", throwable);
+                }
+            });
+        } catch (RejectedExecutionException rejected) {
+            result.completeExceptionally(rejected);
+            submitted.completeExceptionally(rejected);
+        }
+        return submitted;
     }
 
     /**
@@ -114,7 +162,7 @@ public class ShreddedPaperRegionScheduler {
             lock = locker.tryTakeLockNow(regionPos);
             if (lock == null) {
                 // Wait for unlock, then retry
-                locker.onUnlock(regionPos, () -> CompletableFuture.runAsync(() -> run(regionPos, runnable, future), ShreddedPaperTickThread.getExecutor()));
+                locker.onUnlock(regionPos, () -> submit(future, () -> run(regionPos, runnable, future)));
                 return;
             }
 
@@ -138,7 +186,7 @@ public class ShreddedPaperRegionScheduler {
                 final List<RegionPos> isolationRegions = isolationRegionsFor(writeRegions);
                 lock = locker.internalTryTakeExactLockNow(writeRegions, isolationRegions);
                 if (lock == null) {
-                    locker.onUnlock(isolationRegions, () -> CompletableFuture.runAsync(() -> runOnMany(regionPosArray, runnable, future), ShreddedPaperTickThread.getExecutor()));
+                    locker.onUnlock(isolationRegions, () -> submit(future, () -> runOnMany(regionPosArray, runnable, future)));
                     return;
                 }
 
@@ -164,7 +212,7 @@ public class ShreddedPaperRegionScheduler {
                 lock2 = lock1 == null ? null : level2.chunkScheduler.locker.tryTakeLockNow(regionPos2);
 
                 if (lock2 == null) {
-                    Supplier<CompletableFuture<Void>> unlockCallback = () -> CompletableFuture.runAsync(() -> runAcrossLevels(level1, regionPos1, level2, regionPos2, runnable, future), ShreddedPaperTickThread.getExecutor());
+                    Supplier<CompletableFuture<Void>> unlockCallback = () -> submit(future, () -> runAcrossLevels(level1, regionPos1, level2, regionPos2, runnable, future));
                     if (lock1 == null) level1.chunkScheduler.locker.onUnlock(regionPos1, unlockCallback);
                     else level2.chunkScheduler.locker.onUnlock(regionPos2, unlockCallback);
                     return;
@@ -172,6 +220,43 @@ public class ShreddedPaperRegionScheduler {
 
                 // Both locks acquired, run the task
                 runnable.run();
+            } finally {
+                if (lock2 != null) lock2.unlock();
+                if (lock1 != null) lock1.unlock();
+            }
+
+            future.complete(null);
+        } catch (Throwable throwable) {
+            future.completeExceptionally(throwable);
+        }
+    }
+
+    private static void runAcrossLevels(ServerLevel level1, RegionPos[] regionPosArray1, ServerLevel level2, RegionPos[] regionPosArray2, Runnable runnable, CompletableFuture<Void> future) {
+        ShreddedPaperRegionLocker.RegionLock lock1 = null;
+        ShreddedPaperRegionLocker.RegionLock lock2 = null;
+        try {
+            try {
+                final List<RegionPos> writeRegions1 = sortedUniqueRegions(regionPosArray1);
+                final List<RegionPos> isolationRegions1 = isolationRegionsFor(writeRegions1);
+                final List<RegionPos> writeRegions2 = sortedUniqueRegions(regionPosArray2);
+                final List<RegionPos> isolationRegions2 = isolationRegionsFor(writeRegions2);
+
+                lock1 = level1.chunkScheduler.locker.internalTryTakeExactLockNow(writeRegions1, isolationRegions1);
+                lock2 = lock1 == null ? null : level2.chunkScheduler.locker.internalTryTakeExactLockNow(writeRegions2, isolationRegions2);
+
+                if (lock2 == null) {
+                    Supplier<CompletableFuture<Void>> unlockCallback = () -> submit(future, () -> runAcrossLevels(level1, regionPosArray1, level2, regionPosArray2, runnable, future));
+                    if (lock1 == null) level1.chunkScheduler.locker.onUnlock(isolationRegions1, unlockCallback);
+                    else level2.chunkScheduler.locker.onUnlock(isolationRegions2, unlockCallback);
+                    return;
+                }
+
+                try (
+                        var ignored1 = level1.chunkScheduler.locker.promoteCurrentThreadLocksToWrite();
+                        var ignored2 = level2.chunkScheduler.locker.promoteCurrentThreadLocksToWrite()
+                ) {
+                    runnable.run();
+                }
             } finally {
                 if (lock2 != null) lock2.unlock();
                 if (lock1 != null) lock1.unlock();

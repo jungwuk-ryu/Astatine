@@ -1,0 +1,90 @@
+--- a/net/minecraft/world/level/block/BaseRailBlock.java
++++ b/net/minecraft/world/level/block/BaseRailBlock.java
+@@ -31,11 +_,12 @@
+     private final boolean isStraight;
+ 
+     public static boolean isRail(Level level, BlockPos pos) {
+-        return isRail(level.getBlockState(pos));
++        BlockState state = level.getBlockStateIfLoaded(pos); // ShreddedPaper - loaded-only rail probe
++        return state != null && isRail(state);
+     }
+ 
+     public static boolean isRail(BlockState state) {
+-        return state.is(BlockTags.RAILS) && state.getBlock() instanceof BaseRailBlock;
++        return state != null && state.is(BlockTags.RAILS) && state.getBlock() instanceof BaseRailBlock; // ShreddedPaper - loaded-only rail probes may return null
+     }
+ 
+     protected BaseRailBlock(boolean isStraight, BlockBehaviour.Properties properties) {
+@@ -71,7 +_,10 @@
+         state = this.updateDir(level, pos, state, true);
+         if (this.isStraight) {
+             level.neighborChanged(state, pos, this, null, movedByPiston);
+-            state = level.getBlockState(pos); // Paper - Fix some rails connecting improperly
++            BlockState currentState = level.getBlockStateIfLoaded(pos); // Paper - Fix some rails connecting improperly // ShreddedPaper - loaded-only rail probe
++            if (currentState != null) {
++                state = currentState;
++            }
+         }
+ 
+         return state;
+@@ -79,7 +_,12 @@
+ 
+     @Override
+     protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighborBlock, @Nullable Orientation orientation, boolean movedByPiston) {
+-        if (!level.isClientSide() && level.getBlockState(pos).is(this)) {
++        BlockState currentState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - loaded-only rail probe
++        if (!level.isClientSide() && currentState != null && currentState.is(this)) {
++            if (!this.shreddedpaper$ownsRailEvaluation(level, pos)) {
++                this.shreddedpaper$deferRailNeighborChanged(level, pos, neighborBlock, orientation, movedByPiston); // ShreddedPaper - preserve deferred rail support checks
++                return;
++            }
+             RailShape railShape = state.getValue(this.getShapeProperty());
+             if (shouldBeRemoved(pos, level, railShape)) {
+                 dropResources(state, level, pos);
+@@ -117,9 +_,46 @@
+             return state;
+         } else {
+             RailShape railShape = state.getValue(this.getShapeProperty());
++            if (!this.shreddedpaper$ownsRailEvaluation(level, pos)) {
++                this.shreddedpaper$deferRailEvaluation(level, pos, alwaysPlace);
++                return state;
++            }
+             return new RailState(level, pos, state).place(level.hasNeighborSignal(pos), alwaysPlace, railShape).getState();
+         }
+     }
++
++    protected boolean shreddedpaper$ownsRailEvaluation(Level level, BlockPos pos) {
++        if (!(level instanceof ServerLevel serverLevel) || !io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            return true;
++        }
++        return io.multipaper.shreddedpaper.ShreddedPaper.isSync(serverLevel, net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-2, -2, -2), pos.offset(2, 2, 2)));
++    }
++
++    protected void shreddedpaper$deferRailEvaluation(Level level, BlockPos pos, boolean alwaysPlace) {
++        if (!(level instanceof ServerLevel serverLevel)) {
++            return;
++        }
++        net.minecraft.world.level.levelgen.structure.BoundingBox box = net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-2, -2, -2), pos.offset(2, 2, 2));
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, box, () -> {
++            BlockState currentState = serverLevel.getBlockStateIfLoaded(pos);
++            if (currentState != null && currentState.is(this)) {
++                this.updateState(currentState, serverLevel, pos, alwaysPlace);
++            }
++        });
++    }
++
++    protected void shreddedpaper$deferRailNeighborChanged(Level level, BlockPos pos, Block neighborBlock, @Nullable Orientation orientation, boolean movedByPiston) { // ShreddedPaper - preserve deferred rail support checks
++        if (!(level instanceof ServerLevel serverLevel)) { // ShreddedPaper - preserve deferred rail support checks
++            return; // ShreddedPaper - preserve deferred rail support checks
++        } // ShreddedPaper - preserve deferred rail support checks
++        net.minecraft.world.level.levelgen.structure.BoundingBox box = net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(pos.offset(-2, -2, -2), pos.offset(2, 2, 2)); // ShreddedPaper - preserve deferred rail support checks
++        io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, box, () -> { // ShreddedPaper - preserve deferred rail support checks
++            BlockState currentState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - preserve deferred rail support checks
++            if (currentState != null && currentState.is(this)) { // ShreddedPaper - preserve deferred rail support checks
++                this.neighborChanged(currentState, serverLevel, pos, neighborBlock, orientation, movedByPiston); // ShreddedPaper - preserve deferred rail support checks
++            } // ShreddedPaper - preserve deferred rail support checks
++        }); // ShreddedPaper - preserve deferred rail support checks
++    } // ShreddedPaper - preserve deferred rail support checks
+ 
+     @Override
+     protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel level, BlockPos pos, boolean movedByPiston) {

@@ -138,7 +138,7 @@
 +                this.chunkHolderManager.processTicketUpdates();
 +            }
 +
-+            final Consumer<LevelChunk> loadCallback = onComplete == null && !addTicket ? null : (final LevelChunk chunk) -> {
++            final Consumer<LevelChunk> loadCallback = onComplete == null && !addTicket && qosAdmission.tracker() == null ? null : (final LevelChunk chunk) -> {
 +                try {
 +                    if (onComplete != null) {
 +                        onComplete.accept(chunk);
@@ -288,7 +288,7 @@
 +                this.chunkHolderManager.processTicketUpdates();
 +            }
 +
-+            final Consumer<ChunkAccess> loadCallback = onComplete == null && !addTicket ? null : (final ChunkAccess chunk) -> {
++            final Consumer<ChunkAccess> loadCallback = onComplete == null && !addTicket && qosAdmission.tracker() == null ? null : (final ChunkAccess chunk) -> {
 +                try {
 +                    if (onComplete != null) {
 +                        onComplete.accept(chunk);

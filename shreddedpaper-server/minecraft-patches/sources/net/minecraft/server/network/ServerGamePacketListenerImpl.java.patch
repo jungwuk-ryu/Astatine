@@ -17,7 +17,15 @@
  import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
  import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-@@ -200,6 +_,7 @@
+@@ -187,6 +_,7 @@
+ import net.minecraft.world.item.crafting.RecipeManager;
+ import net.minecraft.world.level.BaseCommandBlock;
+ import net.minecraft.world.level.GameType;
++import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.LevelReader;
+ import net.minecraft.world.level.block.Block;
+@@ -203,6 +_,7 @@
  import net.minecraft.world.level.block.state.BlockBehaviour;
  import net.minecraft.world.level.block.state.BlockState;
  import net.minecraft.world.level.gamerules.GameRules;
@@ -25,6 +33,14 @@
  import net.minecraft.world.level.material.Fluids;
  import net.minecraft.world.level.storage.TagValueOutput;
  import net.minecraft.world.phys.AABB;
+@@ -263,6 +_,7 @@
+     private static final int MAX_COMMAND_SUGGESTIONS = 1000;
+     public ServerPlayer player;
+     public final PlayerChunkSender chunkSender;
++    private boolean shreddedpaper$respawnInProgress; // ShreddedPaper - async respawn
+     private int tickCount;
+     private int ackBlockChangesUpTo = -1;
+     private final TickThrottler chatSpamThrottler = new TickThrottler(20, 200);
 @@ -369,7 +_,7 @@
          }
  
@@ -48,12 +64,15 @@
          this.resetPosition();
          this.player.xo = this.player.getX();
          this.player.yo = this.player.getY();
-@@ -627,6 +_,19 @@
+@@ -627,6 +_,22 @@
                      return;
                  }
                  // Paper end - Prevent moving into unloaded chunks
 +                // ShreddedPaper start - Check we own the destination location
-+                if (!TickThread.isTickThreadFor(this.player.level(), new Vec3(toX, toY, toZ))) {
++                final Vec3 vehicleMovement = new Vec3(toX, toY, toZ).subtract(rootVehicle.position()); // ShreddedPaper - own full swept collision area
++                final Vec3 passengerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position()); // ShreddedPaper - own full swept collision area
++                if (!ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(rootVehicle.getBoundingBox().expandTowards(vehicleMovement)))
++                    || !ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(this.player.getBoundingBox().expandTowards(passengerMovement)))) {
 +                    this.connection.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
 +                    return;
 +                }
@@ -86,12 +105,13 @@
          }
      }
  
-@@ -1574,6 +_,18 @@
+@@ -1574,6 +_,19 @@
                                          // Paper end - Add fail move event
                                      }
                                      // Paper end - Prevent moving into unloaded chunks
 +                                    // ShreddedPaper start - Check we own the destination location
-+                                    if (!TickThread.isTickThreadFor(this.player.level(), new Vec3(toX, toY, toZ))) {
++                                    final Vec3 playerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position()); // ShreddedPaper - own full swept collision area
++                                    if (!ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(this.player.getBoundingBox().expandTowards(playerMovement)))) {
 +                                        this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
 +                                        return;
 +                                    }
@@ -105,7 +125,18 @@
  
                                      if (this.shouldCheckPlayerMovement(isFallFlying)) {
                                          float f2 = isFallFlying ? 300.0F : 100.0F;
-@@ -2208,4 +_,14 @@
+@@ -2072,6 +_,9 @@
+                 case START_DESTROY_BLOCK:
+                 case ABORT_DESTROY_BLOCK:
+                 case STOP_DESTROY_BLOCK:
++                    if (this.shreddedpaper$rescheduleIfMissingOwnership(this.player.level(), ChunkPos.of(pos), () -> this.handlePlayerAction(packet))) {
++                        return;
++                    }
+                     // Paper start - Don't allow digging into unloaded chunks
+                     if (this.player.level().getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4) == null || !this.player.isWithinBlockInteractionRange(pos, 1.0)) {
+                         this.player.connection.ackBlockChangesUpTo(packet.getSequence());
+@@ -2167,10 +_,20 @@
+                     double d = 1.0000001;
                      if (Math.abs(vec3.x()) < 1.0000001 && Math.abs(vec3.y()) < 1.0000001 && Math.abs(vec3.z()) < 1.0000001) {
                          Direction direction = hitResult.getDirection();
 +                        BlockPos relativeBlockPos = blockPos.relative(direction); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
@@ -120,14 +151,13 @@
 +                        }
                          this.player.resetLastActionTime();
                          int maxY = this.player.level().getMaxY();
-@@ -2212,5 +_,5 @@
                          if (blockPos.getY() <= maxY) {
 -                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && serverLevel.getBlockState(blockPos).getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection
 +                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && blockState.getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection // ShreddedPaper - do not sync-load the clicked block
                                  this.player.stopUsingItem(); // CraftBukkit - SPIGOT-4706
                                  InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, serverLevel, itemInHand, hand, hitResult);
                                  if (interactionResult.consumesAction()) {
-@@ -2232,7 +_,7 @@
+@@ -2190,7 +_,7 @@
                              // Paper start - Fix inventory desync; MC-99075
                              // From serverLevel.mayInteract(this.player, blockPos)
                              } else if (this.server.isUnderSpawnProtection(serverLevel, blockPos, player)) {
@@ -136,7 +166,7 @@
                                      this.player.containerMenu.sendAllDataToRemote();
                                  } else {
                                      this.player.containerMenu.forceHeldSlot(hand);
-@@ -2244,15 +_,22 @@
+@@ -2202,8 +_,8 @@
                              this.player.sendSystemMessage(component1, true);
                          }
  
@@ -147,21 +177,22 @@
                          if (io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.updateEquipmentOnPlayerActions) this.player.detectEquipmentUpdates(); // Paper - Force update attributes.
                          // Paper - Remove unused warning
                      }
-                 }
-             }
+@@ -2212,6 +_,13 @@
          }
      }
-+
+ 
 +    private void shreddedpaper$sendBlockUpdateIfLoaded(ServerLevel serverLevel, BlockPos blockPos) { // ShreddedPaper - do not sync-load for interaction resync packets
 +        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos);
 +        if (blockState != null) {
 +            this.send(new ClientboundBlockUpdatePacket(blockPos, blockState));
 +        }
 +    }
- 
++
      @Override
      public void handleUseItem(ServerboundUseItemPacket packet) {
-@@ -2286,5 +_,10 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+@@ -2245,6 +_,11 @@
+                 float f8 = f3 * f5;
                  double d3 = this.player.blockInteractionRange();
                  Vec3 to = from.add((double) f7 * d3, (double) f6 * d3, (double) f8 * d3);
 +                BoundingBox interactionBox = BoundingBox.fromCorners(BlockPos.containing(from), BlockPos.containing(to)); // ShreddedPaper - avoid sync ray-trace loads across region boundaries
@@ -182,19 +213,46 @@
                      return;
                  }
              }
-@@ -2318,12 +_,15 @@
+@@ -2318,12 +_,42 @@
              this.processedDisconnect = true;
          }
          // CraftBukkit end
-+        final Consumer<Entity> runOnPlayersThread = e -> { // ShreddedPaper - run on player's thread
++        final ServerPlayer disconnectingPlayer = this.player; // ShreddedPaper - stable scheduler target
++        final ServerLevel disconnectingLevel = (ServerLevel) disconnectingPlayer.level(); // ShreddedPaper - fallback target captured before retirement
++        final ChunkPos disconnectingChunk = disconnectingPlayer.chunkPosition(); // ShreddedPaper - fallback target captured before retirement
++        final Runnable[] retryDisconnectCleanupRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
++        final Consumer<Entity>[] runOnPlayersThreadRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final Runnable disconnectCleanup = () -> { // ShreddedPaper - run disconnect cleanup only after ownership handoff
++        this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
          this.removePlayerFromWorld(quitMessage);
          // Paper end - Fix kick event leave message not being sent
          super.onDisconnect(details);
++        }; // ShreddedPaper - run disconnect cleanup only after ownership handoff
++        final Runnable fallbackToDisconnectingChunk = () -> ShreddedPaper.runSync(disconnectingLevel, disconnectingChunk, disconnectCleanup); // ShreddedPaper - entity scheduler retired after accepting task
++        final Consumer<Entity> runOnPlayersThread = runOnPlayersThreadRef[0] = e -> { // ShreddedPaper - run on player's thread
++            if (e instanceof ServerPlayer scheduledPlayer && this.player != scheduledPlayer) {
++                retryDisconnectCleanupRef[0].run();
++                return; // ShreddedPaper - do not run disconnect cleanup on a stale player owner
++            }
++            disconnectCleanup.run();
 +        }; // ShreddedPaper - run on player's thread
-+        if (TickThread.isShutdownThread()) runOnPlayersThread.accept(this.player); else player.getBukkitEntity().taskScheduler.schedule(runOnPlayersThread, e -> LOGGER.error("Failed to run disconnect task for player {}", player.getName().getString(), new Exception("Disconnect task retired")), 1); // ShreddedPaper - run on player's thread
++        retryDisconnectCleanupRef[0] = () -> { // ShreddedPaper - entity scheduler may retire after accepting the task
++            final ServerPlayer currentPlayer = this.player;
++            if (currentPlayer != null && currentPlayer.connection == this) {
++                if (TickThread.isTickThreadFor(currentPlayer)) {
++                    runOnPlayersThreadRef[0].accept(currentPlayer);
++                    return;
++                }
++                if (ShreddedPaper.runSync(currentPlayer, runOnPlayersThreadRef[0], fallbackToDisconnectingChunk)) {
++                    return;
++                }
++            }
++            fallbackToDisconnectingChunk.run();
++        }; // ShreddedPaper - entity scheduler may retire after accepting the task
++        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) runOnPlayersThread.accept(disconnectingPlayer); else if (!ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) retryDisconnectCleanupRef[0].run(); // ShreddedPaper - run on player's thread
      }
  
      private void removePlayerFromWorld() {
@@ -207,17 +265,48 @@
              } else {
                  handler.run();
              }
-@@ -3042,23 +_,27 @@
+@@ -2896,6 +_,9 @@
+             this.player.resetLastActionTime();
+             this.player.setShiftKeyDown(packet.isUsingSecondaryAction());
+             if (target != null) {
++                if (this.shreddedpaper$rescheduleIfMissingOwnership(target, () -> this.handleInteract(packet))) {
++                    return;
++                }
+                 if (!serverLevel.getWorldBorder().isWithinBounds(target.blockPosition())) {
+                     return;
+                 }
+@@ -3041,24 +_,65 @@
+         ServerboundClientCommandPacket.Action action = packet.getAction();
          switch (action) {
              case PERFORM_RESPAWN:
++                if (this.shreddedpaper$respawnInProgress) { // ShreddedPaper - async respawn
++                    return; // ShreddedPaper - async respawn
++                } // ShreddedPaper - async respawn
                  if (this.player.wonGame) {
-+                    this.server.getPlayerList().respawnAsync(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL).thenAccept(player -> { // CraftBukkit // ShreddedPaper - async respawn
++                    this.shreddedpaper$respawnInProgress = true; // ShreddedPaper - async respawn
++                    final ServerPlayer respawningPlayer = this.player; // ShreddedPaper - async respawn
++                    this.server.getPlayerList().respawnAsync(respawningPlayer, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL).whenComplete((player, throwable) -> { // CraftBukkit // ShreddedPaper - async respawn
++                    final ServerPlayer completionPlayer = player == null ? respawningPlayer : player; // ShreddedPaper - async respawn
++                    Runnable finishRespawn = () -> { // ShreddedPaper - async respawn
++                    this.shreddedpaper$respawnInProgress = false; // ShreddedPaper - async respawn
++                    if (throwable != null) { // ShreddedPaper - async respawn
++                        LOGGER.error("Async end-portal respawn failed for {}", respawningPlayer.getPlainTextName(), throwable); // ShreddedPaper - async respawn
++                        return; // ShreddedPaper - async respawn
++                    } // ShreddedPaper - async respawn
++                    if (this.processedDisconnect || this.player != respawningPlayer) return; // ShreddedPaper - ignore stale respawn completion
 +                    this.player = player; // ShreddedPaper - async respawn
++                    this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends after dimension handoff
                      this.player.wonGame = false;
 -                    this.player = this.server.getPlayerList().respawn(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL); // CraftBukkit
                      this.resetPosition();
                      this.restartClientLoadTimerAfterRespawn();
                      CriteriaTriggers.CHANGED_DIMENSION.trigger(this.player, Level.END, Level.OVERWORLD);
++                    }; // ShreddedPaper - async respawn
++                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
++                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, finishRespawn)) { // ShreddedPaper - async respawn
++                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  } else {
                      if (this.player.getHealth() > 0.0F) {
@@ -225,14 +314,31 @@
                      }
  
 -                    this.player = this.server.getPlayerList().respawn(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit
-+                    this.server.getPlayerList().respawnAsync(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH).thenAccept(player -> { // CraftBukkit // ShreddedPaper - async respawn
++                    this.shreddedpaper$respawnInProgress = true; // ShreddedPaper - async respawn
++                    final ServerPlayer respawningPlayer = this.player; // ShreddedPaper - async respawn
++                    this.server.getPlayerList().respawnAsync(respawningPlayer, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH).whenComplete((player, throwable) -> { // CraftBukkit // ShreddedPaper - async respawn
++                    final ServerPlayer completionPlayer = player == null ? respawningPlayer : player; // ShreddedPaper - async respawn
++                    Runnable finishRespawn = () -> { // ShreddedPaper - async respawn
++                    this.shreddedpaper$respawnInProgress = false; // ShreddedPaper - async respawn
++                    if (throwable != null) { // ShreddedPaper - async respawn
++                        LOGGER.error("Async death respawn failed for {}", respawningPlayer.getPlainTextName(), throwable); // ShreddedPaper - async respawn
++                        return; // ShreddedPaper - async respawn
++                    } // ShreddedPaper - async respawn
++                    if (this.processedDisconnect || this.player != respawningPlayer) return; // ShreddedPaper - ignore stale respawn completion
 +                    this.player = player; // ShreddedPaper - async respawn
++                    this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends after respawn handoff
                      this.resetPosition();
                      this.restartClientLoadTimerAfterRespawn();
                      if (this.server.isHardcore()) {
                          this.player.setGameMode(GameType.SPECTATOR, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.HARDCORE_DEATH, null); // Paper - Expand PlayerGameModeChangeEvent
                          this.player.level().getGameRules().set(GameRules.SPECTATORS_GENERATE_CHUNKS, false, this.player.level()); // CraftBukkit - per-world
                      }
++                    }; // ShreddedPaper - async respawn
++                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
++                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, finishRespawn)) { // ShreddedPaper - async respawn
++                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  }
                  break;
@@ -246,12 +352,102 @@
      }
  
      private void updateSignText(ServerboundSignUpdatePacket packet, List<FilteredText> filteredText) {
-@@ -3850,7 +_,7 @@
+@@ -3795,6 +_,41 @@
+         return !this.waitingForRespawn && this.clientLoadedTimeoutTimer <= 0;
+     }
+ 
++    private boolean shreddedpaper$rescheduleIfMissingOwnership(ServerLevel level, ChunkPos chunkPos, Runnable action) { // ShreddedPaper
++        if (TickThread.isTickThreadFor(this.player) && TickThread.isTickThreadFor(level, chunkPos)) {
++            return false;
++        }
++        ShreddedPaper.ensureSync(this.player, level, chunkPos, () -> {
++            if (!this.processedDisconnect && this.player.connection == this && this.player.level() == level) {
++                action.run();
++            }
++        });
++        return true;
++    }
++
++    private boolean shreddedpaper$rescheduleIfMissingOwnership(Entity target, Runnable action) { // ShreddedPaper
++        if (TickThread.isTickThreadFor(this.player) && TickThread.isTickThreadFor(target)) {
++            return false;
++        }
++        ShreddedPaper.ensureSync(this.player, target, () -> {
++            if (!this.processedDisconnect && this.player.connection == this && !target.isRemoved()) {
++                action.run();
++            }
++        });
++        return true;
++    }
++
++    private static BoundingBox shreddedpaper$movementOwnershipBox(AABB box) { // ShreddedPaper - own full swept collision area
++        return new BoundingBox(
++            Mth.floor(box.minX),
++            Mth.floor(box.minY),
++            Mth.floor(box.minZ),
++            Mth.floor(box.maxX),
++            Mth.floor(box.maxY),
++            Mth.floor(box.maxZ)
++        );
++    }
++
+     public void tickClientLoadTimeout() {
+         if (this.clientLoadedTimeoutTimer > 1) { // Paper - Add PlayerLoadedWorldEvent - only reduce till 1, let the below else-if call #markClientLoaded to trigger event and reduce to 0
+             this.clientLoadedTimeoutTimer--;
+@@ -3850,19 +_,48 @@
  
      @Override
      public void disconnectAsync(final net.minecraft.network.DisconnectionDetails disconnectionInfo) {
 -        if (this.cserver.isPrimaryThread()) {
-+        if (TickThread.isTickThreadFor(this.player)) { // ShreddedPaper
+-            this.disconnect(disconnectionInfo);
+-            return;
+-        }
+-
+-        this.connection.setReadOnly();
+-        this.server.scheduleOnMain(() -> {
++        final ServerPlayer disconnectPlayer = this.player; // ShreddedPaper - stable scheduler target
++        final ServerLevel disconnectLevel = (ServerLevel) disconnectPlayer.level(); // ShreddedPaper - fallback target captured before retirement
++        final ChunkPos disconnectChunk = disconnectPlayer.chunkPosition(); // ShreddedPaper - fallback target captured before retirement
++        final Runnable[] retryDisconnectTaskRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
++        final Consumer<Entity>[] disconnectTaskRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final Runnable asyncDisconnectCleanup = () -> {
              this.disconnect(disconnectionInfo);
-             return;
-         }
+             if (this.player.quitReason == null) {
+                 // cancelled
+                 this.connection.enableAutoRead();
+             }
+-        });
++        };
++        final Runnable fallbackToDisconnectChunk = () -> ShreddedPaper.runSync(disconnectLevel, disconnectChunk, asyncDisconnectCleanup); // ShreddedPaper - entity scheduler retired after accepting task
++        final Consumer<Entity> disconnectTask = disconnectTaskRef[0] = e -> {
++            if (e instanceof ServerPlayer scheduledPlayer && this.player != scheduledPlayer) {
++                retryDisconnectTaskRef[0].run();
++                return; // ShreddedPaper - do not run disconnect cleanup on a stale player owner
++            }
++            asyncDisconnectCleanup.run();
++        };
++        retryDisconnectTaskRef[0] = () -> { // ShreddedPaper - entity scheduler may retire after accepting the task
++            final ServerPlayer currentPlayer = this.player;
++            if (currentPlayer != null && currentPlayer.connection == this) {
++                if (TickThread.isTickThreadFor(currentPlayer)) {
++                    disconnectTaskRef[0].accept(currentPlayer);
++                    return;
++                }
++                if (ShreddedPaper.runSync(currentPlayer, disconnectTaskRef[0], fallbackToDisconnectChunk)) {
++                    return;
++                }
++            }
++            fallbackToDisconnectChunk.run();
++        }; // ShreddedPaper - entity scheduler may retire after accepting the task
++        if (TickThread.isTickThreadFor(disconnectPlayer)) { // ShreddedPaper
++            disconnectTask.accept(disconnectPlayer);
++            return;
++        }
++
++        this.connection.setReadOnly();
++        if (!ShreddedPaper.runSync(disconnectPlayer, disconnectTask, retryDisconnectTaskRef[0])) { // ShreddedPaper - disconnect on player owner, with retired fallback
++            retryDisconnectTaskRef[0].run();
++        }
+     }
+ 
+     public final boolean isDisconnected() {

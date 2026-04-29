@@ -101,17 +101,27 @@
          private final LongHeapPriorityQueue sendQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue tickingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue generatingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
-@@ -401,6 +_,64 @@
-             this.player = player;
-         }
+@@ -395,10 +_,72 @@
+         private final LongHeapPriorityQueue loadQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
  
+         private volatile boolean removed;
++        private final int initialChunkX; // ShreddedPaper
++        private final int initialChunkZ; // ShreddedPaper
+ 
+         public PlayerChunkLoaderData(final ServerLevel world, final ServerPlayer player) {
+             this.world = world;
+             this.player = player;
++            this.initialChunkX = player.chunkPosition().x; // ShreddedPaper
++            this.initialChunkZ = player.chunkPosition().z; // ShreddedPaper
++        }
++
 +        public boolean isForWorld(final ServerLevel world) { // ShreddedPaper
 +            return this.world == world;
 +        }
 +
 +        public void scheduleStaleWorldChangeCleanup() { // ShreddedPaper
-+            final int cleanupChunkX = this.lastChunkX == Integer.MIN_VALUE ? this.player.chunkPosition().x : this.lastChunkX;
-+            final int cleanupChunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.player.chunkPosition().z : this.lastChunkZ;
++            final int cleanupChunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int cleanupChunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
 +            ShreddedPaper.runSync(this.world, new ChunkPos(cleanupChunkX, cleanupChunkZ), () -> {
 +                if (!this.removed && this.isStaleWorldChangeCleanupStillValid()) {
 +                    this.removeAfterWorldChange();
@@ -125,8 +135,8 @@
 +        }
 +
 +        private void removeAfterWorldChange() { // ShreddedPaper
-+            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.player.chunkPosition().x : this.lastChunkX;
-+            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.player.chunkPosition().z : this.lastChunkZ;
++            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
 +            TickThread.ensureTickThread(this.world, chunkX, chunkZ, "Cannot remove stale player chunk loader asynchronously");
 +            if (this.removed) {
 +                return;
@@ -161,11 +171,9 @@
 +                }
 +            }
 +            this.sentChunks.clear();
-+        }
-+
+         }
+ 
          private void flushDelayedTicketOps() {
-             if (this.delayedTicketOps.isEmpty()) {
-                 return;
 @@ -413,16 +_,27 @@
              this.delayedTicketOps.addLast(op);
          }
@@ -350,8 +358,8 @@
          }
  
 +        ChunkPos removalChunkPos() {
-+            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.player.chunkPosition().x : this.lastChunkX;
-+            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.player.chunkPosition().z : this.lastChunkZ;
++            final int chunkX = this.lastChunkX == Integer.MIN_VALUE ? this.initialChunkX : this.lastChunkX;
++            final int chunkZ = this.lastChunkZ == Integer.MIN_VALUE ? this.initialChunkZ : this.lastChunkZ;
 +            return new ChunkPos(chunkX, chunkZ);
 +        }
 +

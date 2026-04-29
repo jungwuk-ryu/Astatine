@@ -1,6 +1,8 @@
 --- a/net/minecraft/world/entity/SpawnPlacementTypes.java
 +++ b/net/minecraft/world/entity/SpawnPlacementTypes.java
-@@ -3,5 +_,7 @@
+@@ -1,7 +_,9 @@
+ package net.minecraft.world.entity;
+ 
  import net.minecraft.core.BlockPos;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
  import net.minecraft.tags.FluidTags;
@@ -8,7 +10,7 @@
  import net.minecraft.world.level.LevelReader;
  import net.minecraft.world.level.NaturalSpawner;
  import net.minecraft.world.level.block.state.BlockState;
-@@ -13,14 +_,20 @@
+@@ -13,22 +_,29 @@
      SpawnPlacementType IN_WATER = (level, pos, entityType) -> {
          if (entityType != null && level.getWorldBorder().isWithinBounds(pos)) {
              BlockPos blockPos = pos.above();
@@ -33,7 +35,7 @@
      SpawnPlacementType ON_GROUND = new SpawnPlacementType() {
          @Override
          public boolean isSpawnPositionOk(LevelReader level, BlockPos pos, @Nullable EntityType<?> entityType) {
-@@ -27,7 +_,8 @@
+             if (entityType != null && level.getWorldBorder().isWithinBounds(pos)) {
                  BlockPos blockPos = pos.above();
                  BlockPos blockPos1 = pos.below();
 -                BlockState blockState = level.getBlockState(blockPos1);

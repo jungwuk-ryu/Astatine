@@ -8,7 +8,7 @@
      private static final UniformInt PERSISTENT_ANGER_TIME = TimeUtil.rangeOfSeconds(20, 39);
      private long persistentAngerEndTime;
      private @Nullable EntityReference<LivingEntity> persistentAngerTarget;
-@@ -332,6 +_,22 @@
+@@ -332,16 +_,40 @@
      }
  
      private boolean teleport(double x, double y, double z) {
@@ -30,4 +30,24 @@
 +        }
          BlockPos.MutableBlockPos mutableBlockPos = new BlockPos.MutableBlockPos(x, y, z);
  
-         while (mutableBlockPos.getY() > this.level().getMinY() && !this.level().getBlockState(mutableBlockPos).blocksMotion()) {
+-        while (mutableBlockPos.getY() > this.level().getMinY() && !this.level().getBlockState(mutableBlockPos).blocksMotion()) {
++        // ShreddedPaper start - loaded-only teleport fallback
++        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), mutableBlockPos)) return false;
++        BlockState blockState = this.level().getBlockStateIfLoaded(mutableBlockPos);
++        if (blockState == null) return false;
++
++        while (mutableBlockPos.getY() > this.level().getMinY() && !blockState.blocksMotion()) {
+             mutableBlockPos.move(Direction.DOWN);
++            blockState = this.level().getBlockStateIfLoaded(mutableBlockPos);
++            if (blockState == null) return false;
+         }
+ 
+-        BlockState blockState = this.level().getBlockState(mutableBlockPos);
+         boolean flag = blockState.blocksMotion();
+         boolean isWater = blockState.getFluidState().is(FluidTags.WATER);
+         if (flag && !isWater) {
++            if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(this.level(), BlockPos.containing(x, y, z))) return false;
++            // ShreddedPaper end - loaded-only teleport fallback
+             Vec3 vec3 = this.position();
+             boolean flag1 = this.randomTeleport(x, y, z, true);
+             if (flag1) {
