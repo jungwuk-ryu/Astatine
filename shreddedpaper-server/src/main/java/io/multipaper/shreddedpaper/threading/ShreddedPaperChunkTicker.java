@@ -164,63 +164,37 @@ public class ShreddedPaperChunkTicker {
             });
 
             region.tickTasks();
+            tickPlayers(region);
 
             if (level.tickRateManager().runsNormally()) {
                 level.handlingTickThreadLocal.set(true);
 
-                processScheduledTicks(level, region, budget);
+                processScheduledTicks(level, region);
 
-                if (budget == null || budget.canContinue(RegionWorkType.CHUNK_TICK)) {
-                    region.setChunkTickCursor(processRoundRobin(region.getChunksSnapshot(), region.getChunkTickCursor(), chunk -> chunk.getPos().toLong(), chunk -> {
-                        if (budget != null && !budget.canContinue(RegionWorkType.CHUNK_TICK)) {
-                            return false;
-                        }
-                        this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState);
-                        return true;
-                    }));
-                }
+                region.setChunkTickCursor(processRoundRobin(region.getChunksSnapshot(), region.getChunkTickCursor(), chunk -> chunk.getPos().toLong(), chunk -> {
+                    this._tickChunk(region, level, chunk, timeInhabited, filteredSpawningCategories, spawnState);
+                    return true;
+                }));
 
                 level.runBlockEvents(region);
 
                 level.handlingTickThreadLocal.set(false);
             }
 
-            if (budget == null || budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                region.setEntityTickCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTickCursor(), entity -> entity.getId(), entity -> {
-                    if (budget != null && !budget.canContinue(RegionWorkType.ENTITY_TICK)) {
-                        return false;
-                    }
-                    ShreddedPaperEntityTicker.tickEntity(entity);
-                    return true;
-                }));
-            }
+            region.setEntityTickCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTickCursor(), entity -> entity.getId(), entity -> {
+                ShreddedPaperEntityTicker.tickEntity(entity);
+                return true;
+            }));
 
             if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) {
-                if (budget == null || budget.canContinue(RegionWorkType.TRACKER)) {
-                    region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
-                        if (budget != null && !budget.canContinue(RegionWorkType.TRACKER)) {
-                            return false;
-                        }
-                        ShreddedPaperEntityTicker.processTrackQueue(entity);
-                        return true;
-                    }));
-                }
-            }
-
-            if (budget == null || budget.canContinue(RegionWorkType.BLOCK_ENTITY)) {
-                try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
-                    level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
-                }
-            }
-
-            if (budget == null || budget.canContinue(RegionWorkType.PLAYER)) {
-                region.setPlayerTickCursor(processRoundRobin(region.getPlayers(), region.getPlayerTickCursor(), player -> player.getId(), player -> {
-                    if (budget != null && !budget.canContinue(RegionWorkType.PLAYER)) {
-                        return false;
-                    }
-                    ShreddedPaperPlayerTicker.tickPlayer(player);
+                region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
+                    ShreddedPaperEntityTicker.processTrackQueue(entity);
                     return true;
                 }));
+            }
+
+            try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {
+                level.tickBlockEntities(region.tickingBlockEntities, region.pendingBlockEntityTickers);
             }
 
             while (budget == null || budget.canContinue(RegionWorkType.INTERNAL_TASK)) {
@@ -269,6 +243,14 @@ public class ShreddedPaperChunkTicker {
         world.tickChunk(levelChunk, randomTickSpeed);
     }
 
+    private static void tickPlayers(final LevelChunkRegion region) {
+        // Player connection ticks are latency-critical; heavy entity/block work must not starve movement validation.
+        region.setPlayerTickCursor(processRoundRobin(region.getPlayers(), region.getPlayerTickCursor(), player -> player.getId(), player -> {
+            ShreddedPaperPlayerTicker.tickPlayer(player);
+            return true;
+        }));
+    }
+
     private void _tickSpawningChunk(final ServerLevel world, final LevelChunk levelChunk, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState) {
         if (!world.chunkSource.chunkMap.isChunkNearPlayer(world.chunkSource.chunkMap, levelChunk.getPos(), levelChunk)) {
             return;
@@ -277,7 +259,7 @@ public class ShreddedPaperChunkTicker {
         world.chunkSource.tickSpawningChunk(levelChunk, timeInhabited, filteredSpawningCategories, spawnState);
     }
 
-    private static void processScheduledTicks(final ServerLevel level, final LevelChunkRegion region, final RegionTickBudget budget) {
+    private static void processScheduledTicks(final ServerLevel level, final LevelChunkRegion region) {
         final List<RegionPos> ownerCells = region.getOwner().cellPositionsSnapshot();
         final int size = ownerCells.size();
         if (size == 0) {
@@ -303,17 +285,9 @@ public class ShreddedPaperChunkTicker {
                 continue;
             }
             if (!fluidPhase) {
-                if (budget != null && !budget.canContinue(RegionWorkType.BLOCK_TICK)) {
-                    region.setScheduledTickCellCursor(cell.toLong(), false);
-                    return;
-                }
                 level.blockTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
             }
 
-            if (budget != null && !budget.canContinue(RegionWorkType.FLUID_TICK)) {
-                region.setScheduledTickCellCursor(cell.toLong(), true);
-                return;
-            }
             level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
             fluidPhase = false;
 

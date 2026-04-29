@@ -306,11 +306,12 @@ public final class RegionTickScheduler {
             int chunkIoExecutorBackpressureCapacity,
             double chunkIoExecutorBackpressurePressure,
             long rejectedTasks,
+            long deferredWork,
             long nextStartNanos
     ) {
         private double sortScore() {
             return Math.max(
-                    Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D),
+                    Math.max(Math.max(this.ewmaMspt, this.mailboxClassPressure * 50.0D), this.deferredWork > 0L ? 50.0D : 0.0D),
                     Math.max(this.chunkIoPressure, this.chunkIoExecutorPressure) * 50.0D
             );
         }
@@ -582,6 +583,7 @@ public final class RegionTickScheduler {
                     chunkIo.executorBackpressureCapacity(),
                     chunkIo.executorBackpressurePressure(),
                     this.state.mailbox().rejected(),
+                    overload.lastDeferredWork(),
                     this.scheduledStartNanos
             );
         }

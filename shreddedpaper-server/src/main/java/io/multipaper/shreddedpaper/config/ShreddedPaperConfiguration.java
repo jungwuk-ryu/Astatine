@@ -88,7 +88,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int trackerBroadcastRegionMailboxCapacity = 1024;
         @Comment("Maximum queued explosion/physics tasks per region.")
         public int explosionPhysicsRegionMailboxCapacity = 2048;
-        @Comment("Target per-region cooperative work budget in milliseconds.")
+        @Comment("Target per-region cooperative auxiliary-work budget in milliseconds. Core game tick phases are not interrupted by this budget.")
         public long regionTickBudgetMs = 45;
         @Comment("Maximum deferred TNT explosions kept as frozen live entities per world. Overflow TNT is discarded without exploding to prevent hostile-load entity/save debt.")
         public int deferredTntBacklogPerWorld = 1024;

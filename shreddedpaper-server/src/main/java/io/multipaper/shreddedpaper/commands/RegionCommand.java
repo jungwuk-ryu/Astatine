@@ -153,6 +153,7 @@ public final class RegionCommand extends Command {
                 "mailbox",
                 this.metric("depth", Integer.toString(snapshot.mailboxDepth()), this.pressureColor(snapshot.mailboxClassPressure())),
                 this.metric("class", this.percent(snapshot.mailboxClassPressure()), this.pressureColor(snapshot.mailboxClassPressure())),
+                this.metric("deferred", Long.toString(snapshot.deferredWork()), this.countColor(snapshot.deferredWork())),
                 this.metric("rejected", Long.toString(snapshot.rejectedTasks()), this.countColor(snapshot.rejectedTasks()))
         ));
         sender.sendMessage(this.metricLine(
@@ -236,6 +237,8 @@ public final class RegionCommand extends Command {
                 .append(this.metric("overflow", this.ratio(snapshot.chunkIoExecutorOverflowInFlight(), snapshot.chunkIoExecutorOverflowCapacity()), this.pressureColor(snapshot.chunkIoExecutorOverflowPressure())))
                 .append(Component.text("  "))
                 .append(this.metric("bp", this.ratio(snapshot.chunkIoExecutorBackpressureWaiters(), snapshot.chunkIoExecutorBackpressureCapacity()), this.pressureColor(snapshot.chunkIoExecutorBackpressurePressure())))
+                .append(Component.text("  "))
+                .append(this.metric("defer", Long.toString(snapshot.deferredWork()), this.countColor(snapshot.deferredWork())))
                 .append(Component.text("  "))
                 .append(this.metric("rej", Long.toString(snapshot.rejectedTasks() + snapshot.chunkIoRejected() + snapshot.chunkIoExecutorRejected()), this.countColor(snapshot.rejectedTasks() + snapshot.chunkIoRejected() + snapshot.chunkIoExecutorRejected())))
                 .append(Component.text("  "))
