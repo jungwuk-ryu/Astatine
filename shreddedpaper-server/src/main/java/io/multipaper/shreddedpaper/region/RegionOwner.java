@@ -16,6 +16,8 @@ import java.util.List;
  */
 public final class RegionOwner {
 
+    private static final Object CELL_LOCK_TIE_BREAKER = new Object();
+
     private final long id;
     private final RegionPos primaryCell;
     private final LongOpenHashSet cells = new LongOpenHashSet();
@@ -181,12 +183,19 @@ public final class RegionOwner {
     }
 
     void absorbCellsFrom(final RegionOwner source) {
-        synchronized (this.cells) {
-            synchronized (source.cells) {
-                this.cells.addAll(source.cells);
+        if (this == source) {
+            return;
+        }
+
+        final int order = compareCellLockOrder(this, source);
+        if (order == 0) {
+            synchronized (CELL_LOCK_TIE_BREAKER) {
+                this.absorbCellsFromLocked(source, this, source);
             }
-            this.invalidateSnapshots();
-            this.bumpLayoutEpoch();
+        } else if (order < 0) {
+            this.absorbCellsFromLocked(source, this, source);
+        } else {
+            this.absorbCellsFromLocked(source, source, this);
         }
         this.lastMergeNanos = System.nanoTime();
     }
@@ -202,6 +211,24 @@ public final class RegionOwner {
     private void invalidateSnapshots() {
         this.cellPositionsSnapshot = null;
         this.isolationRadiusOneSnapshot = null;
+    }
+
+    private void absorbCellsFromLocked(final RegionOwner source, final RegionOwner first, final RegionOwner second) {
+        synchronized (first.cells) {
+            synchronized (second.cells) {
+                this.cells.addAll(source.cells);
+                this.invalidateSnapshots();
+                this.bumpLayoutEpoch();
+            }
+        }
+    }
+
+    private static int compareCellLockOrder(final RegionOwner first, final RegionOwner second) {
+        final int idOrder = Long.compare(first.id, second.id);
+        if (idOrder != 0) {
+            return idOrder;
+        }
+        return Integer.compare(System.identityHashCode(first), System.identityHashCode(second));
     }
 
     private void bumpLayoutEpoch() {
