@@ -11,7 +11,9 @@ The working remote is:
 https://github.com/jungwuk-ryu/Astatine.git
 ```
 
-## What This Branch Adds
+## Astatine Features
+
+### Regionized Execution
 
 - Independent deadline-based region ticking, with normal and degraded worker
   lanes so one overloaded area does not automatically stall unrelated regions.
@@ -19,24 +21,71 @@ https://github.com/jungwuk-ryu/Astatine.git
   merged, split, or serialized when required to keep unsafe access from running
   concurrently.
 - Exact-cell region lock APIs, region owner epochs, stale-owner retirement, and
-  cross-owner handoff queues for block, fluid, redstone, piston, portal,
-  entity, player, and chunk mutations.
+  cross-owner handoff queues for block, fluid, redstone, piston, rail, portal,
+  entity, player, spawn, POI, and chunk mutations.
 - Async ownership guards in hot game paths. Region workers avoid hidden sync
   chunk loads and defer unsafe writes through `ShreddedPaperAccess` instead of
   taking global locks.
-- Bounded per-region mailboxes for player actions, plugin tasks, tracker
-  broadcasts, chunk IO, autosave work, owner handoffs, and explosion/physics
-  work.
-- Per-region chunk IO and chunk worker QoS, including backlog, overflow,
-  backpressure, downgrade, and emergency counters.
+- Compatibility handling for plugin lifecycle, global scheduler work, teleports,
+  disconnects, player login, vehicle movement, and cross-region command paths.
 - Region-aware lag compensation for low local TPS/MSPT, including movement
   check suppression only when the player's own region is measurably behind.
-- DivineMC, C2ME, and Lithium-derived optimizations wired through
-  `shreddedpaper.yml`, including async tracker/pathfinding controls, virtual
-  threads, chunk generation caches, End biome caching, DAB, and projectile
-  chunk-load limits.
-- Operator diagnostics through `/region`, TPS bar region metrics, JFR events,
-  watchdog dumps, and region load-test tooling.
+
+### Workload Isolation And QoS
+
+- Bounded per-region mailboxes for critical work, player actions, plugin tasks,
+  tracker broadcasts, chunk IO, autosave work, owner handoffs, and
+  explosion/physics work.
+- Per-region chunk IO and chunk worker QoS, including normal/degraded admission
+  caps, backlog limits, overflow reserves, backpressure, priority downgrade, and
+  emergency counters.
+- Budgeted auxiliary queues for broadcasts, pending TNT, block events, and
+  tick-phase cursors while keeping core entity/chunk/player/block-entity ticking
+  coherent.
+- Region-local autosave isolation and stale-owner retirement so merges, splits,
+  and disconnected owners do not keep unsafe work alive indefinitely.
+- Hostile-load validation tooling, MCC chaos/runtime gates, RCON anchors, async
+  ownership scanner support, and region load-test plugin probes.
+
+### Network And Runtime Performance
+
+- Parallel network flush queue and tracking queue processing behind
+  `shreddedpaper.yml` optimization flags, with lazy execution when a connection
+  is not currently flushing.
+- `NetworkFlushDiagnostics` accounting for direct vs queued flush decisions, so
+  future network changes can verify that parallel flushing stays observable.
+- Opt-in Netty `io_uring` transport for Linux TCP listeners. It is disabled by
+  default, only activates when native transport is enabled and available, keeps
+  KQueue priority on macOS/BSD, and leaves Unix domain sockets on Epoll domain
+  channels.
+- Netty aligned on the 4.2 patch line, `velocity-native` pinned to a release,
+  `zstd-jni` updated for region compression, and `jctools-core` updated for
+  bounded region mailboxes.
+- Java 25 Compact Object Headers benchmark profile tooling for controlled
+  baseline-vs-compact runs without changing production defaults.
+
+### DivineMC, C2ME, And Lithium Optimizations
+
+- DivineMC async pathfinding bridge and async entity tracker configuration keys,
+  with ownership-safe behavior while independent region ticking is active.
+- DivineMC virtual-thread integration for Bukkit async scheduler and `MCUtil`
+  async executor paths, plus documented configuration keys for chat,
+  tab-complete, command builder, and server text filtering.
+- DivineMC DAB support, player near-chunk range tuning, projectile chunk-load
+  limits, and general optimization toggles such as orb clumping, hopper
+  throttling, suffocation optimization, sleeping block entities, equipment
+  tracking, and command-block parse result caching.
+- DivineMC linear region format support, including `LINEAR` and `B_LINEAR`,
+  compression level controls, IO thread counts, flush delay, and virtual-thread
+  IO mode.
+- C2ME chunk optimizations, including pending chunk NBT/data cache limits,
+  C2ME-style chunk worker selection, aquifer and beardifier optimizations, End
+  biome caching, density-function compiler, structure layout optimizer, and
+  shuffled template-pool deduplication.
+- Lithium-derived combined heightmap updates, compact bit storage, and reduced
+  chunk-load/lookup overhead.
+- Chunk packet caching, threaded chunk change broadcasting, and region-aware TPS
+  bar/network ping metrics for live operator feedback.
 
 See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the architecture and
 [ASTATINE_YAML.md](ASTATINE_YAML.md) for configuration.
