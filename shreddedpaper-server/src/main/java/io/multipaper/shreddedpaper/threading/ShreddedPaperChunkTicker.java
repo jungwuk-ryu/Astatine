@@ -181,10 +181,14 @@ public class ShreddedPaperChunkTicker {
                 level.handlingTickThreadLocal.set(false);
             }
 
-            region.setEntityTickCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTickCursor(), entity -> entity.getId(), entity -> {
-                ShreddedPaperEntityTicker.tickEntity(entity);
-                return true;
-            }));
+            if (region.getEntityTickCursor() == LevelChunkRegion.NO_CONTINUATION_CURSOR) {
+                region.forEachTickingEntity(ShreddedPaperEntityTicker::tickEntity);
+            } else {
+                region.setEntityTickCursor(processRoundRobin(region.getTickingEntitiesSnapshot(), region.getEntityTickCursor(), entity -> entity.getId(), entity -> {
+                    ShreddedPaperEntityTicker.tickEntity(entity);
+                    return true;
+                }));
+            }
 
             if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) {
                 region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
