@@ -16,7 +16,7 @@ public final class RegionCommand extends Command {
 
     public RegionCommand(final String command) {
         super(command);
-        this.setPermission("shreddedpaper.command.region");
+        this.setPermission("astatine.command.region;shreddedpaper.command.region");
         this.setUsage("/region top|dump|ownership|inspect <world> <regionX> <regionZ>");
     }
 
@@ -62,7 +62,7 @@ public final class RegionCommand extends Command {
         }
 
         final List<RegionTickScheduler.RegionTickSnapshot> snapshots = scheduler.snapshots();
-        this.sendHeader(sender, "ShreddedPaper Regions", "top by MSPT, lag, mailbox pressure, and chunk IO pressure");
+        this.sendHeader(sender, "Astatine Regions", "top by MSPT, lag, mailbox pressure, and chunk IO pressure");
         if (snapshots.isEmpty()) {
             sender.sendMessage(Component.text("No active region snapshots.", NamedTextColor.GRAY));
             return;
@@ -83,7 +83,7 @@ public final class RegionCommand extends Command {
         }
 
         final List<RegionTickScheduler.RegionTickSnapshot> snapshots = scheduler.snapshots();
-        this.sendHeader(sender, "ShreddedPaper Region Dump", "all active independent tick regions");
+        this.sendHeader(sender, "Astatine Region Dump", "all active independent tick regions");
         if (snapshots.isEmpty()) {
             sender.sendMessage(Component.text("No active region snapshots.", NamedTextColor.GRAY));
             return;
@@ -96,7 +96,7 @@ public final class RegionCommand extends Command {
     }
 
     private void sendOwnership(final CommandSender sender) {
-        this.sendHeader(sender, "ShreddedPaper Ownership", "global async ownership guard counters");
+        this.sendHeader(sender, "Astatine Ownership", "global async ownership guard counters");
         sender.sendMessage(this.metricLine(
                 "ownership",
                 this.metric("loadedReadFallbacks", Long.toString(ShreddedPaperAccess.loadedReadFallbacks()), this.countColor(ShreddedPaperAccess.loadedReadFallbacks())),
@@ -147,7 +147,7 @@ public final class RegionCommand extends Command {
     }
 
     private void sendInspectSnapshot(final CommandSender sender, final RegionTickScheduler.RegionTickSnapshot snapshot) {
-        this.sendHeader(sender, "ShreddedPaper Region Inspect", "%s [%d, %d]".formatted(snapshot.world(), snapshot.regionPos().x, snapshot.regionPos().z));
+        this.sendHeader(sender, "Astatine Region Inspect", "%s [%d, %d]".formatted(snapshot.world(), snapshot.regionPos().x, snapshot.regionPos().z));
         sender.sendMessage(this.summaryLine(1, snapshot));
         sender.sendMessage(this.metricLine(
                 "mailbox",

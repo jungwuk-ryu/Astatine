@@ -143,7 +143,7 @@ public class ShreddedPaperChunkTicker {
             currentlyTickingRegion.set(region);
 
             if (!(ShreddedPaperTickThread.isShreddedPaperTickThread())) {
-                throw new IllegalStateException("Ticking region " + WorldUtil.getWorldName(level) + " " + region.getOwner() + " outside of ShreddedPaperTickThread!");
+                throw new IllegalStateException("Ticking region " + WorldUtil.getWorldName(level) + " " + region.getOwner() + " outside of AstatineTickThread!");
             }
 
             ShreddedPaperChangesBroadcaster.setAsWorkerThread();

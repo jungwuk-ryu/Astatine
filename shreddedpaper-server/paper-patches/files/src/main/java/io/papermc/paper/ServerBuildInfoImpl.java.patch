@@ -4,7 +4,7 @@
  
      private static final String BRAND_PAPER_NAME = "Paper";
      private static final String BRAND_PURPUR_NAME = "Purpur"; // Purpur - Rebrand
-+    private static final String BRAND_SHREDDEDPAPER_NAME = "ShreddedPaper"; // ShreddedPaper
++    private static final String BRAND_ASTATINE_NAME = "Astatine"; // Astatine
  
      private static final String BUILD_DEV = "DEV";
  
@@ -13,10 +13,10 @@
              getManifestAttribute(manifest, ATTRIBUTE_BRAND_ID)
                  .map(Key::key)
 -                .orElse(BRAND_PURPUR_ID), // Purpur - Rebrand
-+                .orElse(BRAND_SHREDDEDPAPER_ID), // Purpur - Rebrand // ShreddedPaper
++                .orElse(BRAND_ASTATINE_ID), // Purpur - Rebrand // Astatine
              getManifestAttribute(manifest, ATTRIBUTE_BRAND_NAME)
 -                .orElse(BRAND_PURPUR_NAME), // Purpur - Rebrand
-+                .orElse(BRAND_SHREDDEDPAPER_NAME), // Purpur - Rebrand // ShreddedPaper
++                .orElse(BRAND_ASTATINE_NAME), // Purpur - Rebrand // Astatine
              SharedConstants.getCurrentVersion().id(),
              SharedConstants.getCurrentVersion().name(),
              getManifestAttribute(manifest, ATTRIBUTE_BUILD_NUMBER)

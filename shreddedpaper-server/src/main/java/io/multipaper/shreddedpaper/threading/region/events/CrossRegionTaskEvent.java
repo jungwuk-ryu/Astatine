@@ -6,7 +6,7 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 
 @Name("io.multipaper.shreddedpaper.region.CrossRegionTask")
-@Category({"ShreddedPaper", "Region"})
+@Category({"Astatine", "Region"})
 @Label("Cross Region Task")
 public final class CrossRegionTaskEvent extends Event {
 

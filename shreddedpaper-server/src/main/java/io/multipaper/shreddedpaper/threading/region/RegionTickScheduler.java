@@ -167,8 +167,8 @@ public final class RegionTickScheduler {
 
     private void startWorker(final boolean degradedOnly, final int id) {
         final Thread worker = new ShreddedPaperTickThread(() -> this.workerLoop(degradedOnly), degradedOnly
-                ? "ShreddedPaperRegionDegraded-%d"
-                : "ShreddedPaperRegionNormal-%d");
+                ? "AstatineRegionDegraded-%d"
+                : "AstatineRegionNormal-%d");
         worker.setDaemon(true);
         worker.setUncaughtExceptionHandler((thread, throwable) -> LOGGER.error("Uncaught exception in {}", thread.getName(), throwable));
         worker.start();

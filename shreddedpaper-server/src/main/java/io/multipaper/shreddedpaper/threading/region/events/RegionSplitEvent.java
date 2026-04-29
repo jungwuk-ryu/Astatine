@@ -4,7 +4,7 @@ import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.Label;
 
-@Category({"ShreddedPaper", "Region"})
+@Category({"Astatine", "Region"})
 @Label("Region Split")
 public final class RegionSplitEvent extends Event {
     public String world;

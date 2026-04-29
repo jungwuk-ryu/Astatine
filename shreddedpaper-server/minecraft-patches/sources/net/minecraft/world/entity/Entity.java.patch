@@ -563,7 +563,7 @@
          if (deltaMovement.isFinite()) {
 +            // ShreddedPaper start - why is something setting the entity velocity to larger than one region...
 +            if (deltaMovement.horizontalDistanceSqr() > RegionPos.MAX_DISTANCE_SQR + 1 && deltaMovement.horizontalDistanceSqr() > this.deltaMovement.horizontalDistanceSqr()) {
-+                LOGGER.warn("Velocity is being set larger than the ShreddedPaper region size: {} for entity {}", deltaMovement, this, new Exception("Velocity larger than region size, limiting velocity to region size"));
++                LOGGER.warn("Velocity is being set larger than the Astatine region size: {} for entity {}", deltaMovement, this, new Exception("Velocity larger than region size, limiting velocity to region size"));
 +                deltaMovement = deltaMovement.shreddedPaperCapToRegionSize();
 +            }
 +            // ShreddedPaper end - why is something setting the entity velocity to larger than one region...

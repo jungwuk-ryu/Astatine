@@ -7,7 +7,7 @@ import jdk.jfr.Name;
 
 @Name("io.multipaper.shreddedpaper.region.ChunkGenerationTask")
 @Label("Chunk Generation Task")
-@Category({"ShreddedPaper", "Region"})
+@Category({"Astatine", "Region"})
 public final class ChunkGenerationTaskEvent extends Event {
 
     @Label("World")

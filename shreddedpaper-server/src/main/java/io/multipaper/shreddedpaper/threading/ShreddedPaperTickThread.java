@@ -30,7 +30,7 @@ public class ShreddedPaperTickThread extends TickThread {
 
         THREAD_COUNT = threadCount;
 
-        executor = Executors.newFixedThreadPool(THREAD_COUNT, r -> new ShreddedPaperTickThread(r, "ShreddedPaperTickThread-%d"));
+        executor = Executors.newFixedThreadPool(THREAD_COUNT, r -> new ShreddedPaperTickThread(r, "AstatineTickThread-%d"));
 
         LOGGER.info("Using {} threads", THREAD_COUNT);
     }
@@ -40,7 +40,7 @@ public class ShreddedPaperTickThread extends TickThread {
     }
 
     public static boolean isShreddedPaperTickThread() {
-        // Use this method to check if it's a shreddedpaper tick thread, to ensure future potential support for VirtualThreads
+        // Use this method to check if it's an Astatine tick thread, to ensure future potential support for VirtualThreads
         return Thread.currentThread() instanceof ShreddedPaperTickThread;
     }
 

@@ -4,6 +4,7 @@ Historical note: these results are the first comparative Windows benchmark
 snapshot before the later async ownership, watchdog, plugin teleport, disconnect,
 and region tick overhead fixes were merged. Treat the numbers as directional
 baseline evidence, not the final 1.21.11 Astatine PR benchmark.
+The `custom-shreddedpaper` engine label is the pre-rename Astatine branch label.
 
 ## Run Metadata
 

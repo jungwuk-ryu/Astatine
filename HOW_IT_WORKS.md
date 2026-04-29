@@ -1,6 +1,6 @@
-# How ShreddedPaper Works
+# How Astatine Works
 
-ShreddedPaper scales a single Minecraft server process by giving loaded map
+Astatine scales a single Minecraft server process by giving loaded map
 areas independent tick loops. The goal is not to make game logic eventually
 consistent; the goal is to keep normal Minecraft invariants by making ownership
 explicit and moving cross-region work through controlled handoff paths.
@@ -49,7 +49,7 @@ redstone updates neighbors, rails search connected rails, fluids flow into
 adjacent blocks, pistons inspect and move lines of blocks, portals move
 entities, and explosions affect nearby chunks.
 
-ShreddedPaper handles this with exact-cell ownership checks and region locks:
+Astatine handles this with exact-cell ownership checks and region locks:
 
 - read locks allow safe local inspection
 - write locks are required for mutation

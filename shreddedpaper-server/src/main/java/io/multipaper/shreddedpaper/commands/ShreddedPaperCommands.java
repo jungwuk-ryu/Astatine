@@ -20,7 +20,7 @@ public class ShreddedPaperCommands {
 
     public static void registerCommands(final MinecraftServer server) {
         COMMANDS.forEach((s, command) -> {
-            server.server.getCommandMap().register(s, "shreddedpaper", command);
+            server.server.getCommandMap().register(s, "astatine", command);
         });
     }
 

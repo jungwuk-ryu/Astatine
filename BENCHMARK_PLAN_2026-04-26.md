@@ -1,4 +1,4 @@
-# ShreddedPaper Fork Benchmark Plan - 2026-04-26
+# Astatine Fork Benchmark Plan - 2026-04-26
 
 Historical note: this plan describes the first Windows benchmark pass that
 preceded the current Astatine 1.21.11 integration branch. The scenario design is
@@ -7,7 +7,7 @@ the active validation machine before a new run.
 
 ## Goal
 
-Compare the current ShreddedPaper fork against currently available 1.21.11-capable server builds:
+Compare Astatine against currently available 1.21.11-capable server builds:
 
 - Current fork build from this repository.
 - Original MultiPaper/ShreddedPaper `ver/1.21.11`.
@@ -25,7 +25,7 @@ The benchmark must measure global server health and local region/chunk impact. T
 - Runtime flags: fixed G1 profile based on `D:\worldgen\start.bat`, with `--enable-preview` for this fork.
 - Server root: `D:\server-benchmarks`.
 - One isolated server directory per engine.
-- Same seed: `shreddedpaper-benchmark-20260426`.
+- Same seed: `astatine-benchmark-20260426`.
 - Same properties:
   - `online-mode=false`
   - `view-distance=12`
@@ -41,7 +41,7 @@ The benchmark must measure global server health and local region/chunk impact. T
 
 | Engine | Source | Version/Build |
 | --- | --- | --- |
-| Current fork | local build artifact | `shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar` |
+| Astatine | local build artifact | `astatine-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar` |
 | Original ShreddedPaper | GitHub branch build | `MultiPaper/ShreddedPaper ver/1.21.11` |
 | Folia | PaperMC downloads API | `1.21.11 build 14` |
 | Paper | PaperMC downloads API | `1.21.11 build 130` |

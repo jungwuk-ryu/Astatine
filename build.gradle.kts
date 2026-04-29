@@ -56,6 +56,21 @@ subprojects {
         isPreserveFileTimestamps = false
         isReproducibleFileOrder = true
     }
+    if (name == "shreddedpaper-server") {
+        tasks.withType<Jar>().configureEach {
+            archiveBaseName.set("astatine-server")
+        }
+        plugins.withId("io.papermc.paperweight.core") {
+            tasks.withType<io.papermc.paperweight.tasks.CreateBundlerJar>().configureEach {
+                val mappingName = if (name.contains("Mojmap")) "mojmap" else "reobf"
+                outputZip.set(project.layout.buildDirectory.file("libs/astatine-bundler-${project.version}-$mappingName.jar"))
+            }
+            tasks.withType<io.papermc.paperweight.tasks.CreatePaperclipJar>().configureEach {
+                val mappingName = if (name.contains("Mojmap")) "mojmap" else "reobf"
+                outputZip.set(project.layout.buildDirectory.file("libs/astatine-paperclip-${project.version}-$mappingName.jar"))
+            }
+        }
+    }
     tasks.withType<JavaCompile> {
         options.encoding = Charsets.UTF_8.name()
         options.release = 25
@@ -71,7 +86,8 @@ subprojects {
         filteringCharset = Charsets.UTF_8.name()
     }
     tasks.withType<Test> {
-        maxParallelForks = providers.gradleProperty("shreddedpaper.test.maxParallelForks")
+        maxParallelForks = providers.gradleProperty("astatine.test.maxParallelForks")
+            .orElse(providers.gradleProperty("shreddedpaper.test.maxParallelForks"))
             .map(String::toInt)
             .getOrElse(defaultTestForks)
         systemProperty("net.bytebuddy.experimental", "true")

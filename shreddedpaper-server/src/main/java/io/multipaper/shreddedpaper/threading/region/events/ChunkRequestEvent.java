@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Name("io.multipaper.shreddedpaper.region.ChunkRequest")
 @Label("Chunk Request")
-@Category({"ShreddedPaper", "Region"})
+@Category({"Astatine", "Region"})
 public final class ChunkRequestEvent extends Event {
 
     private static final AtomicLong SYNC_LOAD_REJECTIONS = new AtomicLong();

@@ -24,7 +24,7 @@ public final class RegionChunkIoTracker {
     private static final long EXECUTOR_BACKPRESSURE_RETRY_NANOS = TimeUnit.MILLISECONDS.toNanos(1L);
     private static final int EXECUTOR_BACKPRESSURE_DRAIN_BATCH = 64;
     private static final ScheduledExecutorService EXECUTOR_BACKPRESSURE_RETRY_EXECUTOR = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().daemon(true).name("ShreddedPaperChunkExecutorBackpressureRetry", 0).factory()
+            Thread.ofPlatform().daemon(true).name("AstatineChunkExecutorBackpressureRetry", 0).factory()
     );
 
     private final ServerLevel level;

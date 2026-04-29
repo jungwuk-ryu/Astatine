@@ -89,7 +89,7 @@
 +        try { // ShreddedPaper start - stop independent region ticks before final world save
 +            RegionTickScheduler.shutdownGlobal();
 +        } catch (final Throwable throwable) {
-+            LOGGER.error("Failed to stop independent ShreddedPaper region scheduler cleanly; continuing server shutdown", throwable);
++            LOGGER.error("Failed to stop independent Astatine region scheduler cleanly; continuing server shutdown", throwable);
 +        } // ShreddedPaper end
          // Paper start - rewrite chunk system
          // note: make sure we call deactivateTicketsOnClosing
@@ -101,7 +101,7 @@
 +        try { // ShreddedPaper start - stop shared tick executor after RegionFile I/O has drained
 +            ShreddedPaperTickThread.stopServer();
 +        } catch (final Throwable throwable) {
-+            LOGGER.error("Failed to stop ShreddedPaper tick threads cleanly; continuing server shutdown", throwable);
++            LOGGER.error("Failed to stop Astatine tick threads cleanly; continuing server shutdown", throwable);
 +        } // ShreddedPaper end
          if ((Object)this instanceof net.minecraft.server.dedicated.DedicatedServer) {
              ca.spottedleaf.moonrise.common.util.MoonriseCommon.haltExecutors();

@@ -25,12 +25,12 @@ public final class RegionChunkExecutorLimiter {
             30L,
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(8192),
-            Thread.ofPlatform().daemon(true).name("ShreddedPaperChunkExecutorEmergency-", 0).factory(),
+            Thread.ofPlatform().daemon(true).name("AstatineChunkExecutorEmergency-", 0).factory(),
             new ThreadPoolExecutor.AbortPolicy()
     );
     private static final ScheduledThreadPoolExecutor EMERGENCY_RETRY_EXECUTOR = new ScheduledThreadPoolExecutor(
             1,
-            Thread.ofPlatform().daemon(true).name("ShreddedPaperChunkExecutorEmergencyRetry", 0).factory()
+            Thread.ofPlatform().daemon(true).name("AstatineChunkExecutorEmergencyRetry", 0).factory()
     );
 
     static {

@@ -1,11 +1,11 @@
-# ShreddedPaper
+# Astatine
 
-ShreddedPaper is a 1.21.11 [Purpur](https://github.com/PurpurMC/Purpur)
-fork focused on vertical scaling: one Minecraft server process can tick
-different loaded regions independently while preserving explicit ownership for
-world, chunk, entity, and plugin mutations.
+Astatine is a 1.21.11 [Purpur](https://github.com/PurpurMC/Purpur)
+fork derived from ShreddedPaper and focused on vertical scaling: one Minecraft
+server process can tick different loaded regions independently while preserving
+explicit ownership for world, chunk, entity, and plugin mutations.
 
-This branch is the Astatine 1.21.11 integration branch. The working remote is:
+The working remote is:
 
 ```bash
 https://github.com/jungwuk-ryu/Astatine.git
@@ -39,7 +39,7 @@ https://github.com/jungwuk-ryu/Astatine.git
   watchdog dumps, and region load-test tooling.
 
 See [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the architecture and
-[SHREDDEDPAPER_YAML.md](SHREDDEDPAPER_YAML.md) for configuration.
+[ASTATINE_YAML.md](ASTATINE_YAML.md) for configuration.
 
 ## Current Stability Expectations
 
@@ -79,7 +79,7 @@ Useful commands:
 The runnable jar is written to:
 
 ```text
-shreddedpaper-server/build/libs/shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar
+shreddedpaper-server/build/libs/astatine-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar
 ```
 
 ## Release Validation
@@ -116,8 +116,8 @@ Primary operator commands:
 - `/region dump` prints all active region snapshots.
 - `/region ownership` prints async ownership fallback and handoff counters.
 
-The command permission is `shreddedpaper.command.region` and defaults to
-operators.
+The command permission is `astatine.command.region`, with
+`shreddedpaper.command.region` kept as a legacy alias. It defaults to operators.
 
 ## Plugin Development
 
@@ -153,14 +153,14 @@ Then depend on:
 
 ```kotlin
 dependencies {
-    compileOnly("com.github.puregero:shreddedpaper-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("io.astatine:shreddedpaper-api:1.21.11-R0.1-SNAPSHOT")
 }
 ```
 
 ## Related Documents
 
 - [HOW_IT_WORKS.md](HOW_IT_WORKS.md): current architecture.
-- [SHREDDEDPAPER_YAML.md](SHREDDEDPAPER_YAML.md): configuration reference.
+- [ASTATINE_YAML.md](ASTATINE_YAML.md): configuration reference.
 - [DEVELOPING_A_MULTITHREAD_PLUGIN.md](DEVELOPING_A_MULTITHREAD_PLUGIN.md):
   plugin compatibility guide.
 - [REGIONIZED_ENGINE_MILESTONES.md](REGIONIZED_ENGINE_MILESTONES.md):
@@ -177,5 +177,6 @@ All code is licensed under [GPLv3](LICENSE.txt).
 
 ## Acknowledgements
 
-ShreddedPaper uses PaperMC's paperweight framework:
+Astatine is derived from ShreddedPaper, Purpur, Paper, and the wider Minecraft
+server performance ecosystem. It uses PaperMC's paperweight framework:
 <https://github.com/PaperMC/paperweight>.

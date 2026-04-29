@@ -1,11 +1,11 @@
-# Developing A Plugin For ShreddedPaper
+# Developing A Plugin For Astatine
 
-ShreddedPaper follows the same plugin principle as Folia: there is no single
+Astatine follows the same plugin principle as Folia: there is no single
 "main thread" that is safe for every world object. A player, entity, block, or
 chunk belongs to a region owner, and code that touches it must run on that
 owner's scheduler.
 
-Traditional Bukkit plugins can still run through ShreddedPaper's synchronous
+Traditional Bukkit plugins can still run through Astatine's synchronous
 compatibility mode, but that path exists to keep common plugins alive while the
 server redirects unsafe work. New or actively maintained plugins should use the
 region-aware APIs directly.
@@ -95,7 +95,7 @@ block.
 ## Avoid Global Scheduler World Mutations
 
 `Bukkit.getGlobalRegionScheduler()` and the classic Bukkit scheduler are not a
-blanket permission to mutate arbitrary world state. In ShreddedPaper, unsupported
+blanket permission to mutate arbitrary world state. In Astatine, unsupported
 plugins can be routed through a synchronous compatibility path, but relying on
 that path can still create stalls or ownership handoffs under load.
 
@@ -137,7 +137,7 @@ world.getChunkAtAsync(location).thenAccept(chunk -> {
 });
 ```
 
-ShreddedPaper adds region-aware chunk IO QoS. Repeated blocking loads from a
+Astatine adds region-aware chunk IO QoS. Repeated blocking loads from a
 plugin can be deferred, downgraded, backpressured, or rejected depending on the
 current region pressure.
 
@@ -184,7 +184,7 @@ Examples:
 
 ## Testing Checklist
 
-Before claiming ShreddedPaper compatibility:
+Before claiming Astatine compatibility:
 
 - run with `folia-supported: true`
 - test player join, quit, kick, death, respawn, portal, and teleport flows
@@ -196,11 +196,11 @@ Before claiming ShreddedPaper compatibility:
 - use `/region ownership` after stress tests to check unexpected fallback and
   handoff counters
 
-## Supporting Bukkit, Paper, Folia, And ShreddedPaper
+## Supporting Bukkit, Paper, Folia, And Astatine
 
 Use reflection or an abstraction layer only at the scheduler boundary. Keep the
 world mutation code itself written as "run this on the owner of the target".
 
 If you need a compatibility library, make sure it dispatches to Paper's region
-scheduler APIs on Folia/ShreddedPaper rather than only falling back to the
+scheduler APIs on Folia/Astatine rather than only falling back to the
 classic Bukkit scheduler.

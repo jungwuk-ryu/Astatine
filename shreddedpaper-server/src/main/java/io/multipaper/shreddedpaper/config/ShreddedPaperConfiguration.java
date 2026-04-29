@@ -12,10 +12,10 @@ import java.util.List;
 public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     public static final String HEADER = """
-            This is the main configuration file for ShreddedPaper.
+            This is the main configuration file for Astatine.
             There's quite alot to configure. Read the docs for more information.
 
-            Docs: https://github.com/jungwuk-ryu/Astatine/blob/main/SHREDDEDPAPER_YAML.md\s
+            Docs: https://github.com/jungwuk-ryu/Astatine/blob/main/ASTATINE_YAML.md\s
             """;
 
     private static ShreddedPaperConfiguration instance;
