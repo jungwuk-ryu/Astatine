@@ -317,8 +317,21 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
             @Setting("end-biome-cache-capacity")
             public int endBiomeCacheCapacity = 2048;
 
+            @Setting("worldgen-computation-cache")
+            public WorldgenComputationCache worldgenComputationCache = new WorldgenComputationCache();
+
             @Setting("experimental")
             public Experimental experimental = new Experimental();
+
+            public class WorldgenComputationCache extends ConfigurationPart {
+                @Comment("Emit sampled JFR events for region-limited parallel chunk generation tasks. This is instrumentation-only and is disabled by default.")
+                @Setting("instrumentation-enabled")
+                public boolean instrumentationEnabled = false;
+
+                @Comment("Emit one chunk generation task timing event per N submitted generation tasks when instrumentation is enabled.")
+                @Setting("instrumentation-sample-rate")
+                public int instrumentationSampleRate = 256;
+            }
 
             public class Experimental extends ConfigurationPart {
                 @Comment("Use the C2ME density function compiler to accelerate world generation.")
