@@ -7,6 +7,7 @@ import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
+import io.multipaper.shreddedpaper.threading.region.events.RegionSchedulerEvent;
 import io.multipaper.shreddedpaper.threading.region.events.RegionTickEvent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -179,11 +180,23 @@ public final class RegionTickScheduler {
     private void workerLoop(final boolean degradedOnly) {
         while (this.running.get()) {
             try {
+                final long schedulerSampleCount = RegionSchedulerEvent.isEventEnabled() ? RegionSchedulerEvent.nextSampleCount() : 0L;
+                final boolean schedulerEventEnabled = RegionSchedulerEvent.shouldCommitSample(schedulerSampleCount);
+                final long waitStartNanos = schedulerEventEnabled ? System.nanoTime() : 0L;
                 final RegionHandle handle = degradedOnly ? this.degradedQueue.take() : this.takeNormalOrSteal();
+                final long dequeueNanos = schedulerEventEnabled ? System.nanoTime() : 0L;
                 if (handle == null || handle.retired.get()) {
                     continue;
                 }
+                if (!schedulerEventEnabled) {
+                    handle.runOneTick();
+                    continue;
+                }
+
+                final long scheduledStartNanos = handle.scheduledStartNanos;
+                final RegionLoadClass loadClass = handle.state.overloadController().loadClass();
                 handle.runOneTick();
+                this.commitSchedulerEvent(degradedOnly, handle, loadClass, schedulerSampleCount, scheduledStartNanos, waitStartNanos, dequeueNanos, System.nanoTime());
             } catch (final InterruptedException interrupted) {
                 if (!this.running.get()) {
                     Thread.currentThread().interrupt();
@@ -204,6 +217,40 @@ public final class RegionTickScheduler {
             return normal;
         }
         return this.degradedQueue.poll();
+    }
+
+    private void commitSchedulerEvent(
+            final boolean degradedWorker,
+            final RegionHandle handle,
+            final RegionLoadClass loadClass,
+            final long sampleCount,
+            final long scheduledStartNanos,
+            final long waitStartNanos,
+            final long dequeueNanos,
+            final long doneNanos
+    ) {
+        final RegionSchedulerEvent event = new RegionSchedulerEvent();
+        event.sampleCount = sampleCount;
+        event.workerLane = degradedWorker ? "degraded" : "normal";
+        event.sourceQueue = loadClass == RegionLoadClass.DEGRADED ? "degraded" : "normal";
+        event.world = handle.level.getWorld().getName();
+        event.regionX = handle.state.regionPos().x;
+        event.regionZ = handle.state.regionPos().z;
+        event.loadClass = loadClass.name();
+        event.scheduledStartNanos = scheduledStartNanos;
+        event.dequeueNanos = dequeueNanos;
+        event.workerWaitNanos = Math.max(0L, dequeueNanos - waitStartNanos);
+        event.workerBusyNanos = Math.max(0L, doneNanos - dequeueNanos);
+        event.wakeupLatencyNanos = Math.max(0L, dequeueNanos - scheduledStartNanos);
+        event.normalQueueDepth = this.normalQueue.size();
+        event.degradedQueueDepth = this.degradedQueue.size();
+        event.degradedBacklogAgeNanos = this.degradedBacklogAgeNanos(dequeueNanos);
+        event.commit();
+    }
+
+    private long degradedBacklogAgeNanos(final long nowNanos) {
+        final RegionHandle head = this.degradedQueue.peek();
+        return head == null ? 0L : Math.max(0L, nowNanos - head.scheduledStartNanos);
     }
 
     private void enqueue(final RegionHandle handle) {
