@@ -95,8 +95,8 @@ public class ShreddedPaperRegionLocker {
             if (owner != Thread.currentThread()) {
                 throw new IllegalStateException("Cannot close write promotion from a different thread [expected=%s,got=%s]".formatted(owner, Thread.currentThread()));
             }
-            writes.removeAll(promoted);
             for (final RegionPos regionPos : promoted) {
+                writes.remove(regionPos);
                 if (local.contains(regionPos)) {
                     readOnly.add(regionPos);
                 }
@@ -462,7 +462,10 @@ public class ShreddedPaperRegionLocker {
                 }
             }
             writes.addAll(this.writeLocks);
-            ShreddedPaperRegionLocker.this.readOnlyLocks.get().removeAll(this.writeLocks);
+            final Set<RegionPos> readOnly = ShreddedPaperRegionLocker.this.readOnlyLocks.get();
+            for (final RegionPos writeRegion : this.writeLocks) {
+                readOnly.remove(writeRegion);
+            }
         }
 
         @Override
@@ -477,8 +480,12 @@ public class ShreddedPaperRegionLocker {
 
         @Override
         public void unlock() {
-            ShreddedPaperRegionLocker.this.writeLocks.get().removeAll(this.writeLocks);
-            ShreddedPaperRegionLocker.this.readOnlyLocks.get().addAll(this.writeLocks);
+            final Set<RegionPos> writes = ShreddedPaperRegionLocker.this.writeLocks.get();
+            final Set<RegionPos> readOnly = ShreddedPaperRegionLocker.this.readOnlyLocks.get();
+            for (final RegionPos writeRegion : this.writeLocks) {
+                writes.remove(writeRegion);
+                readOnly.add(writeRegion);
+            }
             this.superLock.unlock();
         }
     }

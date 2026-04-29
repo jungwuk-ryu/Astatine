@@ -118,9 +118,13 @@
                      this.autoSave();
                  }
  
-+                MinecraftServer.isBukkitSchedulerHearbeat = true; // ShreddedPaper
-                 this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
-+                MinecraftServer.isBukkitSchedulerHearbeat = false; // ShreddedPaper
++                try { // ShreddedPaper start - track Bukkit scheduler heartbeat
++                    MinecraftServer.isBukkitSchedulerHearbeat = true;
+-                this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++                    this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++                } finally {
++                    MinecraftServer.isBukkitSchedulerHearbeat = false;
++                } // ShreddedPaper end - track Bukkit scheduler heartbeat
                  // Paper start - avoid issues with certain tasks not processing during sleep
                  Runnable task;
                  while ((task = this.processQueue.poll()) != null) {
@@ -137,9 +141,13 @@
      protected void tickChildren(BooleanSupplier hasTimeLeft) {
          ProfilerFiller profilerFiller = Profiler.get();
          this.getPlayerList().getPlayers().forEach(serverPlayer1 -> serverPlayer1.connection.suspendFlushing());
-+        MinecraftServer.isBukkitSchedulerHearbeat = true; // ShreddedPaper
-         this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
-+        MinecraftServer.isBukkitSchedulerHearbeat = false; // ShreddedPaper
++        try { // ShreddedPaper start - track Bukkit scheduler heartbeat
++            MinecraftServer.isBukkitSchedulerHearbeat = true;
+-        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++            this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
++        } finally {
++            MinecraftServer.isBukkitSchedulerHearbeat = false;
++        } // ShreddedPaper end - track Bukkit scheduler heartbeat
          // Paper start - optimise Folia entity scheduler
 -        ((io.papermc.paper.threadedregions.scheduler.FoliaGlobalRegionScheduler)org.bukkit.Bukkit.getGlobalRegionScheduler()).tick();
 -        for (io.papermc.paper.threadedregions.EntityScheduler scheduler : this.entitySchedulerTickList.getAllSchedulers()) {

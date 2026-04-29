@@ -27,9 +27,10 @@
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
 +                && !this.shreddedpaper$canTeleportImmediately(locationClone)) {
 +            final Plugin plugin = SynchronousPluginExecution.getCurrentPlugin();
-+            if (plugin != null && Thread.currentThread() == MinecraftServer.getServer().getRunningThread()) {
++            if (Thread.currentThread() == MinecraftServer.getServer().getRunningThread()) {
++                final String pluginName = plugin == null ? "<unknown>" : plugin.getName();
 +                this.teleportAsync(locationClone, cause, flags).exceptionally(throwable -> {
-+                    MinecraftServer.LOGGER.error("Failed asynchronous compatibility teleport for entity {} from plugin {}", CraftEntity.this, plugin.getName(), throwable);
++                    MinecraftServer.LOGGER.error("Failed asynchronous compatibility teleport for entity {} from plugin {}", CraftEntity.this, pluginName, throwable);
 +                    return Boolean.FALSE;
 +                });
 +                return true;
