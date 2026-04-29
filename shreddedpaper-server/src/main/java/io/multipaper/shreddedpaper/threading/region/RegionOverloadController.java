@@ -13,12 +13,7 @@ public final class RegionOverloadController {
     private volatile RegionLoadClass loadClass = RegionLoadClass.NORMAL;
     private volatile double ewmaMspt;
     private volatile double ewmaScheduleLagMs;
-    private volatile int lastMailboxDepth;
-    private volatile double lastMailboxClassPressure;
-    private volatile double lastChunkIoPressure;
-    private volatile int lastChunkIoInFlight;
-    private volatile int lastChunkIoDeferred;
-    private volatile long lastDeferredWork;
+    private volatile DiagnosticSnapshot diagnostics = DiagnosticSnapshot.EMPTY;
     private int quarantineStrikes;
 
     public RegionOverloadController(final ServerLevel level, final RegionPos regionPos) {
@@ -47,12 +42,14 @@ public final class RegionOverloadController {
         final double lagMs = Math.max(0L, scheduleLagNanos) / 1.0E6D;
         this.ewmaMspt = this.ewmaMspt == 0.0D ? mspt : (this.ewmaMspt * (1.0D - EWMA_ALPHA)) + (mspt * EWMA_ALPHA);
         this.ewmaScheduleLagMs = this.ewmaScheduleLagMs == 0.0D ? lagMs : (this.ewmaScheduleLagMs * (1.0D - EWMA_ALPHA)) + (lagMs * EWMA_ALPHA);
-        this.lastMailboxDepth = mailboxDepth;
-        this.lastMailboxClassPressure = mailboxClassPressure;
-        this.lastChunkIoPressure = chunkIo.requestPressure();
-        this.lastChunkIoInFlight = chunkIo.inFlight();
-        this.lastChunkIoDeferred = chunkIo.deferredRetries();
-        this.lastDeferredWork = deferredWork;
+        this.diagnostics = new DiagnosticSnapshot(
+                mailboxDepth,
+                mailboxClassPressure,
+                chunkIo.requestPressure(),
+                chunkIo.inFlight(),
+                chunkIo.deferredRetries(),
+                deferredWork
+        );
 
         final ShreddedPaperConfiguration.Multithreading config = ShreddedPaperConfiguration.get().multithreading;
         if (this.ewmaMspt >= config.quarantinedRegionMsptThreshold) {
@@ -94,26 +91,46 @@ public final class RegionOverloadController {
     }
 
     public int lastMailboxDepth() {
-        return this.lastMailboxDepth;
+        return this.diagnostics.lastMailboxDepth();
     }
 
     public double lastMailboxClassPressure() {
-        return this.lastMailboxClassPressure;
+        return this.diagnostics.lastMailboxClassPressure();
     }
 
     public double lastChunkIoPressure() {
-        return this.lastChunkIoPressure;
+        return this.diagnostics.lastChunkIoPressure();
     }
 
     public int lastChunkIoInFlight() {
-        return this.lastChunkIoInFlight;
+        return this.diagnostics.lastChunkIoInFlight();
     }
 
     public int lastChunkIoDeferred() {
-        return this.lastChunkIoDeferred;
+        return this.diagnostics.lastChunkIoDeferred();
     }
 
     public long lastDeferredWork() {
-        return this.lastDeferredWork;
+        return this.diagnostics.lastDeferredWork();
+    }
+
+    public DiagnosticSnapshot diagnostics() {
+        return this.diagnostics;
+    }
+
+    /**
+     * Display-only observations are published as one immutable volatile snapshot.
+     * Control decisions still read the current recordTick inputs and EWMA fields directly,
+     * so diagnostics may be slightly stale without delaying degrade/quarantine transitions.
+     */
+    public record DiagnosticSnapshot(
+            int lastMailboxDepth,
+            double lastMailboxClassPressure,
+            double lastChunkIoPressure,
+            int lastChunkIoInFlight,
+            int lastChunkIoDeferred,
+            long lastDeferredWork
+    ) {
+        private static final DiagnosticSnapshot EMPTY = new DiagnosticSnapshot(0, 0.0D, 0.0D, 0, 0, 0L);
     }
 }
