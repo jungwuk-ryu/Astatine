@@ -23,6 +23,7 @@ import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
 import io.multipaper.shreddedpaper.threading.region.RegionRuntimeState;
 import io.multipaper.shreddedpaper.threading.region.events.RegionMergeEvent;
 import io.multipaper.shreddedpaper.threading.region.events.RegionSplitEvent;
+import io.multipaper.shreddedpaper.util.DegradedRegionBossBar;
 import io.multipaper.shreddedpaper.util.SimpleStampedLock;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.slf4j.Logger;
@@ -751,6 +752,7 @@ public class LevelChunkRegionMap {
         this.acceptRegionForCell(RegionPos.forChunk(player.chunkPosition()), region -> {
             region.addPlayer(player);
             player.currentRegion = region;
+            DegradedRegionBossBar.updateCurrentRegion(player);
         });
     }
 
@@ -761,6 +763,7 @@ public class LevelChunkRegionMap {
             player.currentRegion = null;
         }
         player.previousChunkPosRegion = null;
+        DegradedRegionBossBar.hide(player);
     }
 
     public void movePlayer(ServerPlayer player) {
@@ -774,6 +777,7 @@ public class LevelChunkRegionMap {
                     fromOwner.removePlayer(player);
                     toOwner.addPlayer(player);
                     player.currentRegion = toOwner;
+                    DegradedRegionBossBar.updateCurrentRegion(player);
                 }
             });
         }

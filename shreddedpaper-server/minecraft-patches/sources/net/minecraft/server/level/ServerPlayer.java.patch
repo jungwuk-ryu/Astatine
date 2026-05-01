@@ -32,6 +32,7 @@
      private ChunkTrackingView chunkTrackingView = ChunkTrackingView.EMPTY;
 +    public ChunkPos previousChunkPosRegion; // ShreddedPaper
 +    public volatile io.multipaper.shreddedpaper.region.LevelChunkRegion currentRegion; // ShreddedPaper
++    public volatile int shreddedpaper$degradedRegionBossBarState; // ShreddedPaper
      private ServerPlayer.@Nullable RespawnConfig respawnConfig;
      private final TextFilter textFilter;
      private boolean textFilteringEnabled;

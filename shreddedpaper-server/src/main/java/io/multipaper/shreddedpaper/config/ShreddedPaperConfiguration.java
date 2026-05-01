@@ -44,6 +44,8 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public boolean independentRegionTicking = true;
         @Comment("Maximum workers reserved for degraded regions. Values below 0 use max(1, tick threads / 8).")
         public int degradedRegionThreads = -1;
+        @Setting("degraded-region-bossbar")
+        public DegradedRegionBossBar degradedRegionBossBar = new DegradedRegionBossBar();
         @Comment("Maximum queued tasks per region task class before backpressure/rejection begins.")
         public int regionMailboxCapacity = 4096;
         @Comment("Warning reserve threshold for non-dropping critical system work per region.")
@@ -96,6 +98,13 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public long degradedRegionMsptThreshold = 75;
         @Comment("EWMA MSPT threshold that marks a region as quarantined.")
         public long quarantinedRegionMsptThreshold = 5000;
+
+        public class DegradedRegionBossBar extends ConfigurationPart {
+
+            @Comment("Shows a lightweight bossbar to players while their region is in the degraded scheduler lane.")
+            public boolean enabled = true;
+
+        }
 
     }
 

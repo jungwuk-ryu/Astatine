@@ -9,6 +9,7 @@ import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 import io.multipaper.shreddedpaper.threading.region.events.RegionSchedulerEvent;
 import io.multipaper.shreddedpaper.threading.region.events.RegionTickEvent;
+import io.multipaper.shreddedpaper.util.DegradedRegionBossBar;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
@@ -548,6 +549,7 @@ public final class RegionTickScheduler {
                         deferred,
                         chunkIo
                 );
+                DegradedRegionBossBar.updatePlayers(region, this.state.overloadController().loadClass());
                 this.commitTickEvent(scheduledStart, actualStart, wallNanos, scheduleLag, deferred, chunkIo, mailboxDepth, mailboxClassPressure);
 
                 this.activatePendingSplitRegions(scheduledStart);

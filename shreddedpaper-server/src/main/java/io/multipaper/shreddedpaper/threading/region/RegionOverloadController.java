@@ -13,6 +13,7 @@ public final class RegionOverloadController {
     private volatile RegionLoadClass loadClass = RegionLoadClass.NORMAL;
     private volatile double ewmaMspt;
     private volatile double ewmaScheduleLagMs;
+    private volatile boolean degradedRegionBossBarVisible;
     private volatile DiagnosticSnapshot diagnostics = DiagnosticSnapshot.EMPTY;
     private int quarantineStrikes;
 
@@ -116,6 +117,14 @@ public final class RegionOverloadController {
 
     public DiagnosticSnapshot diagnostics() {
         return this.diagnostics;
+    }
+
+    public boolean degradedRegionBossBarVisible() {
+        return this.degradedRegionBossBarVisible;
+    }
+
+    public void degradedRegionBossBarVisible(final boolean visible) {
+        this.degradedRegionBossBarVisible = visible;
     }
 
     /**

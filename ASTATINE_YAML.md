@@ -33,6 +33,11 @@ multithreading:
   # Workers reserved for degraded regions. -1 uses max(1, tick threads / 8).
   degraded-region-threads: -1
 
+  # Show a bossbar to players while their current region is degraded. Packets
+  # are only sent when the displayed state changes.
+  degraded-region-bossbar:
+    enabled: true
+
   # Default maximum queued tasks per bounded region task class.
   region-mailbox-capacity: 4096
 
