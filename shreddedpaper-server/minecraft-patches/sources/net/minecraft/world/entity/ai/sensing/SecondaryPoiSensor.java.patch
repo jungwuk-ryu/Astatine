@@ -1,0 +1,33 @@
+--- a/net/minecraft/world/entity/ai/sensing/SecondaryPoiSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/SecondaryPoiSensor.java
+@@ -4,6 +_,7 @@
+ import com.google.common.collect.Lists;
+ import java.util.List;
+ import java.util.Set;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.GlobalPos;
+ import net.minecraft.resources.ResourceKey;
+@@ -12,6 +_,7 @@
+ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.npc.villager.Villager;
+ import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
+ 
+ public class SecondaryPoiSensor extends Sensor<Villager> {
+     private static final int SCAN_RATE = 40;
+@@ -35,10 +_,12 @@
+         int i = 4;
+ 
+         for (int i1 = -4; i1 <= 4; i1++) {
+-            for (int i2 = -2; i2 <= 2; i2++) {
++                for (int i2 = -2; i2 <= 2; i2++) {
+                 for (int i3 = -4; i3 <= 4; i3++) {
+                     BlockPos blockPos1 = blockPos.offset(i1, i2, i3);
+-                    if (entity.getVillagerData().profession().value().secondaryPoi().contains(level.getBlockState(blockPos1).getBlock())) {
++                    if (!TickThread.isTickThreadFor(level, blockPos1)) continue; // ShreddedPaper - avoid off-owner secondary POI scans
++                    BlockState blockState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during secondary POI scans
++                    if (blockState != null && entity.getVillagerData().profession().value().secondaryPoi().contains(blockState.getBlock())) {
+                         list.add(GlobalPos.of(resourceKey, blockPos1));
+                     }
+                 }

@@ -1,0 +1,22 @@
+--- a/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java
++++ b/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java
+@@ -44,7 +_,8 @@
+             return true;
+         } else {
+             for (Direction direction : Direction.values()) {
+-                if (level.getFluidState(pos.relative(direction)).is(FluidTags.WATER)) {
++                FluidState fluidState = level.getFluidIfLoaded(pos.relative(direction)); // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
++                if (fluidState == null || fluidState.is(FluidTags.WATER)) { // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
+                     return true;
+                 }
+             }
+@@ -87,7 +_,8 @@
+     @Override
+     protected boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        return level.getBlockState(blockPos).isFaceSturdy(level, blockPos, Direction.UP);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
++        return blockState == null || blockState.isFaceSturdy(level, blockPos, Direction.UP); // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
+     }
+ 
+     @Override

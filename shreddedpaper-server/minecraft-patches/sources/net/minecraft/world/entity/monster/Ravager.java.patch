@@ -1,0 +1,13 @@
+--- a/net/minecraft/world/entity/monster/Ravager.java
++++ b/net/minecraft/world/entity/monster/Ravager.java
+@@ -200,7 +_,9 @@
+                 for (BlockPos blockPos : BlockPos.betweenClosed(
+                     Mth.floor(aabb.minX), Mth.floor(aabb.minY), Mth.floor(aabb.minZ), Mth.floor(aabb.maxX), Mth.floor(aabb.maxY), Mth.floor(aabb.maxZ)
+                 )) {
+-                    BlockState blockState = serverLevel.getBlockState(blockPos);
++                    if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) continue; // ShreddedPaper - avoid off-owner ravager griefing
++                    BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during ravager griefing
++                    if (blockState == null) continue;
+                     Block block = blockState.getBlock();
+                     if (this.level().purpurConfig.ravagerGriefableBlocks.contains(block)) { // Purpur - Configurable ravager griefable blocks list
+                         // CraftBukkit start

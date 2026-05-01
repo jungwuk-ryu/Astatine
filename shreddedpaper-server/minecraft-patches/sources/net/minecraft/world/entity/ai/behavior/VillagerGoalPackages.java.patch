@@ -1,0 +1,13 @@
+--- a/net/minecraft/world/entity/ai/behavior/VillagerGoalPackages.java
++++ b/net/minecraft/world/entity/ai/behavior/VillagerGoalPackages.java
+@@ -72,8 +_,8 @@
+     }
+ 
+     private static boolean validateBedPoi(ServerLevel level, BlockPos pos) {
+-        BlockState blockState = level.getBlockState(pos);
+-        return blockState.is(BlockTags.BEDS) && !blockState.getValue(BedBlock.OCCUPIED);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from villager bed POI validation
++        return blockState != null && blockState.is(BlockTags.BEDS) && !blockState.getValue(BedBlock.OCCUPIED);
+     }
+ 
+     public static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super Villager>>> getWorkPackage(

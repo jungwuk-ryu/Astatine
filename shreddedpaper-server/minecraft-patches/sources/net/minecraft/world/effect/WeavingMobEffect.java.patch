@@ -1,0 +1,48 @@
+--- a/net/minecraft/world/effect/WeavingMobEffect.java
++++ b/net/minecraft/world/effect/WeavingMobEffect.java
+@@ -1,6 +_,7 @@
+ package net.minecraft.world.effect;
+ 
+ import com.google.common.collect.Sets;
++import io.multipaper.shreddedpaper.ShreddedPaper;
+ import java.util.Set;
+ import java.util.function.ToIntFunction;
+ import net.minecraft.core.BlockPos;
+@@ -14,7 +_,9 @@
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.LevelEvent;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ 
+ class WeavingMobEffect extends MobEffect {
+     private final ToIntFunction<RandomSource> maxCobwebs;
+@@ -27,7 +_,10 @@
+     @Override
+     public void onMobRemoved(ServerLevel level, LivingEntity entity, int amplifier, Entity.RemovalReason reason) {
+         if (reason == Entity.RemovalReason.KILLED && (entity instanceof Player || level.getGameRules().get(GameRules.MOB_GRIEFING))) {
+-            this.spawnCobwebsRandomlyAround(level, entity.getRandom(), entity.blockPosition(), entity); // Paper - Fire EntityChangeBlockEvent in more places
++            BlockPos pos = entity.blockPosition();
++            ShreddedPaper.ensureSync(entity, level, BoundingBox.fromCorners(pos.offset(-1, -2, -1), pos.offset(1, 2, 1)), () -> {
++                this.spawnCobwebsRandomlyAround(level, entity.getRandom(), pos, entity); // Paper - Fire EntityChangeBlockEvent in more places
++            }); // ShreddedPaper - own neighboring cobweb-placement probes
+         }
+     }
+ 
+@@ -37,9 +_,13 @@
+ 
+         for (BlockPos blockPos : BlockPos.randomInCube(random, 15, pos, 1)) {
+             BlockPos blockPos1 = blockPos.below();
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos);
++            BlockState belowBlockState = level.getBlockStateIfLoaded(blockPos1);
+             if (!set.contains(blockPos)
+-                && level.getBlockState(blockPos).canBeReplaced()
+-                && level.getBlockState(blockPos1).isFaceSturdy(level, blockPos1, Direction.UP)) {
++                && blockState != null
++                && belowBlockState != null
++                && blockState.canBeReplaced()
++                && belowBlockState.isFaceSturdy(level, blockPos1, Direction.UP)) {
+                 set.add(blockPos.immutable());
+                 if (set.size() >= i) {
+                     break;

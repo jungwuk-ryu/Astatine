@@ -1,0 +1,41 @@
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -143,6 +_,7 @@
+ import net.minecraft.server.permissions.PermissionSetSupplier;
+ import net.minecraft.server.permissions.Permissions;
+ import net.minecraft.tags.TagKey;
++import net.minecraft.util.StringUtil;
+ import net.minecraft.util.Util;
+ import net.minecraft.util.profiling.Profiler;
+ import net.minecraft.util.profiling.jfr.JvmProfiler;
+@@ -425,23 +_,25 @@
+             return ContextChain.tryFlatten(parseResults.getContext().build(command))
+                 .orElseThrow(() -> CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().createWithContext(parseResults.getReader()));
+         } catch (CommandSyntaxException var7) {
++            String safeCommand = StringUtil.filterText(command); // ShreddedPaper - console escape sequences must not crash command error components
+             // Paper start - Add UnknownCommandEvent
+             final net.kyori.adventure.text.TextComponent.Builder builder = net.kyori.adventure.text.Component.text();
+             // source.sendFailure(ComponentUtils.fromMessage(var7.getRawMessage()));
+             builder.color(net.kyori.adventure.text.format.NamedTextColor.RED).append(io.papermc.paper.command.brigadier.MessageComponentSerializer.message().deserialize(var7.getRawMessage()));
+             // Paper end - Add UnknownCommandEvent
+             if (var7.getInput() != null && var7.getCursor() >= 0) {
+-                int min = Math.min(var7.getInput().length(), var7.getCursor());
++                String safeInput = StringUtil.filterText(var7.getInput()); // ShreddedPaper - console escape sequences must not crash command error components
++                int min = Math.min(safeInput.length(), var7.getCursor());
+                 MutableComponent mutableComponent = Component.empty()
+                     .withStyle(ChatFormatting.GRAY)
+-                    .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand("/" + command)));
++                    .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand("/" + safeCommand)));
+                 if (min > 10) {
+                     mutableComponent.append(CommonComponents.ELLIPSIS);
+                 }
+ 
+-                mutableComponent.append(var7.getInput().substring(Math.max(0, min - 10), min));
+-                if (min < var7.getInput().length()) {
+-                    Component component = Component.literal(var7.getInput().substring(min)).withStyle(ChatFormatting.RED, ChatFormatting.UNDERLINE);
++                mutableComponent.append(safeInput.substring(Math.max(0, min - 10), min));
++                if (min < safeInput.length()) {
++                    Component component = Component.literal(safeInput.substring(min)).withStyle(ChatFormatting.RED, ChatFormatting.UNDERLINE);
+                     mutableComponent.append(component);
+                 }
+ 

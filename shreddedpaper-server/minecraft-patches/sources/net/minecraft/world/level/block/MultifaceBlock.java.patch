@@ -1,0 +1,38 @@
+--- a/net/minecraft/world/level/block/MultifaceBlock.java
++++ b/net/minecraft/world/level/block/MultifaceBlock.java
+@@ -160,7 +_,13 @@
+ 
+         for (Direction direction : DIRECTIONS) {
+             if (hasFace(state, direction)) {
+-                if (!canAttachTo(level, pos, direction)) {
++                BlockPos blockPos = pos.relative(direction);
++                BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from multiface block ticks
++                if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from multiface block ticks
++                    flag = true;
++                    continue;
++                }
++                if (!canAttachTo(level, direction, blockPos, blockState)) { // ShreddedPaper - avoid sync chunk loads from multiface block ticks
+                     return false;
+                 }
+ 
+@@ -191,7 +_,8 @@
+     public boolean isValidStateForPlacement(BlockGetter level, BlockState state, BlockPos pos, Direction direction) {
+         if (this.isFaceSupported(direction) && (!state.is(this) || !hasFace(state, direction))) {
+             BlockPos blockPos = pos.relative(direction);
+-            return canAttachTo(level, direction, blockPos, level.getBlockState(blockPos));
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from multiface block ticks
++            return blockState != null && canAttachTo(level, direction, blockPos, blockState); // ShreddedPaper - avoid sync chunk loads from multiface block ticks
+         } else {
+             return false;
+         }
+@@ -247,8 +_,8 @@
+ 
+     public static boolean canAttachTo(BlockGetter level, BlockPos pos, Direction direction) {
+         BlockPos blockPos = pos.relative(direction);
+-        BlockState blockState = level.getBlockState(blockPos);
+-        return canAttachTo(level, direction, blockPos, blockState);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from multiface block ticks
++        return blockState != null && canAttachTo(level, direction, blockPos, blockState); // ShreddedPaper - avoid sync chunk loads from multiface block ticks
+     }
+ 
+     public static boolean canAttachTo(BlockGetter level, Direction direction, BlockPos pos, BlockState state) {

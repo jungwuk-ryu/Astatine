@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/level/levelgen/blockpredicates/StateTestingPredicate.java
++++ b/net/minecraft/world/level/levelgen/blockpredicates/StateTestingPredicate.java
+@@ -21,7 +_,8 @@
+ 
+     @Override
+     public final boolean test(WorldGenLevel level, BlockPos pos) {
+-        return this.test(level.getBlockState(pos.offset(this.offset)));
++        BlockState state = level.getBlockStateIfLoaded(pos.offset(this.offset)); // ShreddedPaper - avoid sync-loading predicate probes on region workers
++        return state != null && this.test(state);
+     }
+ 
+     protected abstract boolean test(BlockState state);

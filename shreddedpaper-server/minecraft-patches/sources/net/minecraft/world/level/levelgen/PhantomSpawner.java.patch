@@ -15,6 +15,20 @@
                                  BlockPos blockPos = serverPlayer.blockPosition();
                                  if (!level.dimensionType().hasSkyLight() || (!level.purpurConfig.phantomSpawnOnlyAboveSeaLevel || blockPos.getY() >= level.getSeaLevel()) && (!level.purpurConfig.phantomSpawnOnlyWithVisibleSky || level.canSeeSky(blockPos))) { // Purpur - Add phantom spawning options
                                      DifficultyInstance currentDifficultyAt = level.getCurrentDifficultyAt(blockPos);
+@@ -52,8 +_,11 @@
+                                             BlockPos blockPos1 = blockPos.above(20 + randomSource.nextInt(15))
+                                                 .east(-10 + randomSource.nextInt(21))
+                                                 .south(-10 + randomSource.nextInt(21));
+-                                            BlockState blockState = level.getBlockState(blockPos1);
+-                                            FluidState fluidState = level.getFluidState(blockPos1);
++                                            BlockState blockState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during phantom spawn probes
++                                            if (blockState == null) {
++                                                return;
++                                            }
++                                            FluidState fluidState = blockState.getFluidState(); // ShreddedPaper - blockState already came from the loaded chunk
+                                             if (NaturalSpawner.isValidEmptySpawnBlock(level, blockPos1, blockState, fluidState, EntityType.PHANTOM)) {
+                                                 SpawnGroupData spawnGroupData = null;
+                                                 int i2 = level.purpurConfig.phantomSpawnMinPerAttempt + randomSource.nextInt((level.purpurConfig.phantomSpawnMaxPerAttempt < 0 ? currentDifficultyAt.getDifficulty().getId() : level.purpurConfig.phantomSpawnMaxPerAttempt - level.purpurConfig.phantomSpawnMinPerAttempt) + 1); // Purpur - Add phantom spawning options
 @@ -82,6 +_,7 @@
                                          }
                                      }

@@ -16,3 +16,40 @@
          // Paper start - initialize global and world-defaults configuration
          this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
          this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
+@@ -635,12 +_,22 @@
+             org.bukkit.event.server.ServerCommandEvent event = new org.bukkit.event.server.ServerCommandEvent(this.console, consoleInput.msg);
+             this.server.getPluginManager().callEvent(event);
+             if (event.isCancelled()) continue;
+-            consoleInput = new ConsoleInput(event.getCommand(), consoleInput.source);
++            String command = sanitizeServerCommand(event.getCommand());
++            if (command.isBlank()) continue;
++            consoleInput = new ConsoleInput(command, consoleInput.source);
+             // CraftBukkit end
+             this.getCommands().performPrefixedCommand(consoleInput.source, consoleInput.msg);
+         }
+     }
+ 
++    private static String sanitizeServerCommand(@Nullable String command) {
++        if (command == null) {
++            return "";
++        }
++
++        return StringUtil.filterText(command);
++    }
++
+     @Override
+     public boolean isDedicatedServer() {
+         return true;
+@@ -942,7 +_,11 @@
+             if (event.isCancelled()) {
+                 return;
+             }
+-            this.getCommands().performPrefixedCommand(wrapper, event.getCommand());
++            String command = sanitizeServerCommand(event.getCommand());
++            if (command.isBlank()) {
++                return;
++            }
++            this.getCommands().performPrefixedCommand(wrapper, command);
+         });
+         return rconConsoleSource.getCommandResponse();
+         // CraftBukkit end

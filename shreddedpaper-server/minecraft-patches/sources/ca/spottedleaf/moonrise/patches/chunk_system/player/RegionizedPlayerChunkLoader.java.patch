@@ -93,15 +93,27 @@
          long currTime = System.nanoTime();
          for (final ServerPlayer player : new java.util.ArrayList<>(this.world.players())) {
              final PlayerChunkLoaderData loader = ((ChunkSystemServerPlayer)player).moonrise$getChunkLoader();
-@@ -387,6 +_,7 @@
+@@ -324,6 +_,7 @@
+         private final Long idBoxed = Long.valueOf(this.id);
+ 
+         private static final long MAX_RATE = 10_000L;
++        private static final int MAX_RETRY_QUEUE_SCANS_PER_TICK = 128; // ShreddedPaper - cap retry scans to avoid watchdog stalls
+ 
+         private final ServerPlayer player;
+         private final ServerLevel world;
+@@ -387,6 +_,11 @@
                  Math.abs(c2x - centerX) + Math.abs(c2z - centerZ)
              );
          };
++        private final LongArrayList retryLaterLoadQueue = new LongArrayList(); // ShreddedPaper
++        private final LongArrayList retryLaterGenerateQueue = new LongArrayList(); // ShreddedPaper
++        private final LongArrayList retryLaterTickingQueue = new LongArrayList(); // ShreddedPaper
 +        private final LongArrayList retryLaterSendQueue = new LongArrayList(); // ShreddedPaper
++        private final java.util.Set<Long> postProcessQueuedChunks = java.util.concurrent.ConcurrentHashMap.newKeySet(); // ShreddedPaper
          private final LongHeapPriorityQueue sendQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue tickingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
          private final LongHeapPriorityQueue generatingQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
-@@ -395,10 +_,72 @@
+@@ -395,10 +_,76 @@
          private final LongHeapPriorityQueue loadQueue = new LongHeapPriorityQueue(CLOSEST_MANHATTAN_DIST);
  
          private volatile boolean removed;
@@ -147,7 +159,11 @@
 +            this.forgetSentChunksForWorldChange();
 +            this.loadTicketCleanup.remove();
 +            this.tickMap.remove();
++            this.retryLaterLoadQueue.clear();
++            this.retryLaterGenerateQueue.clear();
++            this.retryLaterTickingQueue.clear();
 +            this.retryLaterSendQueue.clear();
++            this.postProcessQueuedChunks.clear();
 +            this.sendQueue.clear();
 +            this.tickingQueue.clear();
 +            this.generatingQueue.clear();
@@ -174,13 +190,31 @@
          }
  
          private void flushDelayedTicketOps() {
-@@ -413,16 +_,27 @@
+@@ -413,16 +_,45 @@
              this.delayedTicketOps.addLast(op);
          }
  
 -        private void sendChunk(final int chunkX, final int chunkZ) {
++        private void retryLater(final LongHeapPriorityQueue queue, final LongArrayList retryQueue) { // ShreddedPaper
++            retryQueue.add(queue.dequeueLong());
++        }
++
++        private void flushRetryLaterQueue(final LongHeapPriorityQueue queue, final LongArrayList retryQueue) { // ShreddedPaper
++            if (retryQueue.isEmpty()) {
++                return;
++            }
++
++            for (final long chunk : retryQueue) {
++                queue.enqueue(chunk);
++            }
++            retryQueue.clear();
++        }
++
 +        private boolean sendChunk(final int chunkX, final int chunkZ) {
-+            if (this.removed || !TickThread.isTickThreadFor(this.world, chunkX, chunkZ)) {
++            final RegionPos targetRegion = RegionPos.forChunk(chunkX, chunkZ);
++            if (this.removed
++                    || (!TickThread.isTickThreadFor(this.world, chunkX, chunkZ)
++                    && !this.world.chunkScheduler.getRegionLocker().hasWriteLock(targetRegion))) {
 +                return false;
 +            }
 +
@@ -253,88 +287,197 @@
              TickThread.ensureTickThread(this.player, "Cannot tick player chunk loader async");
              if (this.removed) {
                  throw new IllegalStateException("Ticking removed player chunk loader");
-@@ -821,19 +_,38 @@
-             final long maxSends = Math.max(0L, Math.min(MAX_RATE, Integer.MAX_VALUE)); // note: no logic to track concurrent sends
-             final int maxSendsThisTick = Math.min((int)this.chunkSendLimiter.takeAllocation(time, sendRate, maxSends), this.sendQueue.size());
-             // we do not return sends that we took from the allocation back because we want to limit the max send rate, not target it
-+            int j = 0; // ShreddedPaper
-             for (int i = 0; i < maxSendsThisTick; ++i) {
-                 final long pendingSend = this.sendQueue.firstLong();
-                 final int pendingSendX = CoordinateUtils.getChunkX(pendingSend);
-                 final int pendingSendZ = CoordinateUtils.getChunkZ(pendingSend);
-                 final LevelChunk chunk = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(pendingSendX, pendingSendZ);
--                if (!this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1) || !TickThread.isTickThreadFor(this.world, pendingSendX, pendingSendZ)) {
-+                if (chunk == null || !this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1)/* || !TickThread.isTickThreadFor(this.world, pendingSendX, pendingSendZ)*/) { // ShreddedPaper - do thread check later / chunk could have been unloaded before sending
-                     // nothing to do
-                     // the target chunk may not be owned by this region, but this should be resolved in the future
-                     break;
-                 }
-                 if (!((ChunkSystemLevelChunk)chunk).moonrise$isPostProcessingDone()) {
-+                    if (!this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1)) { // ShreddedPaper - post-processing may inspect neighbour fluids
-+                        this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
-+                        if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
-+                        continue;
-+                    }
-+                    // ShreddedPaper start - run post-processing on the tick thread
-+                    if (!ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, RegionPos.forChunk(chunk.getPos()))) {
-+                        this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
-+                        ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
-+                            final LevelChunk chunk2 = this.world.chunkSource.getChunkAtIfLoadedImmediately(pendingSendX, pendingSendZ);
-+                            if (chunk2 != null && this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
-+                                ShreddedPaper.postProcessGeneration(this.world, chunk2);
-+                            }
-+                        });
-+                        if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
-+                        continue;
-+                    }
-+                    // ShreddedPaper end - run post-processing on the tick thread
-                     // not yet post-processed, need to do this so that tile entities can properly be sent to clients
--                    chunk.postProcessGeneration(this.world);
-+                    ShreddedPaper.postProcessGeneration(this.world, chunk);
-                     // check if there was any recursive action
-                     if (this.removed || this.sendQueue.isEmpty() || this.sendQueue.firstLong() != pendingSend) {
-                         return;
-@@ -841,7 +_,24 @@
-                 }
-                 this.sendQueue.dequeueLong();
+@@ -656,14 +_,14 @@
+             this.chunkSendLimiter.tickAllocation(time, sendRate, sendRate);
  
--                this.sendChunk(pendingSendX, pendingSendZ);
-+                // ShreddedPaper start - send on both player and tick thread
-+                boolean sent = false;
-+                if (TickThread.isTickThreadFor(this.world, chunk.getPos())) {
-+                    sent = this.sendChunk(pendingSendX, pendingSendZ);
-+                } else {
-+                    final AtomicBoolean lockedSendCompleted = new AtomicBoolean();
-+                    if (this.world.chunkScheduler.getRegionLocker().tryLockNow(RegionPos.forChunk(chunk.getPos()), () -> {
-+                        lockedSendCompleted.set(this.sendChunk(pendingSendX, pendingSendZ));
-+                    })) {
-+                        sent = lockedSendCompleted.get();
-+                    }
-+                }
-+                if (!sent) {
-+                    this.retryLaterSendQueue.add(pendingSend);
-+                    if (maxSendsThisTick - i - 1 > this.sendQueue.size() && j++ < maxSendsThisTick * 2) i--; // Let us try sending more chunks, up to a threshold
+             // try to progress chunk loads
+-            while (!this.loadingQueue.isEmpty()) {
++            for (int pendingLoads = Math.min(this.loadingQueue.size(), MAX_RETRY_QUEUE_SCANS_PER_TICK); pendingLoads > 0 && !this.loadingQueue.isEmpty(); --pendingLoads) { // ShreddedPaper - avoid head-of-line blocking on one slow chunk without draining huge queues
+                 final long pendingLoadChunk = this.loadingQueue.firstLong();
+                 final int pendingChunkX = CoordinateUtils.getChunkX(pendingLoadChunk);
+                 final int pendingChunkZ = CoordinateUtils.getChunkZ(pendingLoadChunk);
+                 final ChunkAccess pending = ((ChunkSystemLevel)this.world).moonrise$getAnyChunkIfLoaded(pendingChunkX, pendingChunkZ);
+                 if (pending == null) {
+-                    // nothing to do here
+-                    break;
++                    this.retryLater(this.loadingQueue, this.retryLaterLoadQueue); // ShreddedPaper - keep checking other ready chunks
 +                    continue;
-+                }
-+                // ShreddedPaper end - send on both player and tick thread
- 
-                 if (this.removed) {
-                     // sendChunk may invoke plugin logic
-@@ -849,6 +_,15 @@
                  }
+                 // chunk has loaded, so we can take it out of the queue
+                 this.loadingQueue.dequeueLong();
+@@ -678,6 +_,7 @@
+                     this.genQueue.enqueue(pendingLoadChunk);
+                 } // else: don't want to generate, so just leave it loaded
+             }
++            this.flushRetryLaterQueue(this.loadingQueue, this.retryLaterLoadQueue); // ShreddedPaper
+ 
+             // try to push more chunk loads
+             final long maxLoads = Math.max(0L, Math.min(MAX_RATE, Math.min(this.loadQueue.size(), this.getMaxChunkLoads())));
+@@ -726,14 +_,14 @@
              }
  
-+            // ShreddedPaper start - requeue retry send chunks
-+            if (!this.retryLaterSendQueue.isEmpty()) {
-+                for (final long chunk : this.retryLaterSendQueue) {
-+                    this.sendQueue.enqueue(chunk);
-+                }
-+                this.retryLaterSendQueue.clear();
-+            }
-+            // ShreddedPaper end - requeue retry send chunks
+             // try to progress chunk generations
+-            while (!this.generatingQueue.isEmpty()) {
++            for (int pendingGenerations = Math.min(this.generatingQueue.size(), MAX_RETRY_QUEUE_SCANS_PER_TICK); pendingGenerations > 0 && !this.generatingQueue.isEmpty(); --pendingGenerations) { // ShreddedPaper - avoid head-of-line blocking on one slow chunk without draining huge queues
+                 final long pendingGenChunk = this.generatingQueue.firstLong();
+                 final int pendingChunkX = CoordinateUtils.getChunkX(pendingGenChunk);
+                 final int pendingChunkZ = CoordinateUtils.getChunkZ(pendingGenChunk);
+                 final LevelChunk pending = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(pendingChunkX, pendingChunkZ);
+                 if (pending == null) {
+-                    // nothing to do here
+-                    break;
++                    this.retryLater(this.generatingQueue, this.retryLaterGenerateQueue); // ShreddedPaper - keep checking other ready chunks
++                    continue;
+                 }
+ 
+                 // chunk has generated, so we can take it out of queue
+@@ -753,13 +_,14 @@
+                     this.tickingQueue.enqueue(pendingGenChunk);
+                 }
+             }
++            this.flushRetryLaterQueue(this.generatingQueue, this.retryLaterGenerateQueue); // ShreddedPaper
+ 
+             // try to push more chunk generations
+             final long maxGens = Math.max(0L, Math.min(MAX_RATE, Math.min(this.genQueue.size(), this.getMaxChunkGenerates())));
+             // preview the allocations, as we may not actually utilise all of them
+             final long maxGensThisTick = this.chunkGenerateTicketLimiter.previewAllocation(time, genRate, maxGens);
+             long ratedGensThisTick = 0L;
+-            while (!this.genQueue.isEmpty()) {
++            for (int generationAttempts = MAX_RETRY_QUEUE_SCANS_PER_TICK; generationAttempts > 0 && !this.genQueue.isEmpty(); --generationAttempts) {
+                 final long chunkKey = this.genQueue.firstLong();
+                 final int chunkX = CoordinateUtils.getChunkX(chunkKey);
+                 final int chunkZ = CoordinateUtils.getChunkZ(chunkKey);
+@@ -791,14 +_,15 @@
+             this.chunkGenerateTicketLimiter.takeAllocation(time, genRate, ratedGensThisTick);
+ 
+             // try to pull ticking chunks
+-            while (!this.tickingQueue.isEmpty()) {
++            for (int pendingTickingCount = Math.min(this.tickingQueue.size(), MAX_RETRY_QUEUE_SCANS_PER_TICK); pendingTickingCount > 0 && !this.tickingQueue.isEmpty(); --pendingTickingCount) { // ShreddedPaper - avoid head-of-line blocking on one chunk waiting for neighbours without draining huge queues
+                 final long pendingTicking = this.tickingQueue.firstLong();
+                 final int pendingChunkX = CoordinateUtils.getChunkX(pendingTicking);
+                 final int pendingChunkZ = CoordinateUtils.getChunkZ(pendingTicking);
+ 
+                 if (!this.areNeighboursGenerated(pendingChunkX, pendingChunkZ,
+                     ChunkHolderManager.FULL_LOADED_TICKET_LEVEL - ChunkHolderManager.ENTITY_TICKING_TICKET_LEVEL)) {
+-                    break;
++                    this.retryLater(this.tickingQueue, this.retryLaterTickingQueue); // ShreddedPaper - keep checking other chunks with ready neighbours
++                    continue;
+                 }
+ 
+                 // only gets here if all neighbours were marked as generated or ticking themselves
+@@ -816,36 +_,89 @@
+                     throw new IllegalStateException("Previous state should be " + CHUNK_TICKET_STAGE_GENERATED + ", not " + prev);
+                 }
+             }
++            this.flushRetryLaterQueue(this.tickingQueue, this.retryLaterTickingQueue); // ShreddedPaper
+ 
+             // try to pull sending chunks
+             final long maxSends = Math.max(0L, Math.min(MAX_RATE, Integer.MAX_VALUE)); // note: no logic to track concurrent sends
+-            final int maxSendsThisTick = Math.min((int)this.chunkSendLimiter.takeAllocation(time, sendRate, maxSends), this.sendQueue.size());
+-            // we do not return sends that we took from the allocation back because we want to limit the max send rate, not target it
+-            for (int i = 0; i < maxSendsThisTick; ++i) {
+-                final long pendingSend = this.sendQueue.firstLong();
+-                final int pendingSendX = CoordinateUtils.getChunkX(pendingSend);
+-                final int pendingSendZ = CoordinateUtils.getChunkZ(pendingSend);
+-                final LevelChunk chunk = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(pendingSendX, pendingSendZ);
+-                if (!this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1) || !TickThread.isTickThreadFor(this.world, pendingSendX, pendingSendZ)) {
+-                    // nothing to do
+-                    // the target chunk may not be owned by this region, but this should be resolved in the future
+-                    break;
+-                }
+-                if (!((ChunkSystemLevelChunk)chunk).moonrise$isPostProcessingDone()) {
+-                    // not yet post-processed, need to do this so that tile entities can properly be sent to clients
+-                    chunk.postProcessGeneration(this.world);
+-                    // check if there was any recursive action
+-                    if (this.removed || this.sendQueue.isEmpty() || this.sendQueue.firstLong() != pendingSend) {
++            final int maxSendsThisTick = Math.min((int)this.chunkSendLimiter.previewAllocation(time, sendRate, maxSends), this.sendQueue.size()); // ShreddedPaper
++            int sentThisTick = 0; // ShreddedPaper
++            try { // ShreddedPaper - charge sent chunks and restore retry queue even if recursive logic returns early
++                for (int pendingSends = Math.min(this.sendQueue.size(), MAX_RETRY_QUEUE_SCANS_PER_TICK); sentThisTick < maxSendsThisTick && pendingSends > 0 && !this.sendQueue.isEmpty(); --pendingSends) { // ShreddedPaper - failed sends do not consume send quota without draining huge queues
++                    final long pendingSend = this.sendQueue.firstLong();
++                    final int pendingSendX = CoordinateUtils.getChunkX(pendingSend);
++                    final int pendingSendZ = CoordinateUtils.getChunkZ(pendingSend);
++                    final RegionPos pendingSendRegion = RegionPos.forChunk(pendingSendX, pendingSendZ); // ShreddedPaper
++                    final LevelChunk chunk = ((ChunkSystemLevel)this.world).moonrise$getFullChunkIfLoaded(pendingSendX, pendingSendZ);
++                    if (chunk == null || !this.areNeighboursGenerated(pendingSendX, pendingSendZ, 1)/* || !TickThread.isTickThreadFor(this.world, pendingSendX, pendingSendZ)*/) { // ShreddedPaper - do thread check later / chunk could have been unloaded before sending
++                        this.retryLaterSendQueue.add(this.sendQueue.dequeueLong()); // ShreddedPaper - do not let one slow send block ready chunks behind it
++                        continue;
++                    }
++                    if (!((ChunkSystemLevelChunk)chunk).moonrise$isPostProcessingDone()) {
++                        if (!this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1)) { // ShreddedPaper - post-processing may inspect neighbour fluids
++                            this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
++                            continue;
++                        }
++                        // ShreddedPaper start - run post-processing on the tick thread
++                        if (!ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, RegionPos.forChunk(chunk.getPos()))) {
++                            this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
++                            if (this.postProcessQueuedChunks.add(pendingSend)) {
++                                ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
++                                    try {
++                                        final LevelChunk chunk2 = this.world.chunkSource.getChunkAtIfLoadedImmediately(pendingSendX, pendingSendZ);
++                                        if (chunk2 != null && this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
++                                            ShreddedPaper.postProcessGeneration(this.world, chunk2);
++                                        }
++                                    } finally {
++                                        this.postProcessQueuedChunks.remove(pendingSend);
++                                    }
++                                });
++                            }
++                            continue;
++                        }
++                        // ShreddedPaper end - run post-processing on the tick thread
++                        // not yet post-processed, need to do this so that tile entities can properly be sent to clients
++                        ShreddedPaper.postProcessGeneration(this.world, chunk);
++                        // check if there was any recursive action
++                        if (this.removed || this.sendQueue.isEmpty() || this.sendQueue.firstLong() != pendingSend) {
++                            return;
++                        } // else: good to dequeue and send, fall through
++                    }
++                    this.sendQueue.dequeueLong();
 +
-             this.flushDelayedTicketOps();
-         }
++                    // ShreddedPaper start - send on both player and tick thread
++                    boolean sent = false;
++                    if (TickThread.isTickThreadFor(this.world, chunk.getPos())) {
++                        sent = this.sendChunk(pendingSendX, pendingSendZ);
++                    } else if (this.world.chunkScheduler.getRegionLocker().hasLock(pendingSendRegion)) {
++                        try (final var ignored = this.world.chunkScheduler.getRegionLocker().promoteLocalLocksToWrite(java.util.List.of(pendingSendRegion))) {
++                            sent = this.sendChunk(pendingSendX, pendingSendZ);
++                        }
++                    } else {
++                        final AtomicBoolean lockedSendCompleted = new AtomicBoolean();
++                        if (this.world.chunkScheduler.getRegionLocker().tryLockNow(pendingSendRegion, () -> {
++                            lockedSendCompleted.set(this.sendChunk(pendingSendX, pendingSendZ));
++                        })) {
++                            sent = lockedSendCompleted.get();
++                        }
++                    }
++                    if (!sent) {
++                        this.retryLaterSendQueue.add(pendingSend);
++                        continue;
++                    }
++                    ++sentThisTick; // ShreddedPaper
++                    // ShreddedPaper end - send on both player and tick thread
++
++                    if (this.removed) {
++                        // sendChunk may invoke plugin logic
+                         return;
+-                    } // else: good to dequeue and send, fall through
++                    }
+                 }
+-                this.sendQueue.dequeueLong();
+-
+-                this.sendChunk(pendingSendX, pendingSendZ);
+-
++            } finally {
++                this.chunkSendLimiter.takeAllocation(time, sendRate, sentThisTick); // ShreddedPaper
+                 if (this.removed) {
+-                    // sendChunk may invoke plugin logic
+-                    return;
++                    this.retryLaterSendQueue.clear();
++                } else {
++                    this.flushRetryLaterQueue(this.sendQueue, this.retryLaterSendQueue); // ShreddedPaper - requeue retry send chunks
+                 }
+             }
  
 @@ -907,7 +_,7 @@
              );
@@ -345,11 +488,15 @@
              TickThread.ensureTickThread(this.player, "Cannot update player asynchronously");
              if (this.removed) {
                  throw new IllegalStateException("Updating removed player chunk loader");
-@@ -967,6 +_,7 @@
+@@ -967,6 +_,11 @@
                  this.player.connection.send(this.updateClientSimulationDistance(tickViewDistance));
              }
  
++            this.retryLaterLoadQueue.clear(); // ShreddedPaper
++            this.retryLaterGenerateQueue.clear(); // ShreddedPaper
++            this.retryLaterTickingQueue.clear(); // ShreddedPaper
 +            this.retryLaterSendQueue.clear(); // ShreddedPaper
++            this.postProcessQueuedChunks.clear(); // ShreddedPaper
              this.sendQueue.clear();
              this.tickingQueue.clear();
              this.generatingQueue.clear();
@@ -372,11 +519,15 @@
              if (this.removed) {
                  throw new IllegalStateException("Removing removed player chunk loader");
              }
-@@ -1073,6 +_,7 @@
+@@ -1073,6 +_,11 @@
              this.tickMap.remove();
  
              // purge queues
++            this.retryLaterLoadQueue.clear(); // ShreddedPaper
++            this.retryLaterGenerateQueue.clear(); // ShreddedPaper
++            this.retryLaterTickingQueue.clear(); // ShreddedPaper
 +            this.retryLaterSendQueue.clear(); // ShreddedPaper
++            this.postProcessQueuedChunks.clear(); // ShreddedPaper
              this.sendQueue.clear();
              this.tickingQueue.clear();
              this.generatingQueue.clear();

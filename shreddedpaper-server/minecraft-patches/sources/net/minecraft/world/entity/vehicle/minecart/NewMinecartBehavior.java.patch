@@ -1,0 +1,50 @@
+--- a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
+@@ -47,17 +_,19 @@
+     public void tick() {
+         if (this.level() instanceof ServerLevel serverLevel) {
+             BlockPos var5 = this.minecart.getCurrentBlockPosOrRailBelow();
+-            BlockState blockState = this.level().getBlockState(var5);
++            BlockState blockState = this.level().getBlockStateIfLoaded(var5); // ShreddedPaper - avoid sync chunk loads from minecart ticking
+             if (this.minecart.isFirstTick()) {
+                 this.minecart.setOnRails(BaseRailBlock.isRail(blockState));
+-                this.adjustToRails(var5, blockState, true);
++                if (blockState != null) {
++                    this.adjustToRails(var5, blockState, true);
++                }
+             }
+ 
+             this.minecart.applyGravity();
+             this.minecart.moveAlongTrack(serverLevel);
+         } else {
+             this.lerpClientPositionAndRotation();
+-            boolean isRail = BaseRailBlock.isRail(this.level().getBlockState(this.minecart.getCurrentBlockPosOrRailBelow()));
++            boolean isRail = BaseRailBlock.isRail(this.level().getBlockStateIfLoaded(this.minecart.getCurrentBlockPosOrRailBelow())); // ShreddedPaper - avoid sync chunk loads from minecart ticking
+             this.minecart.setOnRails(isRail);
+         }
+     }
+@@ -231,11 +_,13 @@
+         ) {
+             Vec3 deltaMovement = this.getDeltaMovement();
+             BlockPos currentBlockPosOrRailBelow = this.minecart.getCurrentBlockPosOrRailBelow();
+-            BlockState blockState = this.level().getBlockState(currentBlockPosOrRailBelow);
++            BlockState blockState = this.level().getBlockStateIfLoaded(currentBlockPosOrRailBelow); // ShreddedPaper - avoid sync chunk loads from minecart rail movement
+             boolean isRail = BaseRailBlock.isRail(blockState);
+             if (this.minecart.isOnRails() != isRail) {
+                 this.minecart.setOnRails(isRail);
+-                this.adjustToRails(currentBlockPosOrRailBelow, blockState, false);
++                if (blockState != null) {
++                    this.adjustToRails(currentBlockPosOrRailBelow, blockState, false);
++                }
+             }
+ 
+             if (isRail) {
+@@ -438,7 +_,7 @@
+                 }
+ 
+                 this.minecart.move(MoverType.SELF, vec36.subtract(vec3));
+-                BlockState blockState = this.level().getBlockState(BlockPos.containing(vec36));
++                BlockState blockState = this.level().getBlockStateIfLoaded(BlockPos.containing(vec36)); // ShreddedPaper - avoid sync chunk loads from minecart rail movement
+                 if (flag) {
+                     if (BaseRailBlock.isRail(blockState)) {
+                         RailShape railShape1 = blockState.getValue(((BaseRailBlock)blockState.getBlock()).getShapeProperty());

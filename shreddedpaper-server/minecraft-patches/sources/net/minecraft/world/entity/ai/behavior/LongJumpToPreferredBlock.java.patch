@@ -1,0 +1,33 @@
+--- a/net/minecraft/world/entity/ai/behavior/LongJumpToPreferredBlock.java
++++ b/net/minecraft/world/entity/ai/behavior/LongJumpToPreferredBlock.java
+@@ -5,6 +_,7 @@
+ import java.util.Optional;
+ import java.util.function.BiPredicate;
+ import java.util.function.Function;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
+@@ -13,6 +_,7 @@
+ import net.minecraft.util.valueproviders.UniformInt;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.state.BlockState;
+ 
+ public class LongJumpToPreferredBlock<E extends Mob> extends LongJumpToRandomPos<E> {
+     private final TagKey<Block> preferredBlockTag;
+@@ -53,7 +_,13 @@
+                 Optional<LongJumpToRandomPos.PossibleJump> optional = super.getJumpCandidate(level);
+                 if (optional.isPresent()) {
+                     LongJumpToRandomPos.PossibleJump possibleJump = optional.get();
+-                    if (level.getBlockState(mutableBlockPos.setWithOffset(possibleJump.targetPos(), Direction.DOWN)).is(this.preferredBlockTag)) {
++                    mutableBlockPos.setWithOffset(possibleJump.targetPos(), Direction.DOWN);
++                    if (!TickThread.isTickThreadFor(level, mutableBlockPos)) {
++                        this.notPrefferedJumpCandidates.add(possibleJump);
++                        continue;
++                    }
++                    BlockState blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during preferred long-jump checks
++                    if (blockState != null && blockState.is(this.preferredBlockTag)) {
+                         return optional;
+                     }
+ 

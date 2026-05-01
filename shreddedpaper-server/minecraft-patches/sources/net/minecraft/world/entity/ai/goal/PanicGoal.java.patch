@@ -1,0 +1,44 @@
+--- a/net/minecraft/world/entity/ai/goal/PanicGoal.java
++++ b/net/minecraft/world/entity/ai/goal/PanicGoal.java
+@@ -2,7 +_,9 @@
+ 
+ import java.util.EnumSet;
+ import java.util.function.Function;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.DamageTypeTags;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.tags.TagKey;
+@@ -11,6 +_,8 @@
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.util.DefaultRandomPos;
+ import net.minecraft.world.level.BlockGetter;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -96,8 +_,20 @@
+ 
+     protected @Nullable BlockPos lookForWater(BlockGetter level, Entity entity, int range) {
+         BlockPos blockPos = entity.blockPosition();
+-        return !level.getBlockState(blockPos).getCollisionShape(level, blockPos).isEmpty()
++        BlockState blockState = getOwnedBlockStateIfLoaded(level, blockPos); // ShreddedPaper - avoid sync/off-owner panic water checks
++        return blockState == null || !blockState.getCollisionShape(level, blockPos).isEmpty()
+             ? null
+-            : BlockPos.findClosestMatch(entity.blockPosition(), range, 1, blockPos1 -> level.getFluidState(blockPos1).is(FluidTags.WATER)).orElse(null);
++            : BlockPos.findClosestMatch(entity.blockPosition(), range, 1, blockPos1 -> isOwnedWaterIfLoaded(level, blockPos1)).orElse(null);
++    }
++
++    private static @Nullable BlockState getOwnedBlockStateIfLoaded(BlockGetter level, BlockPos pos) {
++        if (level instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, pos)) return null;
++        return level.getBlockStateIfLoaded(pos);
++    }
++
++    private static boolean isOwnedWaterIfLoaded(BlockGetter level, BlockPos pos) {
++        if (level instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, pos)) return false;
++        FluidState fluidState = level.getFluidIfLoaded(pos);
++        return fluidState != null && fluidState.is(FluidTags.WATER);
+     }
+ }

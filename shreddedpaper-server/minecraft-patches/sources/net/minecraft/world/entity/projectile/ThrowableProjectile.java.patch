@@ -10,3 +10,15 @@
          HitResult hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
          Vec3 location;
          if (hitResultOnMoveVector.getType() != HitResult.Type.MISS) {
+@@ -94,7 +_,10 @@
+     private void handleFirstTickBubbleColumn() {
+         if (this.firstTick) {
+             for (BlockPos blockPos : BlockPos.betweenClosed(this.getBoundingBox())) {
+-                BlockState blockState = this.level().getBlockState(blockPos);
++                BlockState blockState = this.level().getBlockStateIfLoaded(blockPos);
++                if (blockState == null) {
++                    continue;
++                }
+                 if (blockState.is(Blocks.BUBBLE_COLUMN)) {
+                     blockState.entityInside(this.level(), blockPos, this, InsideBlockEffectApplier.NOOP, true);
+                 }

@@ -1,6 +1,12 @@
 --- a/net/minecraft/world/level/pathfinder/PathfindingContext.java
 +++ b/net/minecraft/world/level/pathfinder/PathfindingContext.java
-@@ -9,7 +_,7 @@
+@@ -4,12 +_,13 @@
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.level.CollisionGetter;
++import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
+ import org.jspecify.annotations.Nullable;
  
  public class PathfindingContext {
      private final CollisionGetter level;
@@ -9,3 +15,13 @@
      private final BlockPos mobPosition;
      private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
  
+@@ -30,7 +_,8 @@
+     }
+ 
+     public BlockState getBlockState(BlockPos pos) {
+-        return this.level.getBlockState(pos);
++        BlockState blockState = this.level.getBlockStateIfLoaded(pos); // ShreddedPaper - pathfinding must not sync-load chunks from async entity ticks
++        return blockState == null ? Blocks.BARRIER.defaultBlockState() : blockState;
+     }
+ 
+     public CollisionGetter level() {

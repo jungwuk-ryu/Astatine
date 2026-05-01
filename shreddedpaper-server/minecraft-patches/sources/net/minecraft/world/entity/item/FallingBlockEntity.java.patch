@@ -1,0 +1,86 @@
+--- a/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -41,6 +_,7 @@
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.level.portal.TeleportTransition;
+ import net.minecraft.world.level.storage.TagValueInput;
+@@ -168,17 +_,20 @@
+             if (this.level() instanceof ServerLevel serverLevel && (this.isAlive() || this.forceTickAfterTeleportToDuplicate)) {
+                 BlockPos blockPos = this.blockPosition();
+                 boolean flag = this.blockState.getBlock() instanceof ConcretePowderBlock;
+-                boolean flag1 = flag && this.level().getFluidState(blockPos).is(FluidTags.WATER);
++                FluidState fluidState = this.level().getFluidIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from falling block fluid checks
++                boolean flag1 = flag && fluidState != null && fluidState.is(FluidTags.WATER);
+                 double d = this.getDeltaMovement().lengthSqr();
+                 if (flag && d > 1.0) {
+                     BlockHitResult blockHitResult = this.level()
+                         .clip(
+                             new ClipContext(
+                                 new Vec3(this.xo, this.yo, this.zo), this.position(), ClipContext.Block.COLLIDER, ClipContext.Fluid.SOURCE_ONLY, this
+-                            )
+-                        );
+-                    if (blockHitResult.getType() != HitResult.Type.MISS && this.level().getFluidState(blockHitResult.getBlockPos()).is(FluidTags.WATER)) {
++	                            )
++	                        );
++                    FluidState hitFluidState = blockHitResult.getType() == HitResult.Type.MISS ? null : this.level().getFluidIfLoaded(blockHitResult.getBlockPos()); // ShreddedPaper - avoid sync chunk loads from falling block fluid checks
++                    if (hitFluidState != null && hitFluidState.is(FluidTags.WATER)) {
+                         blockPos = blockHitResult.getBlockPos();
++                        fluidState = hitFluidState;
+                         flag1 = true;
+                     }
+                 }
+@@ -190,20 +_,28 @@
+                         }
+ 
+                         this.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DROP); // CraftBukkit - add Bukkit remove cause
++	                    }
++	                } else {
++                    BlockState blockState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from falling block landing checks
++                    if (blockState == null) {
++                        return;
+                     }
+-                } else {
+-                    BlockState blockState = this.level().getBlockState(blockPos);
+                     this.setDeltaMovement(this.getDeltaMovement().multiply(0.7, -0.5, 0.7));
+                     if (!blockState.is(Blocks.MOVING_PISTON)) {
+                         if (!this.cancelDrop) {
+                             boolean canBeReplaced = blockState.canBeReplaced(
+-                                new DirectionalPlaceContext(this.level(), blockPos, Direction.DOWN, ItemStack.EMPTY, Direction.UP)
+-                            );
+-                            boolean flag2 = FallingBlock.isFree(this.level().getBlockState(blockPos.below())) && (!flag || !flag1);
++	                                new DirectionalPlaceContext(this.level(), blockPos, Direction.DOWN, ItemStack.EMPTY, Direction.UP)
++	                            );
++                            BlockState belowState = this.level().getBlockStateIfLoaded(blockPos.below()); // ShreddedPaper - avoid sync chunk loads from falling block support checks
++                            if (belowState == null) {
++                                return;
++                            }
++                            boolean flag2 = FallingBlock.isFree(belowState) && (!flag || !flag1);
+                             boolean flag3 = this.blockState.canSurvive(this.level(), blockPos) && !flag2;
+                             if (canBeReplaced && flag3) {
+                                 if (this.blockState.hasProperty(BlockStateProperties.WATERLOGGED)
+-                                    && this.level().getFluidState(blockPos).getType() == Fluids.WATER) {
++                                    && fluidState != null
++                                    && fluidState.getType() == Fluids.WATER) {
+                                     this.blockState = this.blockState.setValue(BlockStateProperties.WATERLOGGED, true);
+                                 }
+ 
+@@ -213,10 +_,11 @@
+                                     return;
+                                 }
+                                 // CraftBukkit end
+-                                if (this.level().setBlock(blockPos, this.blockState, Block.UPDATE_ALL)) {
+-                                    serverLevel.getChunkSource()
+-                                        .chunkMap
+-                                        .sendToTrackingPlayers(this, new ClientboundBlockUpdatePacket(blockPos, this.level().getBlockState(blockPos)));
++	                                if (this.level().setBlock(blockPos, this.blockState, Block.UPDATE_ALL)) {
++                                    BlockState placedState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads after falling block placement
++	                                    serverLevel.getChunkSource()
++	                                        .chunkMap
++                                        .sendToTrackingPlayers(this, new ClientboundBlockUpdatePacket(blockPos, placedState == null ? this.blockState : placedState));
+                                     this.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DESPAWN); // CraftBukkit - add Bukkit remove cause
+                                     if (block instanceof Fallable fallable) {
+                                         fallable.onLand(this.level(), blockPos, this.blockState, blockState, this);

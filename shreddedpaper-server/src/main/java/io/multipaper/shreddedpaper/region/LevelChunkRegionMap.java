@@ -660,11 +660,23 @@ public class LevelChunkRegionMap {
     }
 
     public boolean scheduleTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
-        return this.applyRegionForCell(regionPos, region -> region.scheduleTask(taskClass, task, delayInTicks, regionPos));
+        return this.applyRegionForCell(regionPos, region -> {
+            final boolean scheduled = region.scheduleTask(taskClass, task, delayInTicks, regionPos);
+            if (scheduled) {
+                region.getOwner().armScheduler();
+            }
+            return scheduled;
+        });
     }
 
     public boolean scheduleTaskNonDropping(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
-        return this.applyRegionForCell(regionPos, region -> region.scheduleTaskNonDropping(taskClass, task, delayInTicks, regionPos));
+        return this.applyRegionForCell(regionPos, region -> {
+            final boolean scheduled = region.scheduleTaskNonDropping(taskClass, task, delayInTicks, regionPos);
+            if (scheduled) {
+                region.getOwner().armScheduler();
+            }
+            return scheduled;
+        });
     }
 
     public boolean scheduleTaskIfSchedulerArmed(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
@@ -718,7 +730,13 @@ public class LevelChunkRegionMap {
     }
 
     public boolean scheduleTransferredTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
-        return this.applyRegionForCell(regionPos, region -> region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos));
+        return this.applyRegionForCell(regionPos, region -> {
+            final boolean scheduled = region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos);
+            if (scheduled) {
+                region.getOwner().armScheduler();
+            }
+            return scheduled;
+        });
     }
 
     public PrioritisedExecutor.PrioritisedTask createInternalTask(final RegionPos regionPos, final Runnable task, final Priority priority) {
@@ -726,7 +744,10 @@ public class LevelChunkRegionMap {
     }
 
     public PrioritisedExecutor.PrioritisedTask queueInternalTask(final RegionPos regionPos, final Runnable task, final Priority priority) {
-        return this.applyRegionForCell(regionPos, region -> region.getInternalTaskQueue().queueTask(task, priority));
+        return this.applyRegionForCell(regionPos, region -> {
+            region.getOwner().armScheduler();
+            return region.getInternalTaskQueue().queueTask(task, priority);
+        });
     }
 
     /**
@@ -735,7 +756,10 @@ public class LevelChunkRegionMap {
      * tasks must be read-only. Eg loading a chunk, saving data, sending packets, etc.
      */
     public void execute(RegionPos regionPos, Runnable task) {
-        this.acceptRegionForCell(regionPos, region -> region.getInternalTaskQueue().queueTask(task));
+        this.acceptRegionForCell(regionPos, region -> {
+            region.getOwner().armScheduler();
+            region.getInternalTaskQueue().queueTask(task);
+        });
     }
 
     /**
@@ -781,6 +805,61 @@ public class LevelChunkRegionMap {
                 }
             });
         }
+    }
+
+    public void reconcilePlayerIfNeeded(ServerPlayer player) {
+        if (player.connection.player != player
+                || player.connection.processedDisconnect
+                || player.isRemoved()
+                || !player.valid
+                || player.level() != this.level) {
+            return;
+        }
+
+        final ChunkPos currentChunk = player.chunkPosition();
+        final RegionPos currentCell = RegionPos.forChunk(currentChunk);
+        final LevelChunkRegion currentRegion = player.currentRegion;
+        if (currentRegion != null
+                && currentRegion.getLevel() == this.level
+                && currentRegion.getOwner().ownsCell(currentCell)
+                && currentRegion.containsPlayer(player)) {
+            currentRegion.getOwner().armScheduler();
+            player.previousChunkPosRegion = currentChunk;
+            return;
+        }
+
+        this.reconcilePlayer(currentChunk, currentCell, player);
+    }
+
+    private void reconcilePlayer(final ChunkPos currentChunk, final RegionPos currentCell, final ServerPlayer player) {
+        this.regionsLock.write(() -> {
+            final LevelChunkRegion expectedRegion = this.getOrCreateRegionLocked(currentCell);
+            final LevelChunkRegion currentRegion = player.currentRegion != null && player.currentRegion.getLevel() == this.level
+                    ? player.currentRegion
+                    : null;
+            final ChunkPos previousChunk = player.previousChunkPosRegion;
+            final LevelChunkRegion previousRegion = previousChunk == null
+                    ? null
+                    : this.getExistingRegionLocked(RegionPos.forChunk(previousChunk));
+
+            if (currentRegion == expectedRegion && expectedRegion.containsPlayer(player)) {
+                expectedRegion.getOwner().armScheduler();
+                player.previousChunkPosRegion = currentChunk;
+                return;
+            }
+
+            if (previousRegion != null && previousRegion != expectedRegion) {
+                previousRegion.removePlayerIfPresent(player);
+            }
+            if (currentRegion != null && currentRegion != expectedRegion && currentRegion != previousRegion) {
+                currentRegion.removePlayerIfPresent(player);
+            }
+
+            expectedRegion.addPlayerIfAbsent(player);
+            expectedRegion.getOwner().armScheduler();
+            player.currentRegion = expectedRegion;
+            player.previousChunkPosRegion = currentChunk;
+        });
     }
 
     public void addBlockEvent(BlockEventData blockEvent) {

@@ -1,0 +1,46 @@
+--- a/net/minecraft/world/entity/ai/behavior/TryFindLand.java
++++ b/net/minecraft/world/entity/ai/behavior/TryFindLand.java
+@@ -2,6 +_,7 @@
+ 
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.behavior.declarative.BehaviorBuilder;
+@@ -9,6 +_,7 @@
+ import net.minecraft.world.entity.ai.memory.WalkTarget;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import org.apache.commons.lang3.mutable.MutableLong;
+ 
+@@ -26,7 +_,8 @@
+                 .apply(
+                     instance,
+                     (attackTarget, walkTarget, lookTarget) -> (level, mob, gameTime) -> {
+-                        if (!level.getFluidState(mob.blockPosition()).is(FluidTags.WATER)) {
++                        FluidState currentFluid = level.getFluidIfLoaded(mob.blockPosition()); // ShreddedPaper - avoid sync chunk loads during land searches
++                        if (currentFluid == null || !currentFluid.is(FluidTags.WATER)) {
+                             return false;
+                         } else if (gameTime < mutableLong.longValue()) {
+                             mutableLong.setValue(gameTime + 60L);
+@@ -38,10 +_,14 @@
+ 
+                             for (BlockPos blockPos1 : BlockPos.withinManhattan(blockPos, range, range, range)) {
+                                 if (blockPos1.getX() != blockPos.getX() || blockPos1.getZ() != blockPos.getZ()) {
+-                                    BlockState blockState = level.getBlockState(blockPos1);
+-                                    BlockState blockState1 = level.getBlockState(mutableBlockPos.setWithOffset(blockPos1, Direction.DOWN));
++                                    mutableBlockPos.setWithOffset(blockPos1, Direction.DOWN);
++                                    if (!TickThread.isTickThreadFor(level, blockPos1) || !TickThread.isTickThreadFor(level, mutableBlockPos)) continue; // ShreddedPaper - avoid off-owner land searches
++                                    BlockState blockState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during land searches
++                                    FluidState fluidState = level.getFluidIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during land searches
++                                    BlockState blockState1 = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during land searches
++                                    if (blockState == null || fluidState == null || blockState1 == null) continue; // ShreddedPaper - loaded-only land searches
+                                     if (!blockState.is(Blocks.WATER)
+-                                        && level.getFluidState(blockPos1).isEmpty()
++                                        && fluidState.isEmpty()
+                                         && blockState.getCollisionShape(level, blockPos1, collisionContext).isEmpty()
+                                         && blockState1.isFaceSturdy(level, mutableBlockPos, Direction.UP)) {
+                                         BlockPos blockPos2 = blockPos1.immutable();

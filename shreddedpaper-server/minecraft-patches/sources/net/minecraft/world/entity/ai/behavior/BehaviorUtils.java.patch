@@ -1,0 +1,39 @@
+--- a/net/minecraft/world/entity/ai/behavior/BehaviorUtils.java
++++ b/net/minecraft/world/entity/ai/behavior/BehaviorUtils.java
+@@ -4,6 +_,7 @@
+ import java.util.Optional;
+ import java.util.UUID;
+ import java.util.function.Predicate;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.server.level.ServerLevel;
+@@ -20,6 +_,7 @@
+ import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.item.ItemStack;
+ import net.minecraft.world.item.ProjectileWeaponItem;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.pathfinder.PathComputationType;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+@@ -152,11 +_,18 @@
+         Vec3 pos = DefaultRandomPos.getPos(pathfinder, radius, verticalDistance);
+         int i = 0;
+ 
+-        while (pos != null && !pathfinder.level().getBlockState(BlockPos.containing(pos)).isPathfindable(PathComputationType.WATER) && i++ < 10) {
++        while (pos != null && i++ < 10) {
++            BlockPos blockPos = BlockPos.containing(pos);
++            if (pathfinder.level() instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, blockPos)) { // ShreddedPaper - avoid off-owner swim position checks
++                pos = DefaultRandomPos.getPos(pathfinder, radius, verticalDistance);
++                continue;
++            }
++            BlockState blockState = pathfinder.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads while choosing swim positions
++            if (blockState != null && blockState.isPathfindable(PathComputationType.WATER)) return pos;
+             pos = DefaultRandomPos.getPos(pathfinder, radius, verticalDistance);
+         }
+ 
+-        return pos;
++        return null;
+     }
+ 
+     public static boolean isBreeding(LivingEntity entity) {

@@ -49,6 +49,11 @@ public class ShreddedPaperChunkTicker {
         io.papermc.paper.entity.activation.ActivationRange.activateEntities(level); // Paper - EAR // DivineMC - DAB must update priorities before ShreddedPaper region entity ticking
 
         if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
+            for (final ServerPlayer player : level.players()) {
+                if (ShreddedPaperPlayerTicker.canTickPlayer(player)) {
+                    level.chunkSource.tickingRegions.reconcilePlayerIfNeeded(player);
+                }
+            }
             level.chunkSource.tickingRegions.forEach(
                     region -> {
                         if (region.getOwner().isSchedulerArmed()) {

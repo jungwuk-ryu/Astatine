@@ -1,0 +1,24 @@
+--- a/net/minecraft/world/entity/ai/goal/BreathAirGoal.java
++++ b/net/minecraft/world/entity/ai/goal/BreathAirGoal.java
+@@ -1,7 +_,9 @@
+ package net.minecraft.world.entity.ai.goal;
+ 
+ import java.util.EnumSet;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.MoverType;
+ import net.minecraft.world.entity.PathfinderMob;
+@@ -72,7 +_,9 @@
+     }
+ 
+     private boolean givesAir(LevelReader level, BlockPos pos) {
+-        BlockState blockState = level.getBlockState(pos);
+-        return (level.getFluidState(pos).isEmpty() || blockState.is(Blocks.BUBBLE_COLUMN)) && blockState.isPathfindable(PathComputationType.LAND);
++        if (level instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, pos)) return false; // ShreddedPaper - avoid off-owner air searches
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during air searches
++        net.minecraft.world.level.material.FluidState fluidState = level.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during air searches
++        return blockState != null && fluidState != null && (fluidState.isEmpty() || blockState.is(Blocks.BUBBLE_COLUMN)) && blockState.isPathfindable(PathComputationType.LAND);
+     }
+ }

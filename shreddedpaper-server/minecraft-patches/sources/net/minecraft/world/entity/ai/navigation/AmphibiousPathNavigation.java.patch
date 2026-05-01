@@ -1,5 +1,13 @@
 --- a/net/minecraft/world/entity/ai/navigation/AmphibiousPathNavigation.java
 +++ b/net/minecraft/world/entity/ai/navigation/AmphibiousPathNavigation.java
+@@ -3,6 +_,7 @@
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.pathfinder.AmphibiousNodeEvaluator;
+ import net.minecraft.world.level.pathfinder.PathFinder;
+ import net.minecraft.world.phys.Vec3;
 @@ -12,9 +_,25 @@
          super(mob, level);
      }
@@ -26,3 +34,13 @@
          return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
      }
  
+@@ -40,7 +_,8 @@
+ 
+     @Override
+     public boolean isStableDestination(BlockPos pos) {
+-        return !this.level.getBlockState(pos.below()).isAir();
++        BlockState blockState = this.level.getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads from amphibious navigation stability checks
++        return blockState != null && !blockState.isAir();
+     }
+ 
+     @Override

@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/level/block/BaseFireBlock.java
++++ b/net/minecraft/world/level/block/BaseFireBlock.java
+@@ -44,7 +_,10 @@
+ 
+     public static BlockState getState(BlockGetter level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        BlockState blockState = level.getBlockState(blockPos);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++            return Blocks.FIRE.defaultBlockState();
++        }
+         return SoulFireBlock.canSurviveOnBlock(blockState) ? Blocks.SOUL_FIRE.defaultBlockState() : ((FireBlock)Blocks.FIRE).getStateForPlacement(level, pos);
+     }
+ 

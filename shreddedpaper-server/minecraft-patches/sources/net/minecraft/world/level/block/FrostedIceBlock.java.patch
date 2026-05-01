@@ -1,0 +1,27 @@
+--- a/net/minecraft/world/level/block/FrostedIceBlock.java
++++ b/net/minecraft/world/level/block/FrostedIceBlock.java
+@@ -51,7 +_,10 @@
+ 
+                 for (Direction direction : Direction.values()) {
+                     mutableBlockPos.setWithOffset(pos, direction);
+-                    BlockState blockState = level.getBlockState(mutableBlockPos);
++                    BlockState blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads from scheduled frosted ice ticks
++                    if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled frosted ice ticks
++                        continue;
++                    }
+                     if (blockState.is(this) && !this.slightlyMelt(blockState, level, mutableBlockPos)) {
+                         level.scheduleTick(mutableBlockPos, this, Mth.nextInt(random, level.paperConfig().environment.frostedIce.delay.min, level.paperConfig().environment.frostedIce.delay.max)); // Paper - Frosted ice options
+                     }
+@@ -90,7 +_,11 @@
+ 
+         for (Direction direction : Direction.values()) {
+             mutableBlockPos.setWithOffset(pos, direction);
+-            if (level.getBlockState(mutableBlockPos).is(this)) {
++            BlockState blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads from scheduled frosted ice ticks
++            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled frosted ice ticks
++                return false;
++            }
++            if (blockState.is(this)) { // ShreddedPaper - avoid sync chunk loads from scheduled frosted ice ticks
+                 if (++i >= neighborsRequired) {
+                     return false;
+                 }

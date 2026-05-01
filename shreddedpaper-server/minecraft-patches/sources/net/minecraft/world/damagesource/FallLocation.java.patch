@@ -1,0 +1,13 @@
+--- a/net/minecraft/world/damagesource/FallLocation.java
++++ b/net/minecraft/world/damagesource/FallLocation.java
+@@ -35,8 +_,8 @@
+     public static @Nullable FallLocation getCurrentFallLocation(LivingEntity entity) {
+         Optional<BlockPos> lastClimbablePos = entity.getLastClimbablePos();
+         if (lastClimbablePos.isPresent()) {
+-            BlockState blockState = entity.level().getBlockState(lastClimbablePos.get());
+-            return blockToFallLocation(blockState);
++            BlockState blockState = entity.level().getBlockStateIfLoaded(lastClimbablePos.get()); // ShreddedPaper - avoid sync-loading fall location blocks on region workers
++            return blockState == null ? OTHER_CLIMBABLE : blockToFallLocation(blockState);
+         } else {
+             return entity.isInWater() ? WATER : null;
+         }

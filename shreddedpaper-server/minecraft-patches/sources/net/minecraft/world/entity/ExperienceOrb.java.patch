@@ -1,0 +1,75 @@
+--- a/net/minecraft/world/entity/ExperienceOrb.java
++++ b/net/minecraft/world/entity/ExperienceOrb.java
+@@ -19,6 +_,8 @@
+ import net.minecraft.world.item.enchantment.EnchantmentHelper;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.entity.EntityTypeTest;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
+ import net.minecraft.world.phys.AABB;
+@@ -42,6 +_,7 @@
+     private int health = 5;
+     public int count = 1;
+     private @Nullable Player followingPlayer;
++    private boolean shreddedpaper$pickupScheduled; // ShreddedPaper - defer cross-owner pickup once
+     private final InterpolationHandler interpolation = new InterpolationHandler(this);
+     // Paper start
+     public java.util.@Nullable UUID sourceEntityId;
+@@ -156,7 +_,8 @@
+                 this.applyGravity();
+             }
+ 
+-            if (this.level().getFluidState(this.blockPosition()).is(FluidTags.LAVA)) {
++            FluidState currentFluid = this.level().getFluidIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads from orb lava checks
++            if (currentFluid != null && currentFluid.is(FluidTags.LAVA)) {
+                 this.setDeltaMovement(
+                     (this.random.nextFloat() - this.random.nextFloat()) * 0.2F, 0.2F, (this.random.nextFloat() - this.random.nextFloat()) * 0.2F
+                 );
+@@ -180,7 +_,10 @@
+             this.applyEffectsFromBlocks();
+             float f = 0.98F;
+             if (this.onGround()) {
+-                f = this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getFriction() * 0.98F;
++                BlockState movementBlockState = this.level().getBlockStateIfLoaded(this.getBlockPosBelowThatAffectsMyMovement()); // ShreddedPaper - avoid sync chunk loads from orb friction checks
++                if (movementBlockState != null) {
++                    f = movementBlockState.getBlock().getFriction() * 0.98F;
++                }
+             }
+ 
+             this.setDeltaMovement(this.getDeltaMovement().scale(f));
+@@ -354,6 +_,33 @@
+     @Override
+     public void playerTouch(Player entity) {
+         if (entity instanceof ServerPlayer serverPlayer) {
++            // ShreddedPaper start - XP pickup mutates both player and orb ownership
++            if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                    && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
++                    && this.level() instanceof ServerLevel serverLevel) {
++                final net.minecraft.world.level.levelgen.structure.BoundingBox ownershipBox =
++                    net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(this.blockPosition(), entity.blockPosition());
++                if (!io.multipaper.shreddedpaper.ShreddedPaper.isSync(serverLevel, ownershipBox)) {
++                    if (!this.shreddedpaper$pickupScheduled) {
++                        this.shreddedpaper$pickupScheduled = true;
++                        io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, ownershipBox, () -> {
++                            try {
++                                if (!this.isRemoved()
++                                        && !entity.isRemoved()
++                                        && this.level() == entity.level()
++                                        && entity.getBoundingBox().inflate(1.0, 0.5, 1.0).intersects(this.getBoundingBox())) {
++                                    this.playerTouch(entity);
++                                }
++                            } finally {
++                                this.shreddedpaper$pickupScheduled = false;
++                            }
++                        });
++                    }
++                    return;
++                }
++            }
++            // ShreddedPaper end - XP pickup mutates both player and orb ownership
++
+             if (entity.takeXpDelay == 0 && new com.destroystokyo.paper.event.player.PlayerPickupExperienceEvent(serverPlayer.getBukkitEntity(), (org.bukkit.entity.ExperienceOrb) this.getBukkitEntity()).callEvent()) { // Paper - PlayerPickupExperienceEvent
+                 entity.takeXpDelay = org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerXpCooldownEvent(entity, this.level().purpurConfig.playerExpPickupDelay, org.bukkit.event.player.PlayerExpCooldownChangeEvent.ChangeReason.PICKUP_ORB).getNewCooldown(); // CraftBukkit - entity.takeXpDelay = 2; // Purpur - Configurable player pickup exp delay
+                 entity.take(this, 1);

@@ -1,0 +1,52 @@
+--- a/net/minecraft/world/entity/ai/behavior/AnimalPanic.java
++++ b/net/minecraft/world/entity/ai/behavior/AnimalPanic.java
+@@ -4,6 +_,7 @@
+ import java.util.Optional;
+ import java.util.function.Function;
+ import java.util.function.Predicate;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.DamageTypeTags;
+@@ -20,6 +_,8 @@
+ import net.minecraft.world.entity.ai.util.AirAndWaterRandomPos;
+ import net.minecraft.world.entity.ai.util.LandRandomPos;
+ import net.minecraft.world.level.BlockGetter;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -107,17 +_,29 @@
+ 
+     private Optional<BlockPos> lookForWater(BlockGetter level, Entity entity) {
+         BlockPos blockPos = entity.blockPosition();
+-        if (!level.getBlockState(blockPos).getCollisionShape(level, blockPos).isEmpty()) {
++        BlockState blockState = getOwnedBlockStateIfLoaded(level, blockPos); // ShreddedPaper - avoid sync/off-owner panic water searches
++        if (blockState == null || !blockState.getCollisionShape(level, blockPos).isEmpty()) {
+             return Optional.empty();
+         } else {
+             Predicate<BlockPos> predicate;
+             if (Mth.ceil(entity.getBbWidth()) == 2) {
+-                predicate = blockPos1 -> BlockPos.squareOutSouthEast(blockPos1).allMatch(blockPos2 -> level.getFluidState(blockPos2).is(FluidTags.WATER));
++                predicate = blockPos1 -> BlockPos.squareOutSouthEast(blockPos1).allMatch(blockPos2 -> isOwnedWaterIfLoaded(level, blockPos2));
+             } else {
+-                predicate = blockPos1 -> level.getFluidState(blockPos1).is(FluidTags.WATER);
++                predicate = blockPos1 -> isOwnedWaterIfLoaded(level, blockPos1);
+             }
+ 
+             return BlockPos.findClosestMatch(blockPos, 5, 1, predicate);
+         }
++    }
++
++    private static @Nullable BlockState getOwnedBlockStateIfLoaded(BlockGetter level, BlockPos pos) {
++        if (level instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, pos)) return null;
++        return level.getBlockStateIfLoaded(pos);
++    }
++
++    private static boolean isOwnedWaterIfLoaded(BlockGetter level, BlockPos pos) {
++        if (level instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, pos)) return false;
++        FluidState fluidState = level.getFluidIfLoaded(pos);
++        return fluidState != null && fluidState.is(FluidTags.WATER);
+     }
+ }

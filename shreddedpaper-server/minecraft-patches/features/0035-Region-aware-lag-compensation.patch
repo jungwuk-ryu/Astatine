@@ -75,9 +75,9 @@ index bfe19a9..4fea6bd 100644
 @@ -649,7 +650,7 @@ public class ServerGamePacketListenerImpl
                      return;
                  }
-                 // ShreddedPaper end - Check we own the destination location
+                 // Paper end - Prevent moving into unloaded chunks
 -                if (d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed)) && !this.isSingleplayerOwner()) {
-+                if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) lagCompensatedMoveTicks * speed)) && !this.isSingleplayerOwner()) {
++                if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.isMovedTooQuickly(100.0, lagCompensatedMoveTicks, speed, d7, d4, rootVehicle.getDeltaMovement().y, d6) && !this.isSingleplayerOwner()) {
                      // CraftBukkit end
                      LOGGER.warn("{} (vehicle of {}) moved too quickly! {},{},{}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), d3, d4, d5);
                      this.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
@@ -103,7 +103,7 @@ index bfe19a9..4fea6bd 100644
                                      if (this.shouldCheckPlayerMovement(isFallFlying)) {
                                          float f2 = isFallFlying ? 300.0F : 100.0F;
 -                                        if (d7 - d6 > Math.max(f2, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed))) {
-+                                        if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && d7 - d6 > Math.max(f2, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) lagCompensatedMoveTicks * speed))) {
++                                        if (!io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.shouldBypassMovedTooQuickly(this.player) && io.multipaper.shreddedpaper.util.ShreddedPaperLagCompensation.isMovedTooQuickly(f2, lagCompensatedMoveTicks, speed, d7, d4, this.player.getDeltaMovement().y, d6)) {
                                              // CraftBukkit end
                                              // Paper start - Add fail move event
                                              io.papermc.paper.event.player.PlayerFailMoveEvent event = fireFailMove(io.papermc.paper.event.player.PlayerFailMoveEvent.FailReason.MOVED_TOO_QUICKLY,

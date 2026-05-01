@@ -1,0 +1,51 @@
+--- a/net/minecraft/world/entity/ai/goal/DolphinJumpGoal.java
++++ b/net/minecraft/world/entity/ai/goal/DolphinJumpGoal.java
+@@ -1,11 +_,14 @@
+ package net.minecraft.world.entity.ai.goal;
+ 
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.animal.dolphin.Dolphin;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.Vec3;
+ 
+@@ -42,12 +_,19 @@
+ 
+     private boolean waterIsClear(BlockPos pos, int dx, int dz, int scale) {
+         BlockPos blockPos = pos.offset(dx * scale, 0, dz * scale);
+-        return this.dolphin.level().getFluidState(blockPos).is(FluidTags.WATER) && !this.dolphin.level().getBlockState(blockPos).blocksMotion();
++        if (this.dolphin.level() instanceof ServerLevel serverLevel && !TickThread.isTickThreadFor(serverLevel, blockPos)) return false; // ShreddedPaper - avoid off-owner dolphin jump checks
++        FluidState fluidState = this.dolphin.level().getFluidIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during dolphin jump checks
++        BlockState blockState = this.dolphin.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during dolphin jump checks
++        return fluidState != null && blockState != null && fluidState.is(FluidTags.WATER) && !blockState.blocksMotion();
+     }
+ 
+     private boolean surfaceIsClear(BlockPos pos, int dx, int dz, int scale) {
+-        return this.dolphin.level().getBlockState(pos.offset(dx * scale, 1, dz * scale)).isAir()
+-            && this.dolphin.level().getBlockState(pos.offset(dx * scale, 2, dz * scale)).isAir();
++        BlockPos pos1 = pos.offset(dx * scale, 1, dz * scale);
++        BlockPos pos2 = pos.offset(dx * scale, 2, dz * scale);
++        if (this.dolphin.level() instanceof ServerLevel serverLevel && (!TickThread.isTickThreadFor(serverLevel, pos1) || !TickThread.isTickThreadFor(serverLevel, pos2))) return false; // ShreddedPaper - avoid off-owner dolphin jump checks
++        BlockState state1 = this.dolphin.level().getBlockStateIfLoaded(pos1); // ShreddedPaper - avoid sync chunk loads during dolphin jump checks
++        BlockState state2 = this.dolphin.level().getBlockStateIfLoaded(pos2); // ShreddedPaper - avoid sync chunk loads during dolphin jump checks
++        return state1 != null && state2 != null && state1.isAir() && state2.isAir();
+     }
+ 
+     @Override
+@@ -78,8 +_,8 @@
+     public void tick() {
+         boolean flag = this.breached;
+         if (!flag) {
+-            FluidState fluidState = this.dolphin.level().getFluidState(this.dolphin.blockPosition());
+-            this.breached = fluidState.is(FluidTags.WATER);
++            FluidState fluidState = this.dolphin.level().getFluidIfLoaded(this.dolphin.blockPosition()); // ShreddedPaper - avoid sync chunk loads during dolphin jump ticks
++            this.breached = fluidState != null && fluidState.is(FluidTags.WATER);
+         }
+ 
+         if (this.breached && !flag) {

@@ -1,0 +1,46 @@
+--- a/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java
++++ b/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java
+@@ -3,6 +_,7 @@
+ import com.google.common.collect.ImmutableMap;
+ import com.google.common.collect.Lists;
+ import java.util.List;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvents;
+@@ -80,9 +_,12 @@
+     }
+ 
+     private boolean validPos(BlockPos pos, ServerLevel level) {
+-        BlockState blockState = level.getBlockState(pos);
++        if (!TickThread.isTickThreadFor(level, pos) || !TickThread.isTickThreadFor(level, pos.below())) return false; // ShreddedPaper - avoid off-owner farmland scans
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during farmland scans
++        BlockState belowState = level.getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads during farmland scans
++        if (blockState == null || belowState == null) return false;
+         Block block = blockState.getBlock();
+-        Block block1 = level.getBlockState(pos.below()).getBlock();
++        Block block1 = belowState.getBlock();
+         if (this.clericWartFarmer) return block == net.minecraft.world.level.block.Blocks.NETHER_WART && blockState.getValue(net.minecraft.world.level.block.NetherWartBlock.AGE) == 3 || blockState.isAir() && block1 == net.minecraft.world.level.block.Blocks.SOUL_SAND; // Purpur - Option for Villager Clerics to farm Nether Wart
+         return block instanceof CropBlock && ((CropBlock)block).isMaxAge(blockState) || blockState.isAir() && block1 instanceof FarmBlock;
+     }
+@@ -107,9 +_,18 @@
+     protected void tick(ServerLevel level, Villager owner, long gameTime) {
+         if (this.aboveFarmlandPos == null || this.aboveFarmlandPos.closerToCenterThan(owner.position(), 1.0)) {
+             if (this.aboveFarmlandPos != null && gameTime > this.nextOkStartTime) {
+-                BlockState blockState = level.getBlockState(this.aboveFarmlandPos);
++                if (!TickThread.isTickThreadFor(level, this.aboveFarmlandPos) || !TickThread.isTickThreadFor(level, this.aboveFarmlandPos.below())) {
++                    this.aboveFarmlandPos = null;
++                    return;
++                }
++                BlockState blockState = level.getBlockStateIfLoaded(this.aboveFarmlandPos); // ShreddedPaper - avoid sync chunk loads during villager farming
++                BlockState belowState = level.getBlockStateIfLoaded(this.aboveFarmlandPos.below()); // ShreddedPaper - avoid sync chunk loads during villager farming
++                if (blockState == null || belowState == null) {
++                    this.aboveFarmlandPos = null;
++                    return;
++                }
+                 Block block = blockState.getBlock();
+-                Block block1 = level.getBlockState(this.aboveFarmlandPos.below()).getBlock();
++                Block block1 = belowState.getBlock();
+                 if (block instanceof CropBlock && ((CropBlock)block).isMaxAge(blockState) && !this.clericWartFarmer || this.clericWartFarmer && block == net.minecraft.world.level.block.Blocks.NETHER_WART && blockState.getValue(net.minecraft.world.level.block.NetherWartBlock.AGE) == 3) { // Purpur - Option for Villager Clerics to farm Nether Wart
+                     if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(owner, this.aboveFarmlandPos, blockState.getFluidState().createLegacyBlock())) { // CraftBukkit // Paper - fix wrong block state
+                     level.destroyBlock(this.aboveFarmlandPos, true, owner);

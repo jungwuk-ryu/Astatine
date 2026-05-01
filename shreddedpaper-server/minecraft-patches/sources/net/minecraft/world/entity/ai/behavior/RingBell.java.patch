@@ -1,0 +1,21 @@
+--- a/net/minecraft/world/entity/ai/behavior/RingBell.java
++++ b/net/minecraft/world/entity/ai/behavior/RingBell.java
+@@ -1,5 +_,6 @@
+ package net.minecraft.world.entity.ai.behavior;
+ 
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.ai.behavior.declarative.BehaviorBuilder;
+@@ -20,8 +_,9 @@
+                 } else {
+                     BlockPos blockPos = instance.get(meetingPoint).pos();
+                     if (blockPos.closerThan(entity.blockPosition(), 3.0)) {
+-                        BlockState blockState = level.getBlockState(blockPos);
+-                        if (blockState.is(Blocks.BELL)) {
++                        if (!TickThread.isTickThreadFor(level, blockPos)) return false; // ShreddedPaper - avoid off-owner bell ringing
++                        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads while ringing bells
++                        if (blockState != null && blockState.is(Blocks.BELL)) {
+                             BellBlock bellBlock = (BellBlock)blockState.getBlock();
+                             bellBlock.attemptToRing(entity, level, blockPos, null);
+                         }

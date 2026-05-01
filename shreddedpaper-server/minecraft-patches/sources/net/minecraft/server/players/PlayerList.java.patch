@@ -57,6 +57,17 @@
          Level fromLevel = player.level();
          // Paper end - respawn event
          this.players.remove(player);
+@@ -664,8 +_,8 @@
+             ServerLevel level1 = this.server.getLevel(respawnData.dimension());
+             if (level1 != null) {
+                 BlockPos blockPos = respawnData.pos();
+-                BlockState blockState = level1.getBlockState(blockPos);
+-                if (blockState.is(Blocks.RESPAWN_ANCHOR)) {
++                BlockState blockState = level1.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading anchor sound checks during async respawn
++                if (blockState != null && blockState.is(Blocks.RESPAWN_ANCHOR)) {
+                     serverPlayer.connection
+                         .send(
+                             new ClientboundSoundPacket(
 @@ -707,6 +_,8 @@
          // Paper end
  

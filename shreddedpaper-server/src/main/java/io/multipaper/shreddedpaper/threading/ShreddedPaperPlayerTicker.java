@@ -7,13 +7,13 @@ import net.minecraft.server.level.ServerPlayer;
 public class ShreddedPaperPlayerTicker {
 
     public static void tickPlayer(ServerPlayer serverPlayer) {
-        if (serverPlayer.connection.player != serverPlayer
-                || serverPlayer.connection.processedDisconnect
-                || serverPlayer.isRemoved()
-                || !serverPlayer.valid) {
+        if (!canTickPlayer(serverPlayer)) {
             return;
         }
         final io.multipaper.shreddedpaper.region.LevelChunkRegion tickingRegion = ShreddedPaperChunkTicker.currentlyTickingRegion();
+        if (tickingRegion != null && (serverPlayer.currentRegion != tickingRegion || serverPlayer.level() != tickingRegion.getLevel())) {
+            serverPlayer.level().chunkSource.tickingRegions.reconcilePlayerIfNeeded(serverPlayer);
+        }
         if (tickingRegion != null && (serverPlayer.currentRegion != tickingRegion || serverPlayer.level() != tickingRegion.getLevel())) {
             return;
         }
@@ -27,6 +27,13 @@ public class ShreddedPaperPlayerTicker {
         serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
         serverPlayer.connection.keepConnectionAlive();
         serverPlayer.connection.resumeFlushing();
+    }
+
+    public static boolean canTickPlayer(ServerPlayer serverPlayer) {
+        return serverPlayer.connection.player == serverPlayer
+                && !serverPlayer.connection.processedDisconnect
+                && !serverPlayer.isRemoved()
+                && serverPlayer.valid;
     }
 
     private static void tickPlayerChunkLoader(ServerPlayer serverPlayer) {

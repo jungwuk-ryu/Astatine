@@ -18,6 +18,14 @@
  import net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket;
  import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
  import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
+@@ -182,6 +_,7 @@
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.portal.TeleportTransition;
+ import net.minecraft.world.level.saveddata.maps.MapId;
+ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 @@ -247,6 +_,7 @@
      private @Nullable Entity camera;
      public boolean isChangingDimension;
@@ -26,7 +34,7 @@
      private final ServerRecipeBook recipeBook;
      private @Nullable Vec3 levitationStartPos;
      private int levitationStartTime;
-@@ -259,6 +_,8 @@
+@@ -259,6 +_,9 @@
      private @Nullable Vec3 enteredLavaOnVehiclePosition;
      private SectionPos lastSectionPos = SectionPos.of(0, 0, 0);
      private ChunkTrackingView chunkTrackingView = ChunkTrackingView.EMPTY;
@@ -36,6 +44,17 @@
      private ServerPlayer.@Nullable RespawnConfig respawnConfig;
      private final TextFilter textFilter;
      private boolean textFilteringEnabled;
+@@ -488,9 +_,7 @@
+ 
+     @Override
+     public BlockPos adjustSpawnLocation(ServerLevel level, BlockPos pos) {
+-        CompletableFuture<Vec3> completableFuture = PlayerSpawnFinder.findSpawn(level, pos);
+-        level.chunkSource.mainThreadProcessor.managedBlock(completableFuture::isDone); // Paper - rewrite chunk system
+-        return BlockPos.containing(completableFuture.join());
++        return super.adjustSpawnLocation(level, pos); // ShreddedPaper - avoid blocking independent region threads during default respawn
+     }
+ 
+     @Override
 @@ -637,12 +_,15 @@
          if (!optional.isEmpty()) {
              ServerLevel level = this.level().getServer().getLevel(optional.get());
@@ -169,12 +188,17 @@
          ServerLevel level, ServerPlayer.RespawnConfig respawnConfig, boolean useCharge
      ) {
          LevelData.RespawnData respawnData = respawnConfig.respawnData;
-@@ -1462,22 +_,32 @@
+@@ -1462,32 +_,50 @@
          float yaw = respawnData.yaw();
          float pitch = respawnData.pitch();
          boolean flag = respawnConfig.forced;
+-        BlockState blockState = level.getBlockState(blockPos);
++        BoundingBox respawnSearchBox = BoundingBox.fromCorners(blockPos.offset(-3, -2, -3), blockPos.offset(3, 3, 3)); // ShreddedPaper - stand-up search probes neighboring blocks
 +        return CompletableFuture.supplyAsync(() -> { // ShreddedPaper - respawn async
-         BlockState blockState = level.getBlockState(blockPos);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync-loading respawn blocks on region workers
++        if (blockState == null) {
++            return Optional.empty();
++        }
          Block block = blockState.getBlock();
          if (block instanceof RespawnAnchorBlock
 -            && (flag || blockState.getValue(RespawnAnchorBlock.CHARGE) > 0)
@@ -188,8 +212,8 @@
 +                // ShreddedPaper start - respawn anchor block update async
 +                consumeAnchorCharge = () -> {
 +                    ShreddedPaper.ensureSync(level, blockPos, () -> {
-+                        BlockState blockState2 = level.getBlockState(blockPos); // Use the latest block state in case it has been modified since
-+                        if (blockState2.getBlock() instanceof RespawnAnchorBlock && blockState2.getValue(RespawnAnchorBlock.CHARGE) > 0) { // Ensure this block is still a respawn anchor block
++                        BlockState blockState2 = level.getBlockStateIfLoaded(blockPos); // Use the latest block state in case it has been modified since
++                        if (blockState2 != null && blockState2.getBlock() instanceof RespawnAnchorBlock && blockState2.getValue(RespawnAnchorBlock.CHARGE) > 0) { // Ensure this block is still a respawn anchor block
 +                            level.setBlock(blockPos, blockState2.setValue(RespawnAnchorBlock.CHARGE, blockState2.getValue(RespawnAnchorBlock.CHARGE) - 1), Block.UPDATE_ALL); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
 +                        }
 +                    });
@@ -206,8 +230,12 @@
          } else if (!flag) {
              return Optional.empty();
          } else {
-@@ -1485,9 +_,10 @@
-             BlockState blockState1 = level.getBlockState(blockPos.above());
+             boolean isPossibleToRespawnInThis = block.isPossibleToRespawnInThis(blockState);
+-            BlockState blockState1 = level.getBlockState(blockPos.above());
++            BlockState blockState1 = level.getBlockStateIfLoaded(blockPos.above()); // ShreddedPaper - avoid sync-loading forced respawn clearance checks
++            if (blockState1 == null) {
++                return Optional.empty();
++            }
              boolean isPossibleToRespawnInThis1 = blockState1.getBlock().isPossibleToRespawnInThis(blockState1);
              return isPossibleToRespawnInThis && isPossibleToRespawnInThis1
 -                ? Optional.of(new ServerPlayer.RespawnPosAngle(new Vec3(blockPos.getX() + 0.5, blockPos.getY() + 0.1, blockPos.getZ() + 0.5), yaw, pitch, false, false, null)) // Paper - Fix SPIGOT-5989
@@ -215,10 +243,23 @@
 +                    ? Optional.of(new ServerPlayer.RespawnPosAngle(new Vec3(blockPos.getX() + 0.5, blockPos.getY() + 0.1, blockPos.getZ() + 0.5), yaw, pitch, false, false, null)) // Paper - Fix SPIGOT-5989
 +                    : Optional.empty();
          }
-+        }, r -> ShreddedPaper.ensureSync(level, blockPos, r));
++        }, r -> ShreddedPaper.ensureSync(level, respawnSearchBox, r));
      }
  
      public void showEndCredits() {
+@@ -1700,7 +_,11 @@
+ 
+     @Override
+     public Either<net.minecraft.world.entity.player.Player.BedSleepingProblem, Unit> startSleepInBed(BlockPos bedPos, boolean force) {
+-        Direction direction = this.level().getBlockState(bedPos).getValue(HorizontalDirectionalBlock.FACING);
++        BlockState bedState = this.level().getBlockStateIfLoaded(bedPos); // ShreddedPaper - avoid sync chunk loads during bed enter
++        if (bedState == null || !bedState.hasProperty(HorizontalDirectionalBlock.FACING)) {
++            return Either.left(Player.BedSleepingProblem.OTHER_PROBLEM);
++        }
++        Direction direction = bedState.getValue(HorizontalDirectionalBlock.FACING);
+         Either<net.minecraft.world.entity.player.Player.BedSleepingProblem, Unit> bedResult = this.getBedResult(bedPos, direction);
+ 
+         if (bedResult.left().orElse(null) == net.minecraft.world.entity.player.Player.BedSleepingProblem.OTHER_PROBLEM) {
 @@ -2655,6 +_,7 @@
      }
  

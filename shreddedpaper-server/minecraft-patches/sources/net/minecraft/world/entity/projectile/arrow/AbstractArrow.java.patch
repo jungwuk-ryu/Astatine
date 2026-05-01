@@ -1,5 +1,16 @@
 --- a/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
 +++ b/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java
+@@ -177,8 +_,8 @@
+         boolean flag = !this.isNoPhysics();
+         Vec3 deltaMovement = this.getDeltaMovement();
+         BlockPos blockPos = this.blockPosition();
+-        BlockState blockState = this.level().getBlockState(blockPos);
+-        if (!blockState.isAir() && flag) {
++        BlockState blockState = this.level().getBlockStateIfLoaded(blockPos);
++        if (blockState != null && !blockState.isAir() && flag) {
+             VoxelShape collisionShape = blockState.getCollisionShape(this.level(), blockPos);
+             if (!collisionShape.isEmpty()) {
+                 Vec3 vec3 = this.position();
 @@ -256,6 +_,9 @@
              this.setXRot(lerpRotation(this.getXRot(), f1));
              this.setYRot(lerpRotation(this.getYRot(), f));
@@ -10,3 +21,32 @@
              if (flag) {
                  BlockHitResult blockHitResult = this.level()
                      .clipIncludingBorder(new ClipContext(vec31, vec31.add(deltaMovement), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+@@ -555,7 +_,7 @@
+ 
+     @Override
+     protected void onHitBlock(BlockHitResult result) {
+-        this.lastState = this.level().getBlockState(result.getBlockPos());
++        this.lastState = this.level().getBlockStateIfLoaded(result.getBlockPos());
+         super.onHitBlock(result);
+         ItemStack weaponItem = this.getWeaponItem();
+         if (this.level() instanceof ServerLevel serverLevel && weaponItem != null) {
+@@ -578,6 +_,10 @@
+ 
+     protected void hitBlockEnchantmentEffects(ServerLevel level, BlockHitResult hitResult, ItemStack stack) {
+         Vec3 vec3 = hitResult.getBlockPos().clampLocationWithin(hitResult.getLocation());
++        BlockState blockState = level.getBlockStateIfLoaded(hitResult.getBlockPos());
++        if (blockState == null) {
++            return;
++        }
+         EnchantmentHelper.onHitBlock(
+             level,
+             stack,
+@@ -585,7 +_,7 @@
+             this,
+             null,
+             vec3,
+-            level.getBlockState(hitResult.getBlockPos()),
++            blockState,
+             item -> this.firedFromWeapon = null
+         );
+     }

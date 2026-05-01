@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -1,10 +_,23 @@
+@@ -1,10 +_,24 @@
  package net.minecraft.server.level;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -15,6 +15,7 @@
 +import io.multipaper.shreddedpaper.region.LevelChunkRegion;
 +import io.multipaper.shreddedpaper.region.LevelTicksRegionProxy;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
 +import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 +import io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult;
@@ -72,13 +73,14 @@
      private final List<CustomSpawner> customSpawners;
      private @Nullable EndDragonFight dragonFight;
      final Int2ObjectMap<EnderDragonPart> dragonParts = new Int2ObjectOpenHashMap<>();
-@@ -221,6 +_,9 @@
+@@ -221,6 +_,10 @@
      private double preciseTime; // Purpur - Configurable daylight cycle
      private boolean forceTime; // Purpur - Configurable daylight cycle
      private final RandomSequences randomSequences;
 +    public final ShreddedPaperRegionScheduler chunkScheduler = new ShreddedPaperRegionScheduler(); // ShreddedPaper
 +    public final Executor levelThread; // ShreddedPaper
 +    public final java.util.concurrent.atomic.AtomicLong shreddedpaper$projectileChunkLoadCounter = new java.util.concurrent.atomic.AtomicLong(); // ShreddedPaper - Pufferfish: reduce projectile chunk loading
++    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // ShreddedPaper - region-aware lag compensation
      final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
  
      // CraftBukkit start
@@ -296,7 +298,7 @@
      }
  
      // Paper start
-@@ -767,9 +_,9 @@
+@@ -767,9 +_,10 @@
          return this.environmentAttributes;
      }
  
@@ -304,6 +306,7 @@
 +    public CompletableFuture<Void> tickAsync(BooleanSupplier hasTimeLeft) { // ShreddedPaper - run async
          ProfilerFiller profilerFiller = Profiler.get();
 -        this.handlingTick = true;
++        this.tpsCalculator.doTick(); // ShreddedPaper - region-aware lag compensation
 +        this.handlingTickThreadLocal.set(true); // ShreddedPaper
          TickRateManager tickRateManager = this.tickRateManager();
          boolean runsNormally = tickRateManager.runsNormally();
@@ -418,6 +421,113 @@
      }
  
      // Paper start - optimise random ticking
+@@ -999,6 +_,10 @@
+                 // do not use a mutable pos, as some random tick implementations store the input without calling immutable()!
+                 final BlockPos pos = new BlockPos((location & 15) | offsetX, ((location >>> (4 + 4)) & 15) | offsetY, ((location >>> 4) & 15) | offsetZ);
+ 
++                if (!this.hasLoadedRandomTickMargin(pos)) { // ShreddedPaper - random ticks must not sync-load neighbouring chunks
++                    continue;
++                }
++
+                 state.randomTick((ServerLevel)(Object)this, pos, simpleRandom);
+                 if (doubleTickFluids) {
+                     final FluidState fluidState = state.getFluidState();
+@@ -1011,6 +_,28 @@
+ 
+         return;
+     }
++
++    private boolean hasLoadedRandomTickMargin(final BlockPos pos) {
++        final int localX = pos.getX() & 15;
++        final int localZ = pos.getZ() & 15;
++        final int margin = 4;
++        if (localX >= margin && localX <= 15 - margin && localZ >= margin && localZ <= 15 - margin) {
++            return true;
++        }
++
++        final int minChunkX = (pos.getX() - margin) >> 4;
++        final int maxChunkX = (pos.getX() + margin) >> 4;
++        final int minChunkZ = (pos.getZ() - margin) >> 4;
++        final int maxChunkZ = (pos.getZ() + margin) >> 4;
++        for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
++            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
++                if (this.getChunkIfLoadedImmediately(chunkX, chunkZ) == null) {
++                    return false;
++                }
++            }
++        }
++        return true;
++    }
+     // Paper end - optimise random ticking
+ 
+     public void tickChunk(LevelChunk chunk, int randomTickSpeed) {
+@@ -1046,11 +_,16 @@
+         profilerFiller.push("thunder");
+         if (!this.paperConfig().environment.disableThunder && isRaining && this.isThundering() && this.spigotConfig.thunderChance > 0 && this.random.nextInt(this.spigotConfig.thunderChance) == 0) { // Spigot // Paper - Option to disable thunder
+             BlockPos blockPos = this.findLightningTargetAround(this.getBlockRandomPos(minBlockX, 0, minBlockZ, 15));
++            if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this, RegionPos.forBlockPos(blockPos))) {
++                profilerFiller.pop();
++                return; // ShreddedPaper - let the target region own cross-boundary weather effects
++            }
+             if (this.isRainingAt(blockPos)) {
+                 DifficultyInstance currentDifficultyAt = this.getCurrentDifficultyAt(blockPos);
++                BlockState lightningRodCheckState = this.getBlockStateIfLoaded(blockPos.below()); // ShreddedPaper - avoid sync chunk loads during thunder ticks
+                 boolean flag = this.getGameRules().get(GameRules.SPAWN_MOBS)
+                     && this.random.nextDouble() < currentDifficultyAt.getEffectiveDifficulty() * this.paperConfig().entities.spawning.skeletonHorseThunderSpawnChance.or(0.01) // Paper - Configurable spawn chances for skeleton horses
+-                    && !this.getBlockState(blockPos.below()).is(BlockTags.LIGHTNING_RODS);
++                    && (lightningRodCheckState == null || !lightningRodCheckState.is(BlockTags.LIGHTNING_RODS));
+                 if (flag) {
+                     // Purpur start - Special mobs naturally spawn
+                     net.minecraft.world.entity.animal.equine.AbstractHorse skeletonHorse;
+@@ -1093,7 +_,10 @@
+         if (this.isRaining()) {
+             int i = this.getGameRules().get(GameRules.MAX_SNOW_ACCUMULATION_HEIGHT);
+             if (i > 0 && biome.shouldSnow(this, heightmapPos)) {
+-                BlockState blockState = this.getBlockState(heightmapPos);
++                BlockState blockState = this.getBlockStateIfLoaded(heightmapPos); // ShreddedPaper - avoid sync chunk loads during precipitation ticks
++                if (blockState == null) {
++                    return;
++                }
+                 if (blockState.is(Blocks.SNOW)) {
+                     int layersValue = blockState.getValue(SnowLayerBlock.LAYERS);
+                     if (layersValue < Math.min(i, 8)) {
+@@ -1105,7 +_,11 @@
+                             int layersValueMin = layersValue - org.purpurmc.purpur.PurpurConfig.smoothSnowAccumulationStep;
+                             for (Direction direction : Direction.Plane.HORIZONTAL) {
+                                 BlockPos blockPosNeighbor = heightmapPos.relative(direction);
+-                                BlockState blockStateNeighbor = this.getBlockState(blockPosNeighbor);
++                                BlockState blockStateNeighbor = this.getBlockStateIfLoaded(blockPosNeighbor); // ShreddedPaper - avoid sync chunk loads during precipitation ticks
++                                if (blockStateNeighbor == null) {
++                                    canSnow = false;
++                                    break;
++                                }
+                                 if (blockStateNeighbor.is(Blocks.SNOW)) {
+                                     // Special check for snow layers, if neighbors are too short, don't accumulate
+                                     int layersValueNeighbor = blockStateNeighbor.getValue(SnowLayerBlock.LAYERS);
+@@ -1134,7 +_,10 @@
+ 
+             Biome.Precipitation precipitationAt = biome.getPrecipitationAt(blockPos, this.getSeaLevel());
+             if (precipitationAt != Biome.Precipitation.NONE) {
+-                BlockState blockState2 = this.getBlockState(blockPos);
++                BlockState blockState2 = this.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during precipitation ticks
++                if (blockState2 == null) {
++                    return;
++                }
+                 blockState2.getBlock().handlePrecipitation(blockState2, this, blockPos, precipitationAt);
+             }
+         }
+@@ -1166,7 +_,10 @@
+         } else {
+             AABB aabb = AABB.encapsulatingFullBlocks(heightmapPos, heightmapPos.atY(this.getMaxY() + 1)).inflate(3.0);
+             List<LivingEntity> entitiesOfClass = this.getEntitiesOfClass(
+-                LivingEntity.class, aabb, entity ->  entity.isAlive() && this.canSeeSky(entity.blockPosition()) && !entity.isSpectator() // Paper - Fix lightning being able to hit spectators (MC-262422)
++                LivingEntity.class, aabb, entity -> entity.isAlive()
++                    && (!ShreddedPaperTickThread.isShreddedPaperTickThread() || ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this, RegionPos.forBlockPos(entity.blockPosition()))) // ShreddedPaper
++                    && this.canSeeSky(entity.blockPosition())
++                    && !entity.isSpectator() // Paper - Fix lightning being able to hit spectators (MC-262422)
+             );
+             if (!entitiesOfClass.isEmpty()) {
+                 return entitiesOfClass.get(this.random.nextInt(entitiesOfClass.size())).blockPosition();
 @@ -1182,7 +_,7 @@
      }
  
@@ -427,14 +537,18 @@
      }
  
      public boolean canSleepThroughNights() {
-@@ -1392,27 +_,29 @@
+@@ -1392,27 +_,35 @@
          this.emptyTime = 0;
      }
  
 -    private void tickFluid(BlockPos pos, Fluid fluid) {
+-        BlockState blockState = this.getBlockState(pos);
 +    public void tickFluid(BlockPos pos, Fluid fluid) { // ShreddedPaper - make public
 +        TickThread.ensureTickThread(this, pos, "Cannot tick fluid outside of tick thread"); // ShreddedPaper
-         BlockState blockState = this.getBlockState(pos);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - do not sync-load chunks from scheduled fluid ticks
++        if (blockState == null) {
++            return;
++        }
          FluidState fluidState = blockState.getFluidState();
          if (fluidState.is(fluid)) {
              fluidState.tick(this, pos, blockState);
@@ -449,9 +563,13 @@
      }
  
 -    private void tickBlock(BlockPos pos, Block block) {
+-        BlockState blockState = this.getBlockState(pos);
 +    public void tickBlock(BlockPos pos, Block block) { // ShreddedPaper - make public
 +        TickThread.ensureTickThread(this, pos, "Cannot tick block outside of tick thread"); // ShreddedPaper
-         BlockState blockState = this.getBlockState(pos);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - do not sync-load chunks from scheduled block ticks
++        if (blockState == null) {
++            return;
++        }
          if (blockState.is(block)) {
              blockState.tick(this, pos, this.random);
          }
@@ -461,15 +579,35 @@
              ((ca.spottedleaf.moonrise.patches.chunk_system.server.ChunkSystemMinecraftServer)this.server).moonrise$executeMidTickTasks();
          }
          // Paper end - rewrite chunk system
-@@ -1467,7 +_,7 @@
+@@ -1467,7 +_,15 @@
      private void tickPassenger(Entity ridingEntity, Entity passengerEntity, final boolean isActive) { // Paper - EAR 2
          if (passengerEntity.isRemoved() || passengerEntity.getVehicle() != ridingEntity) {
              passengerEntity.stopRiding();
 -        } else if (passengerEntity instanceof Player || this.entityTickList.contains(passengerEntity)) {
 +        } else if (passengerEntity instanceof Player || passengerEntity.isTicking()) { // ShreddedPaper - use a different method to check if passenger is ticking
++            if (!TickThread.isTickThreadFor(passengerEntity)) { // ShreddedPaper - passenger ticks must own both vehicle and passenger regions
++                ShreddedPaper.ensureSync(ridingEntity, passengerEntity, () -> {
++                    if (!ridingEntity.isRemoved() && !passengerEntity.isRemoved() && passengerEntity.getVehicle() == ridingEntity) {
++                        this.tickPassenger(ridingEntity, passengerEntity, isActive);
++                    }
++                });
++                return;
++            }
              passengerEntity.setOldPosAndRot();
              passengerEntity.tickCount++;
              passengerEntity.totalEntityAge++; // Paper - age-like counter for all entities
+@@ -1494,7 +_,10 @@
+     }
+ 
+     public void updateNeighboursOnBlockSet(BlockPos pos, BlockState state) {
+-        BlockState blockState = this.getBlockState(pos);
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during neighbour update callbacks
++        if (blockState == null) {
++            return;
++        }
+         Block block = blockState.getBlock();
+         boolean flag = !state.is(block);
+         if (flag) {
 @@ -1695,6 +_,13 @@
  
      // CraftBukkit start
@@ -618,7 +756,7 @@
          this.explode0(source, damageSource, damageCalculator, x, y, z, radius, fire, explosionInteraction, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound);
      }
  
-@@ -2078,20 +_,62 @@
+@@ -2078,20 +_,71 @@
          return serverExplosion; // CraftBukkit
      }
  
@@ -683,10 +821,19 @@
 -            BlockEventData blockEventData = this.blockEvents.removeFirst();
 +        while (region.hasBlockEvents()) { // ShreddedPaper
 +            BlockEventData blockEventData = (BlockEventData) region.removeFirstBlockEvent(); // ShreddedPaper
++            RegionPos eventCell = RegionPos.forBlockPos(blockEventData.pos()); // ShreddedPaper
++            if (!region.getOwner().ownsCell(eventCell)) { // ShreddedPaper
++                this.chunkSource.tickingRegions.addBlockEvent(blockEventData); // ShreddedPaper - reroute stale cross-region events to their current owner
++                continue; // ShreddedPaper
++            } // ShreddedPaper
++            if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !this.chunkScheduler.getRegionLocker().hasWriteLock(eventCell)) { // ShreddedPaper
++                blockEventsToReschedule.add(blockEventData); // ShreddedPaper
++                continue; // ShreddedPaper
++            } // ShreddedPaper
              if (this.shouldTickBlocksAt(blockEventData.pos())) {
                  if (this.doBlockEvent(blockEventData)) {
                      this.server
-@@ -2107,11 +_,11 @@
+@@ -2107,15 +_,18 @@
                          );
                  }
              } else {
@@ -700,6 +847,14 @@
      }
  
      private boolean doBlockEvent(BlockEventData event) {
+-        BlockState blockState = this.getBlockState(event.pos());
++        BlockState blockState = this.getBlockStateIfLoaded(event.pos()); // ShreddedPaper - avoid sync chunk loads from queued block events
++        if (blockState == null) {
++            return false;
++        }
+         return blockState.is(event.block()) && blockState.triggerEvent(this, event.pos(), event.paramA(), event.paramB());
+     }
+ 
 @@ -2337,7 +_,7 @@
              final MapItemSavedData mapData = storage.get(MapItemSavedData.type(mapId)); // get populates the cache
              if (mapData != null) { // map was read, init it and return
@@ -795,6 +950,15 @@
          return this.moonrise$getEntityLookup(); // Paper - rewrite chunk system
      }
  
+@@ -2785,7 +_,7 @@
+         // notify observers if the block state is the same and the Y level equals the original y level (for mega trees)
+         // blocks at the same Y level with the same state can be assumed to be saplings which trigger observers regardless of if the
+         // tree grew or not
+-        if (craftBlockState.getPosition().getY() == pos.getY() && this.getBlockState(craftBlockState.getPosition()) == craftBlockState.getHandle()) {
++        if (craftBlockState.getPosition().getY() == pos.getY() && this.getBlockStateIfLoaded(craftBlockState.getPosition()) == craftBlockState.getHandle()) { // ShreddedPaper - avoid sync chunk loads during observer notify checks
+             this.notifyAndUpdatePhysics(craftBlockState.getPosition(), null, craftBlockState.getHandle(), craftBlockState.getHandle(), craftBlockState.getHandle(), craftBlockState.getFlags(), 512);
+         }
+     }
 @@ -2816,7 +_,7 @@
      // Paper start - optimize redstone (Alternate Current)
      @Override

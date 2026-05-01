@@ -163,3 +163,25 @@
  
      protected void setOwner(@Nullable EntityReference<Entity> owner) {
          this.owner = owner;
+@@ -362,7 +_,8 @@
+             BlockHitResult blockHitResult = (BlockHitResult)result;
+             this.onHitBlock(blockHitResult);
+             BlockPos blockPos = blockHitResult.getBlockPos();
+-            this.level().gameEvent(GameEvent.PROJECTILE_LAND, blockPos, GameEvent.Context.of(this, this.level().getBlockState(blockPos)));
++            BlockState blockState = this.level().getBlockStateIfLoaded(blockPos);
++            this.level().gameEvent(GameEvent.PROJECTILE_LAND, blockPos, GameEvent.Context.of(this, blockState));
+         }
+     }
+ 
+@@ -375,7 +_,10 @@
+             return;
+         }
+         // CraftBukkit end
+-        BlockState blockState = this.level().getBlockState(result.getBlockPos());
++        BlockState blockState = this.level().getBlockStateIfLoaded(result.getBlockPos());
++        if (blockState == null) {
++            return;
++        }
+         blockState.onProjectileHit(this.level(), blockState, result, this);
+     }
+ 

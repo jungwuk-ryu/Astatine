@@ -33,3 +33,37 @@
                          } else {
                              this.setHookedEntity(null);
                              new io.papermc.paper.event.entity.FishHookStateChangeEvent((org.bukkit.entity.FishHook) getBukkitEntity(), org.bukkit.entity.FishHook.HookState.UNHOOKED).callEvent(); // Paper - Add FishHookStateChangeEvent. #UNHOOKED
+@@ -346,8 +_,8 @@
+                 double d = this.getX() + sin * this.timeUntilHooked * 0.1F;
+                 double d1 = Mth.floor(this.getY()) + 1.0F;
+                 double d2 = this.getZ() + cos * this.timeUntilHooked * 0.1F;
+-                BlockState blockState = serverLevel.getBlockState(BlockPos.containing(d, d1 - 1.0, d2));
+-                if (blockState.is(Blocks.WATER)) {
++                BlockState blockState = serverLevel.getBlockStateIfLoaded(BlockPos.containing(d, d1 - 1.0, d2));
++                if (blockState != null && blockState.is(Blocks.WATER)) {
+                     if (this.random.nextFloat() < 0.15F) {
+                         serverLevel.sendParticles(ParticleTypes.BUBBLE, d, d1 - 0.1F, d2, 1, sin, 0.1, cos, 0.0);
+                     }
+@@ -408,8 +_,8 @@
+                 double d = this.getX() + Mth.sin(sin) * cos * 0.1;
+                 double d1 = Mth.floor(this.getY()) + 1.0F;
+                 double d2 = this.getZ() + Mth.cos(sin) * cos * 0.1;
+-                BlockState blockState = serverLevel.getBlockState(BlockPos.containing(d, d1 - 1.0, d2));
+-                if (blockState.is(Blocks.WATER)) {
++                BlockState blockState = serverLevel.getBlockStateIfLoaded(BlockPos.containing(d, d1 - 1.0F, d2));
++                if (blockState != null && blockState.is(Blocks.WATER)) {
+                     serverLevel.sendParticles(ParticleTypes.SPLASH, d, d1, d2, 2 + this.random.nextInt(2), 0.1F, 0.0, 0.1F, 0.0);
+                 }
+             }
+@@ -475,7 +_,10 @@
+     }
+ 
+     private FishingHook.OpenWaterType getOpenWaterTypeForBlock(BlockPos pos) {
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos);
++        if (blockState == null) {
++            return FishingHook.OpenWaterType.INVALID;
++        }
+         if (!blockState.isAir() && !blockState.is(Blocks.LILY_PAD)) {
+             FluidState fluidState = blockState.getFluidState();
+             return fluidState.is(FluidTags.WATER) && fluidState.isSource() && blockState.getCollisionShape(this.level(), pos).isEmpty()

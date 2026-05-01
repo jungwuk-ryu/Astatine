@@ -1,0 +1,45 @@
+--- a/net/minecraft/world/entity/ai/goal/EatBlockGoal.java
++++ b/net/minecraft/world/entity/ai/goal/EatBlockGoal.java
+@@ -2,7 +_,9 @@
+ 
+ import java.util.EnumSet;
+ import java.util.function.Predicate;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.BlockTags;
+ import net.minecraft.world.entity.EntityEvent;
+ import net.minecraft.world.entity.Mob;
+@@ -32,7 +_,10 @@
+             return false;
+         } else {
+             BlockPos blockPos = this.mob.blockPosition();
+-            return IS_EDIBLE.test(this.level.getBlockState(blockPos)) || this.level.getBlockState(blockPos.below()).is(Blocks.GRASS_BLOCK);
++            if (this.level instanceof ServerLevel serverLevel && (!TickThread.isTickThreadFor(serverLevel, blockPos) || !TickThread.isTickThreadFor(serverLevel, blockPos.below()))) return false; // ShreddedPaper - avoid off-owner eat-block checks
++            BlockState blockState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during eat-block checks
++            BlockState belowState = this.level.getBlockStateIfLoaded(blockPos.below()); // ShreddedPaper - avoid sync chunk loads during eat-block checks
++            return (blockState != null && IS_EDIBLE.test(blockState)) || (belowState != null && belowState.is(Blocks.GRASS_BLOCK));
+         }
+     }
+ 
+@@ -62,7 +_,9 @@
+         this.eatAnimationTick = Math.max(0, this.eatAnimationTick - 1);
+         if (this.eatAnimationTick == this.adjustedTickDelay(4)) {
+             BlockPos blockPos = this.mob.blockPosition();
+-            final BlockState blockState = this.level.getBlockState(blockPos); // Paper - fix wrong block state
++            if (this.level instanceof ServerLevel serverLevel && (!TickThread.isTickThreadFor(serverLevel, blockPos) || !TickThread.isTickThreadFor(serverLevel, blockPos.below()))) return; // ShreddedPaper - avoid off-owner eat-block ticks
++            final BlockState blockState = this.level.getBlockStateIfLoaded(blockPos); // Paper - fix wrong block state // ShreddedPaper - avoid sync chunk loads during eat-block ticks
++            if (blockState == null) return;
+             if (IS_EDIBLE.test(blockState)) { // Paper - fix wrong block state
+                 if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(this.mob, blockPos, blockState.getFluidState().createLegacyBlock(), !getServerLevel(this.level).getGameRules().get(GameRules.MOB_GRIEFING, getServerLevel(this.level).purpurConfig.sheepMobGriefingOverride))) { // CraftBukkit // Paper - fix wrong block state // Purpur - Add mobGriefing override to everything affected
+                     this.level.destroyBlock(blockPos, false);
+@@ -71,7 +_,8 @@
+                 this.mob.ate();
+             } else {
+                 BlockPos blockPos1 = blockPos.below();
+-                if (this.level.getBlockState(blockPos1).is(Blocks.GRASS_BLOCK)) {
++                BlockState belowState = this.level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during eat-block ticks
++                if (belowState != null && belowState.is(Blocks.GRASS_BLOCK)) {
+                     if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(this.mob, blockPos1, Blocks.DIRT.defaultBlockState(), !getServerLevel(this.level).getGameRules().get(GameRules.MOB_GRIEFING, getServerLevel(this.level).purpurConfig.sheepMobGriefingOverride))) { // CraftBukkit // Paper - Fix wrong block state // Purpur - Add mobGriefing override to everything affected
+                         this.level.levelEvent(LevelEvent.PARTICLES_DESTROY_BLOCK, blockPos1, Block.getId(Blocks.GRASS_BLOCK.defaultBlockState()));
+                         this.level.setBlock(blockPos1, Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);

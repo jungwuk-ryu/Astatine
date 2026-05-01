@@ -1,0 +1,17 @@
+--- a/net/minecraft/world/item/enchantment/effects/SetBlockProperties.java
++++ b/net/minecraft/world/item/enchantment/effects/SetBlockProperties.java
+@@ -33,9 +_,12 @@
+     @Override
+     public void apply(ServerLevel level, int enchantmentLevel, EnchantedItemInUse item, Entity entity, Vec3 origin) {
+         BlockPos blockPos = BlockPos.containing(origin).offset(this.offset);
+-        BlockState blockState = entity.level().getBlockState(blockPos);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos);
++        if (blockState == null) {
++            return;
++        }
+         BlockState blockState1 = this.properties.apply(blockState);
+-        if (blockState != blockState1 && entity.level().setBlock(blockPos, blockState1, Block.UPDATE_ALL)) {
++        if (blockState != blockState1 && level.setBlock(blockPos, blockState1, Block.UPDATE_ALL)) {
+             this.triggerGameEvent.ifPresent(gameEvent -> level.gameEvent(entity, (Holder<GameEvent>)gameEvent, blockPos));
+         }
+     }

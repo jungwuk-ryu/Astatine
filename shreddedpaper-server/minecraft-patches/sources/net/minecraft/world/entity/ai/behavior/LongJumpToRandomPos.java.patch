@@ -1,0 +1,40 @@
+--- a/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
++++ b/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
+@@ -8,6 +_,7 @@
+ import java.util.function.BiPredicate;
+ import java.util.function.Function;
+ import java.util.stream.Collectors;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvent;
+@@ -22,6 +_,7 @@
+ import net.minecraft.world.entity.ai.navigation.PathNavigation;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.pathfinder.Path;
+ import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
+ import net.minecraft.world.phys.Vec3;
+@@ -54,7 +_,9 @@
+     public static <E extends Mob> boolean defaultAcceptableLandingSpot(E mob, BlockPos pos) {
+         Level level = mob.level();
+         BlockPos blockPos = pos.below();
+-        return level.getBlockState(blockPos).isSolidRender() && mob.getPathfindingMalus(WalkNodeEvaluator.getPathTypeStatic(mob, pos)) == 0.0F;
++        if (level instanceof ServerLevel serverLevel && (!TickThread.isTickThreadFor(serverLevel, blockPos) || !TickThread.isTickThreadFor(serverLevel, pos))) return false; // ShreddedPaper - avoid off-owner long-jump landing checks
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during long-jump landing checks
++        return blockState != null && blockState.isSolidRender() && mob.getPathfindingMalus(WalkNodeEvaluator.getPathTypeStatic(mob, pos)) == 0.0F;
+     }
+ 
+     public LongJumpToRandomPos(
+@@ -86,7 +_,9 @@
+ 
+     @Override
+     protected boolean checkExtraStartConditions(ServerLevel level, Mob owner) {
+-        boolean flag = owner.onGround() && !owner.isInWater() && !owner.isInLava() && !level.getBlockState(owner.blockPosition()).is(Blocks.HONEY_BLOCK);
++        if (!TickThread.isTickThreadFor(level, owner.blockPosition())) return false; // ShreddedPaper - avoid off-owner long-jump start checks
++        BlockState currentState = level.getBlockStateIfLoaded(owner.blockPosition()); // ShreddedPaper - avoid sync chunk loads during long-jump start checks
++        boolean flag = currentState != null && owner.onGround() && !owner.isInWater() && !owner.isInLava() && !currentState.is(Blocks.HONEY_BLOCK);
+         if (!flag) {
+             owner.getBrain().setMemory(MemoryModuleType.LONG_JUMP_COOLDOWN_TICKS, this.timeBetweenLongJumps.sample(level.random) / 2);
+         }

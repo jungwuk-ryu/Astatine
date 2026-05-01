@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/entity/animal/golem/SnowGolem.java
++++ b/net/minecraft/world/entity/animal/golem/SnowGolem.java
+@@ -154,7 +_,10 @@
+                 int floor1 = Mth.floor(this.getY());
+                 int floor2 = Mth.floor(this.getZ() + (i / 2 % 2 * 2 - 1) * 0.25F);
+                 BlockPos blockPos = new BlockPos(floor, floor1, floor2);
+-                if (this.level().getBlockState(blockPos).isAir() && blockState.canSurvive(this.level(), blockPos)) {
++                if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos) || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos.below())) continue; // ShreddedPaper - avoid off-owner snow trail placement
++                BlockState currentState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during snow trail placement
++                BlockState belowState = this.level().getBlockStateIfLoaded(blockPos.below()); // ShreddedPaper - avoid sync chunk loads during snow trail placement
++                if (currentState != null && belowState != null && currentState.isAir() && blockState.canSurvive(this.level(), blockPos)) {
+                     if (!org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockFormEvent(this.level(), blockPos, blockState, net.minecraft.world.level.block.Block.UPDATE_ALL, this)) continue; // CraftBukkit
+                     this.level().gameEvent(GameEvent.BLOCK_PLACE, blockPos, GameEvent.Context.of(this, blockState));
+                 }

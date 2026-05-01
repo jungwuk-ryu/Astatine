@@ -1,0 +1,19 @@
+--- a/net/minecraft/world/entity/monster/illager/Evoker.java
++++ b/net/minecraft/world/entity/monster/illager/Evoker.java
+@@ -200,10 +_,13 @@
+ 
+             do {
+                 BlockPos blockPos1 = blockPos.below();
+-                BlockState blockState = Evoker.this.level().getBlockState(blockPos1);
++                if (Evoker.this.level() instanceof ServerLevel serverLevel && (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos1) || !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos))) return; // ShreddedPaper - avoid off-owner evoker fang placement probes
++                BlockState blockState = Evoker.this.level().getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during evoker fang placement
++                if (blockState == null) return;
+                 if (blockState.isFaceSturdy(Evoker.this.level(), blockPos1, Direction.UP)) {
+-                    if (!Evoker.this.level().isEmptyBlock(blockPos)) {
+-                        BlockState blockState1 = Evoker.this.level().getBlockState(blockPos);
++                    BlockState blockState1 = Evoker.this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during evoker fang placement
++                    if (blockState1 == null) return;
++                    if (!blockState1.isAir()) {
+                         VoxelShape collisionShape = blockState1.getCollisionShape(Evoker.this.level(), blockPos);
+                         if (!collisionShape.isEmpty()) {
+                             d = collisionShape.max(Direction.Axis.Y);

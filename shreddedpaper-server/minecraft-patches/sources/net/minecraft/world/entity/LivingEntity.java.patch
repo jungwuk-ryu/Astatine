@@ -9,6 +9,64 @@
                              return;
                          }
                          // Purpur end - Add option to teleport to spawn if outside world border
+@@ -464,7 +_,10 @@
+             }
+ 
+             if (this.isEyeInFluid(FluidTags.WATER)
+-                && !serverLevel1.getBlockState(BlockPos.containing(this.getX(), this.getEyeY(), this.getZ())).is(Blocks.BUBBLE_COLUMN)) {
++                && !java.util.Objects.requireNonNullElse(
++                    serverLevel1.getBlockStateIfLoaded(BlockPos.containing(this.getX(), this.getEyeY(), this.getZ())), // ShreddedPaper - avoid sync chunk loads during living entity air checks
++                    Blocks.AIR.defaultBlockState()
++                ).is(Blocks.BUBBLE_COLUMN)) {
+                 boolean flag1 = !this.canBreatheUnderwater()
+                     && !MobEffectUtil.hasWaterBreathing(this)
+                     && (!flag || !((Player)this).getAbilities().invulnerable);
+@@ -1979,7 +_,8 @@
+                 if (serverLevel.getGameRules().get(GameRules.MOB_GRIEFING, serverLevel.purpurConfig.witherMobGriefingOverride)) { // Purpur - Add mobGriefing override to everything affected
+                     BlockPos blockPos = this.blockPosition();
+                     BlockState blockState = Blocks.WITHER_ROSE.defaultBlockState();
+-                    if (this.level().getBlockState(blockPos).isAir() && blockState.canSurvive(this.level(), blockPos)) {
++                    BlockState existingState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from wither rose placement checks
++                    if (existingState != null && existingState.isAir() && blockState.canSurvive(this.level(), blockPos)) {
+                         var6 = CraftEventFactory.handleBlockFormEvent(this.level(), blockPos, blockState, Block.UPDATE_ALL, this); // CraftBukkit - call EntityBlockFormEvent for Wither Rose
+                     }
+                 }
+@@ -2273,7 +_,10 @@
+         if (!state.getValue(TrapDoorBlock.OPEN)) {
+             return false;
+         } else {
+-            BlockState blockState = this.level().getBlockState(pos.below());
++            BlockState blockState = this.level().getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads from climbable checks
++            if (blockState == null) {
++                return false;
++            }
+             return blockState.is(Blocks.LADDER) && blockState.getValue(LadderBlock.FACING) == state.getValue(TrapDoorBlock.FACING);
+         }
+     }
+@@ -2346,7 +_,10 @@
+             int floor = Mth.floor(this.getX());
+             int floor1 = Mth.floor(this.getY() - 0.2F);
+             int floor2 = Mth.floor(this.getZ());
+-            BlockState blockState = this.level().getBlockState(new BlockPos(floor, floor1, floor2));
++            BlockState blockState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1, floor2)); // ShreddedPaper - avoid sync chunk loads from fall sounds
++            if (blockState == null) {
++                return;
++            }
+             if (!blockState.isAir()) {
+                 SoundType soundType = blockState.getSoundType();
+                 this.playSound(soundType.getFallSound(), soundType.getVolume() * 0.5F, soundType.getPitch() * 0.75F);
+@@ -3011,7 +_,10 @@
+         Vec3 vec3;
+         if (this.isRemoved()) {
+             vec3 = this.position();
+-        } else if (!vehicle.isRemoved() && !this.level().getBlockState(vehicle.blockPosition()).is(BlockTags.PORTALS)) {
++        } else if (!vehicle.isRemoved()
++            && java.util.Optional.ofNullable(this.level().getBlockStateIfLoaded(vehicle.blockPosition())) // ShreddedPaper - avoid sync chunk loads from vehicle dismount checks
++                .map(state -> !state.is(BlockTags.PORTALS))
++                .orElse(true)) {
+             vec3 = vehicle.getDismountLocationForPassenger(this);
+         } else {
+             double max = Math.max(this.getY(), vehicle.getY());
 @@ -3103,7 +_,8 @@
      }
  
@@ -44,7 +102,7 @@
          float f1 = f * 0.91F;
          Vec3 vec3 = this.handleRelativeFrictionAndCalculateMovement(travelVector, f);
          double d = vec3.y;
-@@ -4587,6 +_,11 @@
+@@ -4587,12 +_,20 @@
          boolean flag = false;
          BlockPos blockPos = BlockPos.containing(x, y, z);
          Level level = this.level();
@@ -56,6 +114,16 @@
          if (level.hasChunkAt(blockPos)) {
              boolean flag1 = false;
  
+             while (!flag1 && blockPos.getY() > level.getMinY()) {
+                 BlockPos blockPos1 = blockPos.below();
+-                BlockState blockState = level.getBlockState(blockPos1);
++                BlockState blockState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during random teleport floor search
++                if (blockState == null) {
++                    return Optional.of(false);
++                }
+                 if (blockState.blocksMotion()) {
+                     flag1 = true;
+                 } else {
 @@ -4604,12 +_,15 @@
              if (flag1) {
                  // CraftBukkit start - Teleport event
@@ -86,3 +154,36 @@
                              this.teleportTo(to.getX(), to.getY(), to.getZ());
                          } else {
                              return Optional.empty();
+@@ -4712,7 +_,10 @@
+             this.stopRiding();
+         }
+ 
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from sleep state updates
++        if (blockState == null) {
++            return;
++        }
+         if (blockState.getBlock() instanceof BedBlock) {
+             this.level().setBlock(pos, blockState.setValue(BedBlock.OCCUPIED, true), Block.UPDATE_ALL);
+         }
+@@ -4729,12 +_,18 @@
+     }
+ 
+     private boolean checkBedExists() {
+-        return this.getSleepingPos().map(blockPos -> this.level().getBlockState(blockPos).getBlock() instanceof BedBlock).orElse(false);
++        return this.getSleepingPos().map(blockPos -> {
++            BlockState blockState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sleep validation
++            return blockState != null && blockState.getBlock() instanceof BedBlock;
++        }).orElse(false);
+     }
+ 
+     public void stopSleeping() {
+         this.getSleepingPos().filter(this.level()::hasChunkAt).ifPresent(blockPos -> {
+-            BlockState blockState = this.level().getBlockState(blockPos);
++            BlockState blockState = this.level().getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sleep wake-up
++            if (blockState == null) {
++                return;
++            }
+             if (blockState.getBlock() instanceof BedBlock) {
+                 Direction direction = blockState.getValue(BedBlock.FACING);
+                 this.level().setBlock(blockPos, blockState.setValue(BedBlock.OCCUPIED, false), Block.UPDATE_ALL);

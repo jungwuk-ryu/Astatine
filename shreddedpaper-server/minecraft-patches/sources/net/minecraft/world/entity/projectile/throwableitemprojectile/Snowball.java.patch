@@ -1,0 +1,18 @@
+--- a/net/minecraft/world/entity/projectile/throwableitemprojectile/Snowball.java
++++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/Snowball.java
+@@ -66,9 +_,13 @@
+             net.minecraft.core.BlockPos pos = blockHitResult.getBlockPos();
+             net.minecraft.core.BlockPos relativePos = pos.relative(blockHitResult.getDirection());
+ 
+-            net.minecraft.world.level.block.state.BlockState blockState = this.level().getBlockState(pos);
++            net.minecraft.world.level.block.state.BlockState blockState = this.level().getBlockStateIfLoaded(pos);
++            if (blockState == null) {
++                return;
++            }
++            net.minecraft.world.level.block.state.BlockState relativeBlockState = this.level().getBlockStateIfLoaded(relativePos);
+ 
+-            if (this.level().purpurConfig.snowballExtinguishesFire && this.level().getBlockState(relativePos).is(net.minecraft.world.level.block.Blocks.FIRE)) {
++            if (this.level().purpurConfig.snowballExtinguishesFire && relativeBlockState != null && relativeBlockState.is(net.minecraft.world.level.block.Blocks.FIRE)) {
+                 if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(this, relativePos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState())) {
+                     this.level().removeBlock(relativePos, false);
+                 }

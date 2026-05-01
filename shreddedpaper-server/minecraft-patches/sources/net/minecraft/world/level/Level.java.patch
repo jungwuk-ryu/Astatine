@@ -273,6 +273,23 @@
                  return;
              }
              // CraftBukkit end
+@@ -2039,12 +_,14 @@
+ 
+     @Override
+     public boolean isStateAtPosition(BlockPos pos, Predicate<BlockState> state) {
+-        return state.test(this.getBlockState(pos));
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from predicate probes
++        return blockState != null && state.test(blockState);
+     }
+ 
+     @Override
+     public boolean isFluidAtPosition(BlockPos pos, Predicate<FluidState> predicate) {
+-        return predicate.test(this.getFluidState(pos));
++        FluidState fluidState = this.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from predicate probes
++        return fluidState != null && predicate.test(fluidState);
+     }
+ 
+     public abstract RecipeAccess recipeAccess();
 @@ -2146,4 +_,18 @@
          return getWorld().getEnvironment() == org.bukkit.World.Environment.THE_END;
      }

@@ -1,18 +1,28 @@
 --- a/net/minecraft/server/network/EventLoopGroupHolder.java
 +++ b/net/minecraft/server/network/EventLoopGroupHolder.java
-@@ -3,2 +3,4 @@
+@@ -1,6 +_,8 @@
+ package net.minecraft.server.network;
+ 
  import com.google.common.util.concurrent.ThreadFactoryBuilder;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.network.NetworkTransportSelection;
  import io.netty.channel.Channel;
-@@ -22,2 +24,6 @@
+ import io.netty.channel.EventLoopGroup;
+ import io.netty.channel.IoHandlerFactory;
+@@ -20,6 +_,10 @@
+ import io.netty.channel.nio.NioIoHandler;
+ import io.netty.channel.socket.nio.NioServerSocketChannel;
  import io.netty.channel.socket.nio.NioSocketChannel;
 +import io.netty.channel.uring.IoUring;
 +import io.netty.channel.uring.IoUringIoHandler;
 +import io.netty.channel.uring.IoUringServerSocketChannel;
 +import io.netty.channel.uring.IoUringSocketChannel;
  import java.util.concurrent.ThreadFactory;
-@@ -38,2 +44,8 @@
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -36,6 +_,12 @@
+             return EpollIoHandler.newFactory();
+         }
      };
 +    private static final EventLoopGroupHolder IO_URING = new EventLoopGroupHolder("io_uring", IoUringSocketChannel.class, IoUringServerSocketChannel.class) {
 +        @Override
@@ -21,7 +31,11 @@
 +        }
 +    };
      private static final EventLoopGroupHolder KQUEUE = new EventLoopGroupHolder("Kqueue", KQueueSocketChannel.class, KQueueServerSocketChannel.class) {
-@@ -65,13 +77,14 @@
+         @Override
+         protected IoHandlerFactory ioHandlerFactory() {
+@@ -63,37 +_,46 @@
+ 
+     @Deprecated @io.papermc.paper.annotation.DoNotUse // Paper - use variant with address param
      public static EventLoopGroupHolder remote(boolean tryNativeTransport) {
 -        if (tryNativeTransport) {
 -            if (KQueue.isAvailable()) {
@@ -34,8 +48,7 @@
 +        if (!tryNativeTransport) {
 +            return NIO;
          }
--
-+
+ 
 -        return NIO;
 +        return bySelection(NetworkTransportSelection.selectRemote(
 +                true,
@@ -46,7 +59,8 @@
 +                false
 +        ));
      }
-@@ -80,16 +93,14 @@
+ 
+     // Paper start - Unix domain socket support
      public static EventLoopGroupHolder remote(java.net.SocketAddress address, boolean tryNativeTransport) {
 -        if (tryNativeTransport) {
 -            if (KQueue.isAvailable()) {
@@ -74,8 +88,7 @@
 +                address instanceof io.netty.channel.unix.DomainSocketAddress
 +        ));
      }
-@@ -97,2 +108,12 @@
--
+     // Paper end - Unix domain socket support
 +
 +    private static EventLoopGroupHolder bySelection(final NetworkTransportSelection.Transport transport) {
 +        return switch (transport) {
@@ -86,5 +99,6 @@
 +            case IO_URING -> IO_URING;
 +        };
 +    }
-+
+ 
      public static EventLoopGroupHolder local() {
+         return LOCAL;

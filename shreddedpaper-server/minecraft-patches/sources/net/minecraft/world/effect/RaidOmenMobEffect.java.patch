@@ -1,19 +1,30 @@
 --- a/net/minecraft/world/effect/RaidOmenMobEffect.java
 +++ b/net/minecraft/world/effect/RaidOmenMobEffect.java
-@@ -1,5 +_,6 @@
+@@ -1,10 +_,12 @@
  package net.minecraft.world.effect;
  
 +import io.multipaper.shreddedpaper.ShreddedPaper;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleOptions;
  import net.minecraft.server.level.ServerLevel;
-@@ -21,7 +_,9 @@
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.level.ChunkPos;
+ 
+ class RaidOmenMobEffect extends MobEffect {
+     protected RaidOmenMobEffect(MobEffectCategory category, int color, ParticleOptions particle) {
+@@ -21,8 +_,12 @@
          if (entity instanceof ServerPlayer serverPlayer && !entity.isSpectator()) {
              BlockPos raidOmenPosition = serverPlayer.getRaidOmenPosition();
              if (raidOmenPosition != null) {
-+                ShreddedPaper.runSync(level, raidOmenPosition, () -> { // ShreddedPaper - run on raidOmenPosition's thread. Do not use ensureSync as createOrExtendRaid can call positions that are outside the player's thread
-                 level.getRaids().createOrExtendRaid(serverPlayer, raidOmenPosition);
-+                }); // ShreddedPaper - run on raidOmenPosition's thread
-                 serverPlayer.clearRaidOmenPosition();
+-                level.getRaids().createOrExtendRaid(serverPlayer, raidOmenPosition);
+-                serverPlayer.clearRaidOmenPosition();
++                ShreddedPaper.ensureSync(serverPlayer, level, ChunkPos.of(raidOmenPosition), () -> { // ShreddedPaper - own player and raid position for raid omen mutation
++                    if (raidOmenPosition.equals(serverPlayer.getRaidOmenPosition())) {
++                        level.getRaids().createOrExtendRaid(serverPlayer, raidOmenPosition);
++                        serverPlayer.clearRaidOmenPosition();
++                    }
++                }); // ShreddedPaper - own player and raid position for raid omen mutation
                  return false;
              }
+         }

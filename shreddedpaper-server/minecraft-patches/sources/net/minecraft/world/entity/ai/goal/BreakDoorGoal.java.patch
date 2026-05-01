@@ -1,0 +1,35 @@
+--- a/net/minecraft/world/entity/ai/goal/BreakDoorGoal.java
++++ b/net/minecraft/world/entity/ai/goal/BreakDoorGoal.java
+@@ -6,6 +_,7 @@
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.LevelEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.material.FluidState;
+ 
+ public class BreakDoorGoal extends DoorInteractGoal {
+     private static final int DEFAULT_DOOR_BREAK_TIME = 240;
+@@ -75,12 +_,22 @@
+ 
+         if (this.breakTime == this.getDoorBreakTime() && this.isValidDifficulty(this.mob.level().getDifficulty())) {
+             // CraftBukkit start
+-            if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityBreakDoorEvent(this.mob, this.doorPos, this.mob.level().getFluidState(this.doorPos).createLegacyBlock()).isCancelled()) { // Paper - fix wrong block state
++            if (this.mob.level() instanceof net.minecraft.server.level.ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, this.doorPos)) {
++                this.start();
++                return;
++            }
++            FluidState doorFluid = this.mob.level().getFluidIfLoaded(this.doorPos); // ShreddedPaper - avoid sync chunk loads while breaking doors
++            if (doorFluid == null) {
++                this.start();
++                return;
++            }
++            if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityBreakDoorEvent(this.mob, this.doorPos, doorFluid.createLegacyBlock()).isCancelled()) { // Paper - fix wrong block state
+                 this.start();
+                 return;
+             }
+             // CraftBukkit end
+-            final net.minecraft.world.level.block.state.BlockState oldState = this.mob.level().getBlockState(this.doorPos); // Paper - fix MC-263999
++            final net.minecraft.world.level.block.state.BlockState oldState = this.mob.level().getBlockStateIfLoaded(this.doorPos); // Paper - fix MC-263999 // ShreddedPaper - avoid sync chunk loads while breaking doors
++            if (oldState == null) return;
+             this.mob.level().removeBlock(this.doorPos, false);
+             this.mob.level().levelEvent(LevelEvent.SOUND_ZOMBIE_DOOR_CRASH, this.doorPos, 0);
+             this.mob.level().levelEvent(LevelEvent.PARTICLES_DESTROY_BLOCK, this.doorPos, Block.getId(oldState)); // Paper - fix MC-263999

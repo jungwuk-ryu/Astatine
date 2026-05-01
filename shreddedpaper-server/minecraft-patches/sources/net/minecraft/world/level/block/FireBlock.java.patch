@@ -1,0 +1,149 @@
+--- a/net/minecraft/world/level/block/FireBlock.java
++++ b/net/minecraft/world/level/block/FireBlock.java
+@@ -132,14 +_,14 @@
+ 
+     protected BlockState getStateForPlacement(BlockGetter level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        BlockState blockState = level.getBlockState(blockPos);
++        BlockState blockState = this.getBlockStateIfLoadedOrAir(level, blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+         if (!this.canBurn(blockState) && !blockState.isFaceSturdy(level, blockPos, Direction.UP)) {
+             BlockState blockState1 = this.defaultBlockState();
+ 
+             for (Direction direction : Direction.values()) {
+                 BooleanProperty booleanProperty = PROPERTY_BY_DIRECTION.get(direction);
+                 if (booleanProperty != null) {
+-                    blockState1 = blockState1.setValue(booleanProperty, this.canBurn(level.getBlockState(pos.relative(direction))));
++                    blockState1 = blockState1.setValue(booleanProperty, this.canBurn(this.getBlockStateIfLoadedOrAir(level, pos.relative(direction)))); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+                 }
+             }
+ 
+@@ -152,7 +_,8 @@
+     @Override
+     protected boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        return level.getBlockState(blockPos).isFaceSturdy(level, blockPos, Direction.UP) || this.isValidFireLocation(level, pos);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++        return (blockState != null && blockState.isFaceSturdy(level, blockPos, Direction.UP)) || this.isValidFireLocation(level, pos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+     }
+ 
+     @Override
+@@ -163,7 +_,10 @@
+                 this.fireExtinguished(level, pos); // CraftBukkit - invalid place location
+             }
+ 
+-            BlockState blockState = level.getBlockState(pos.below());
++            BlockState blockState = level.getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                return;
++            }
+             boolean isTag = blockState.is(level.dimensionType().infiniburn());
+             int ageValue = state.getValue(AGE);
+             if (!isTag && level.isRaining() && this.isNearRain(level, pos) && random.nextFloat() < 0.2F + ageValue * 0.03F) {
+@@ -178,14 +_,16 @@
+                 if (!isTag) {
+                     if (!this.isValidFireLocation(level, pos)) {
+                         BlockPos blockPos = pos.below();
+-                        if (!level.getBlockState(blockPos).isFaceSturdy(level, blockPos, Direction.UP) || ageValue > 3) {
++                        BlockState belowState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                        if (belowState == null || !belowState.isFaceSturdy(level, blockPos, Direction.UP) || ageValue > 3) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+                             this.fireExtinguished(level, pos); // CraftBukkit
+                         }
+ 
+                         return;
+                     }
+ 
+-                    if (ageValue == 15 && random.nextInt(4) == 0 && !this.canBurn(level.getBlockState(pos.below()))) {
++                    BlockState belowState = level.getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                    if (ageValue == 15 && random.nextInt(4) == 0 && (belowState == null || !this.canBurn(belowState))) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+                         this.fireExtinguished(level, pos); // CraftBukkit
+                         return;
+                     }
+@@ -223,7 +_,11 @@
+                                     if (i5 > 0 && random.nextInt(i4) <= i5 && (!level.isRaining() || !this.isNearRain(level, mutableBlockPos))) {
+                                         int min1 = Math.min(15, ageValue + random.nextInt(5) / 4);
+                                         // CraftBukkit start - Call to stop spread of fire
+-                                        if (!level.getBlockState(mutableBlockPos).is(Blocks.FIRE)) {
++                                        BlockState targetState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                                        if (targetState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                                            continue;
++                                        }
++                                        if (!targetState.is(Blocks.FIRE)) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+                                             if (org.bukkit.craftbukkit.event.CraftEventFactory.callBlockIgniteEvent(level, mutableBlockPos, pos).isCancelled()) {
+                                                 continue;
+                                             }
+@@ -242,11 +_,15 @@
+     }
+ 
+     protected boolean isNearRain(Level level, BlockPos pos) {
+-        return level.isRainingAt(pos)
+-            || level.isRainingAt(pos.west())
+-            || level.isRainingAt(pos.east())
+-            || level.isRainingAt(pos.north())
+-            || level.isRainingAt(pos.south());
++        return this.isRainingAtIfLoaded(level, pos)
++            || this.isRainingAtIfLoaded(level, pos.west())
++            || this.isRainingAtIfLoaded(level, pos.east())
++            || this.isRainingAtIfLoaded(level, pos.north())
++            || this.isRainingAtIfLoaded(level, pos.south()); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++    }
++
++    private boolean isRainingAtIfLoaded(Level level, BlockPos pos) {
++        return level.isLoaded(pos) && level.isRainingAt(pos);
+     }
+ 
+     private int getBurnOdds(BlockState state) {
+@@ -262,10 +_,12 @@
+     }
+ 
+     private void checkBurnOut(Level level, BlockPos pos, int chance, RandomSource random, int age, BlockPos sourcePos) { // CraftBukkit add sourcePos
+-        int burnOdds = this.getBurnOdds(level.getBlockState(pos));
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++            return;
++        }
++        int burnOdds = this.getBurnOdds(blockState); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+         if (random.nextInt(chance) < burnOdds) {
+-            BlockState blockState = level.getBlockState(pos);
+-
+             // CraftBukkit start
+             org.bukkit.block.Block burnBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, pos);
+             org.bukkit.block.Block sourceBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, sourcePos);
+@@ -307,7 +_,7 @@
+ 
+     private boolean isValidFireLocation(BlockGetter level, BlockPos pos) {
+         for (Direction direction : Direction.values()) {
+-            if (this.canBurn(level.getBlockState(pos.relative(direction)))) {
++            if (this.canBurn(this.getBlockStateIfLoadedOrAir(level, pos.relative(direction)))) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+                 return true;
+             }
+         }
+@@ -316,18 +_,26 @@
+     }
+ 
+     private int getIgniteOdds(LevelReader level, BlockPos pos) {
+-        if (!level.isEmptyBlock(pos)) {
++        BlockState currentState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++        if (currentState == null || !currentState.isAir()) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
+             return 0;
+         } else {
+             int i = 0;
+ 
+             for (Direction direction : Direction.values()) {
+-                BlockState blockState = level.getBlockState(pos.relative(direction));
+-                i = Math.max(this.getIgniteOdds(blockState), i);
++                BlockState blockState = level.getBlockStateIfLoaded(pos.relative(direction)); // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                if (blockState != null) { // ShreddedPaper - avoid sync chunk loads from scheduled fire ticks
++                    i = Math.max(this.getIgniteOdds(blockState), i);
++                }
+             }
+ 
+             return i;
+         }
++    }
++
++    private BlockState getBlockStateIfLoadedOrAir(BlockGetter level, BlockPos pos) {
++        BlockState blockState = level.getBlockStateIfLoaded(pos);
++        return blockState == null ? Blocks.AIR.defaultBlockState() : blockState;
+     }
+ 
+     @Override

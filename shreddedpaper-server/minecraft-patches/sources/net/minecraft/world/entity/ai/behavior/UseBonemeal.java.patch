@@ -1,0 +1,32 @@
+--- a/net/minecraft/world/entity/ai/behavior/UseBonemeal.java
++++ b/net/minecraft/world/entity/ai/behavior/UseBonemeal.java
+@@ -2,6 +_,7 @@
+ 
+ import com.google.common.collect.ImmutableMap;
+ import java.util.Optional;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.SimpleContainer;
+@@ -70,7 +_,9 @@
+     }
+ 
+     private boolean validPos(BlockPos pos, ServerLevel level) {
+-        BlockState blockState = level.getBlockState(pos);
++        if (!TickThread.isTickThreadFor(level, pos)) return false; // ShreddedPaper - avoid off-owner villager bonemeal scans
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during villager bonemeal scans
++        if (blockState == null) return false;
+         Block block = blockState.getBlock();
+         return block instanceof CropBlock && !((CropBlock)block).isMaxAge(blockState);
+     }
+@@ -101,6 +_,10 @@
+     protected void tick(ServerLevel level, Villager owner, long gameTime) {
+         BlockPos blockPos = this.cropPos.get();
+         if (gameTime >= this.nextWorkCycleTime && blockPos.closerToCenterThan(owner.position(), 1.0)) {
++            if (!TickThread.isTickThreadFor(level, blockPos) || level.getBlockStateIfLoaded(blockPos) == null) { // ShreddedPaper - avoid sync/off-owner villager bonemeal use
++                this.cropPos = Optional.empty();
++                return;
++            }
+             ItemStack itemStack = ItemStack.EMPTY;
+             SimpleContainer inventory = owner.getInventory();
+             int containerSize = inventory.getContainerSize();

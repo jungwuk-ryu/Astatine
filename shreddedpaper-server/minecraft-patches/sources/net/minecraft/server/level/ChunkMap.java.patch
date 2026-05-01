@@ -345,7 +345,7 @@
  
          // Paper start - optimise entity tracker
          private long lastChunkUpdate = -1L;
-@@ -1238,21 +_,33 @@
+@@ -1238,21 +_,35 @@
              this.lastChunkUpdate = currChunkUpdate;
              this.lastTrackedChunk = chunk;
  
@@ -365,6 +365,8 @@
 +                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
              }
 +
++            this.removeInvalidTrackedPlayers(players); // Astatine - prevent stale tracker visibility leaks
++
 +            if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
  
              if (lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk) {
@@ -380,7 +382,7 @@
              }
          }
  
-@@ -1304,6 +_,91 @@
+@@ -1304,6 +_,75 @@
              this.lastSectionPos = SectionPos.of(entity);
          }
  
@@ -404,7 +406,10 @@
 +        }
 +
 +        public void updatePlayersLimitedAndOrdered(ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players, boolean hasTrackerCandidatesChanged, boolean fullTrackerUpdate) {
-+            if (!hasTrackerCandidatesChanged && !fullTrackerUpdate) return;
++            if (!hasTrackerCandidatesChanged && !fullTrackerUpdate) {
++                this.removeInvalidTrackedPlayers(players); // Astatine - prevent stale tracker visibility leaks
++                return;
++            }
 +
 +            TreeSet<DistancedServerPlayer> playerSet = new TreeSet<>();
 +            final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
@@ -413,26 +418,7 @@
 +                ServerPlayer player = playersRaw[index];
 +                if (player == null || player == this.entity) continue;
 +                DistancedServerPlayer distancedPlayer = new DistancedServerPlayer(player, this.entity);
-+                int i = ChunkMap.this.getPlayerViewDistance(player);
-+                double d0 = (double) Math.min(this.getEffectiveRange(), i * 16);
-+                double d2 = d0 * d0;
-+                boolean flag = distancedPlayer.distanceSqr <= d2 && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
-+                // Paper start - Configurable entity tracking range by Y
-+                if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
-+                    double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
-+                    if (rangeY != -1) {
-+                        double vec3d_dy = player.getY() - this.entity.getY();
-+                        flag = vec3d_dy * vec3d_dy <= rangeY * rangeY;
-+                    }
-+                }
-+                // Paper end - Configurable entity tracking range by Y
-+
-+                // CraftBukkit start - respect vanish API
-+                if (flag && !player.getBukkitEntity().canSee(this.entity.getBukkitEntity())) { // Paper - only consider hits
-+                    flag = false;
-+                }
-+
-+                if (flag) {
++                if (this.canTrack(player, distancedPlayer.distanceSqr)) {
 +                    playerSet.add(distancedPlayer);
 +                }
 +            }
@@ -486,7 +472,7 @@
          }
  
          @Override
-@@ -1331,27 +_,33 @@
+@@ -1331,58 +_,97 @@
  
          @Override
          public void sendToTrackingPlayersFiltered(Packet<? super ClientGamePacketListener> packet, Predicate<ServerPlayer> filter) {
@@ -517,12 +503,93 @@
                  }
              }
 +            } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
++        }
++
++        private boolean canTrack(ServerPlayer player) {
++            if (player == this.entity) {
++                return false;
++            }
++
++            // Paper start - remove allocation of Vec3D here
++            // Vec3 vec3 = player.position().subtract(this.entity.position());
++            double vec3_dx = player.getX() - this.entity.getX();
++            double vec3_dz = player.getZ() - this.entity.getZ();
++            // Paper end - remove allocation of Vec3D here
++            return this.canTrack(player, vec3_dx * vec3_dx + vec3_dz * vec3_dz);
++        }
++
++        private boolean canTrack(ServerPlayer player, double distanceSqr) {
++            int playerViewDistance = ChunkMap.this.getPlayerViewDistance(player);
++            double d = Math.min(this.getEffectiveRange(), playerViewDistance * 16);
++            double d2 = d * d;
++            // Paper start - Configurable entity tracking range by Y
++            boolean flag = distanceSqr <= d2;
++            if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
++                double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
++                if (rangeY != -1) {
++                    double vec3_dy = player.getY() - this.entity.getY();
++                    flag = vec3_dy * vec3_dy <= rangeY * rangeY;
++                }
++            }
++            flag = flag && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
++            // Paper end - Configurable entity tracking range by Y
++            // CraftBukkit start - respect vanish API
++            if (flag && !player.getBukkitEntity().canSee(this.entity.getBukkitEntity())) { // Paper - only consider hits
++                flag = false;
++            }
++            // CraftBukkit end
++            return flag;
++        }
++
++        private void removeInvalidTrackedPlayers(ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players) {
++            final ServerPlayerConnection[] trackedConnections;
++            this.seenByLock.lock();
++            try {
++                if (this.seenBy.isEmpty()) {
++                    return;
++                }
++                trackedConnections = this.seenBy.toArray(new ServerPlayerConnection[0]);
++            } finally {
++                this.seenByLock.unlock();
++            }
++
++            for (final ServerPlayerConnection conn : trackedConnections) {
++                final ServerPlayer player = conn.getPlayer();
++                if (!players.contains(player) || !this.canTrack(player)) {
++                    this.removePlayer(player);
++                }
++            }
          }
  
          public void updatePlayer(ServerPlayer player) {
-@@ -1383,6 +_,7 @@
-                 }
-                 // CraftBukkit end
+             org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
+             if (player != this.entity) {
+-                // Paper start - remove allocation of Vec3D here
+-                // Vec3 vec3 = player.position().subtract(this.entity.position());
+-                double vec3_dx = player.getX() - this.entity.getX();
+-                double vec3_dz = player.getZ() - this.entity.getZ();
+-                // Paper end - remove allocation of Vec3D here
+-                int playerViewDistance = ChunkMap.this.getPlayerViewDistance(player);
+-                double d = Math.min(this.getEffectiveRange(), playerViewDistance * 16);
+-                double d1 = vec3_dx * vec3_dx + vec3_dz * vec3_dz; // Paper
+-                double d2 = d * d;
+-                // Paper start - Configurable entity tracking range by Y
+-                boolean flag = d1 <= d2;
+-                if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
+-                    double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
+-                    if (rangeY != -1) {
+-                        double vec3_dy = player.getY() - this.entity.getY();
+-                        flag = vec3_dy * vec3_dy <= rangeY * rangeY;
+-                    }
+-                }
+-                flag = flag && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
+-                // Paper end - Configurable entity tracking range by Y
+-                // CraftBukkit start - respect vanish API
+-                if (flag && !player.getBukkitEntity().canSee(this.entity.getBukkitEntity())) { // Paper - only consider hits
+-                    flag = false;
+-                }
+-                // CraftBukkit end
++                boolean flag = this.canTrack(player);
                  if (flag) {
 +                    this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
                      if (this.seenBy.add(player.connection)) {

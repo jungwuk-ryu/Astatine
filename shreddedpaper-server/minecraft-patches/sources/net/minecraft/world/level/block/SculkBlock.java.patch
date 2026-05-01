@@ -1,0 +1,31 @@
+--- a/net/minecraft/world/level/block/SculkBlock.java
++++ b/net/minecraft/world/level/block/SculkBlock.java
+@@ -67,18 +_,25 @@
+             blockState = Blocks.SCULK_SENSOR.defaultBlockState();
+         }
+ 
+-        return blockState.hasProperty(BlockStateProperties.WATERLOGGED) && !level.getFluidState(pos).isEmpty()
++        net.minecraft.world.level.material.FluidState fluidState = level.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++        return blockState.hasProperty(BlockStateProperties.WATERLOGGED) && fluidState != null && !fluidState.isEmpty() // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+             ? blockState.setValue(BlockStateProperties.WATERLOGGED, true)
+             : blockState;
+     }
+ 
+     private static boolean canPlaceGrowth(LevelAccessor level, BlockPos pos) {
+-        BlockState blockState = level.getBlockState(pos.above());
++        BlockState blockState = level.getBlockStateIfLoaded(pos.above()); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++            return false;
++        }
+         if (blockState.isAir() || blockState.is(Blocks.WATER) && blockState.getFluidState().is(Fluids.WATER)) {
+             int i = 0;
+ 
+             for (BlockPos blockPos : BlockPos.betweenClosed(pos.offset(-4, 0, -4), pos.offset(4, 2, 4))) {
+-                BlockState blockState1 = level.getBlockState(blockPos);
++                BlockState blockState1 = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (blockState1 == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    return false;
++                }
+                 if (blockState1.is(Blocks.SCULK_SENSOR) || blockState1.is(Blocks.SCULK_SHRIEKER)) {
+                     i++;
+                 }

@@ -151,6 +151,14 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         @Comment("Suppresses moved-wrongly setbacks while the player's own independent region is measurably behind.")
         public boolean ignoreMovedWronglyWhenLagging = true;
 
+        @Setting("moved-too-quickly-multiplier-y-override")
+        @Comment("Uses moved-too-quickly-multiplier-y for vertical moved-too-quickly checks instead of the Spigot multiplier.")
+        public boolean movedTooQuicklyMultiplierYOverride = true;
+
+        @Setting("moved-too-quickly-multiplier-y")
+        @Comment("Vertical-only moved-too-quickly multiplier used when moved-too-quickly-multiplier-y-override is enabled.")
+        public double movedTooQuicklyMultiplierY = 10.0D;
+
         @Setting("always-allow-weird-movement")
         @Comment("Disables moved-too-quickly and moved-wrongly enforcement entirely. This is intentionally off by default.")
         public boolean alwaysAllowWeirdMovement = false;

@@ -1,0 +1,26 @@
+--- a/net/minecraft/world/level/block/MultifaceSpreader.java
++++ b/net/minecraft/world/level/block/MultifaceSpreader.java
+@@ -96,7 +_,10 @@
+     }
+ 
+     public Optional<MultifaceSpreader.SpreadPos> spreadToFace(LevelAccessor level, MultifaceSpreader.SpreadPos pos, boolean markForPostprocessing) {
+-        BlockState blockState = level.getBlockState(pos.pos());
++        BlockState blockState = level.getBlockStateIfLoaded(pos.pos()); // ShreddedPaper - avoid sync chunk loads from multiface spread ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from multiface spread ticks
++            return Optional.empty();
++        }
+         return this.config.placeBlock(level, pos, blockState, markForPostprocessing) ? Optional.of(pos) : Optional.empty();
+     }
+ 
+@@ -118,7 +_,10 @@
+ 
+         @Override
+         public boolean canSpreadInto(BlockGetter level, BlockPos pos, MultifaceSpreader.SpreadPos spreadPos) {
+-            BlockState blockState = level.getBlockState(spreadPos.pos());
++            BlockState blockState = level.getBlockStateIfLoaded(spreadPos.pos()); // ShreddedPaper - avoid sync chunk loads from multiface spread ticks
++            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from multiface spread ticks
++                return false;
++            }
+             return this.stateCanBeReplaced(level, pos, spreadPos.pos(), spreadPos.face(), blockState)
+                 && this.block.isValidStateForPlacement(level, blockState, spreadPos.pos(), spreadPos.face());
+         }

@@ -1,0 +1,22 @@
+--- a/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java
++++ b/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java
+@@ -171,6 +_,10 @@
+     @Override
+     protected void hitBlockEnchantmentEffects(ServerLevel level, BlockHitResult hitResult, ItemStack stack) {
+         Vec3 vec3 = hitResult.getBlockPos().clampLocationWithin(hitResult.getLocation());
++        net.minecraft.world.level.block.state.BlockState blockState = level.getBlockStateIfLoaded(hitResult.getBlockPos());
++        if (blockState == null) {
++            return;
++        }
+         EnchantmentHelper.onHitBlock(
+             level,
+             stack,
+@@ -178,7 +_,7 @@
+             this,
+             null,
+             vec3,
+-            level.getBlockState(hitResult.getBlockPos()),
++            blockState,
+             item -> this.kill(level)
+         );
+     }

@@ -1,0 +1,13 @@
+--- a/net/minecraft/world/level/block/BaseCoralWallFanBlock.java
++++ b/net/minecraft/world/level/block/BaseCoralWallFanBlock.java
+@@ -76,8 +_,8 @@
+     protected boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+         Direction direction = state.getValue(FACING);
+         BlockPos blockPos = pos.relative(direction.getOpposite());
+-        BlockState blockState = level.getBlockState(blockPos);
+-        return blockState.isFaceSturdy(level, blockPos, direction);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
++        return blockState == null || blockState.isFaceSturdy(level, blockPos, direction); // ShreddedPaper - avoid sync chunk loads from scheduled coral ticks
+     }
+ 
+     @Override

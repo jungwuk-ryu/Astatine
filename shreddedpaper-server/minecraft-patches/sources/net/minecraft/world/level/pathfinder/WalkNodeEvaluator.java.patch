@@ -1,0 +1,24 @@
+--- a/net/minecraft/world/level/pathfinder/WalkNodeEvaluator.java
++++ b/net/minecraft/world/level/pathfinder/WalkNodeEvaluator.java
+@@ -203,14 +_,19 @@
+ 
+     protected double getFloorLevel(BlockPos pos) {
+         BlockGetter blockGetter = this.currentContext.level();
+-        return (this.canFloat() || this.isAmphibious()) && blockGetter.getFluidState(pos).is(FluidTags.WATER)
++        FluidState fluidState = blockGetter.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during pathfinding floor checks
++        return (this.canFloat() || this.isAmphibious()) && fluidState != null && fluidState.is(FluidTags.WATER)
+             ? pos.getY() + 0.5
+             : getFloorLevel(blockGetter, pos);
+     }
+ 
+     public static double getFloorLevel(BlockGetter level, BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        VoxelShape collisionShape = level.getBlockState(blockPos).getCollisionShape(level, blockPos);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during pathfinding floor checks
++        if (blockState == null) {
++            return pos.getY();
++        }
++        VoxelShape collisionShape = blockState.getCollisionShape(level, blockPos);
+         return blockPos.getY() + (collisionShape.isEmpty() ? 0.0 : collisionShape.max(Direction.Axis.Y));
+     }
+ 

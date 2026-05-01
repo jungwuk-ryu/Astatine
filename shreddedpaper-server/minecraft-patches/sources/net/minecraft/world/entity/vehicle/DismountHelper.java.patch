@@ -1,0 +1,105 @@
+--- a/net/minecraft/world/entity/vehicle/DismountHelper.java
++++ b/net/minecraft/world/entity/vehicle/DismountHelper.java
+@@ -1,16 +_,22 @@
+ package net.minecraft.world.entity.vehicle;
+ 
++import io.multipaper.shreddedpaper.ShreddedPaper;
+ import java.util.function.Function;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.util.Mth;
+ import net.minecraft.tags.BlockTags;
+ import net.minecraft.world.entity.EntityType;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.Pose;
+ import net.minecraft.world.level.BlockGetter;
+ import net.minecraft.world.level.CollisionGetter;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.TrapDoorBlock;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.Shapes;
+@@ -39,6 +_,9 @@
+     }
+ 
+     public static boolean canDismountTo(CollisionGetter level, LivingEntity passenger, AABB boundingBox) {
++        if (!ownsCollisionBox(level, boundingBox)) {
++            return false;
++        }
+         for (VoxelShape voxelShape : level.getBlockCollisions(passenger, boundingBox)) {
+             if (!voxelShape.isEmpty()) {
+                 return false;
+@@ -53,7 +_,7 @@
+     }
+ 
+     public static VoxelShape nonClimbableShape(BlockGetter level, BlockPos pos) {
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = getBlockStateLoadedOrSolid(level, pos);
+         return !blockState.is(BlockTags.CLIMBABLE) && (!(blockState.getBlock() instanceof TrapDoorBlock) || !blockState.getValue(TrapDoorBlock.OPEN))
+             ? blockState.getCollisionShape(level, pos)
+             : Shapes.empty();
+@@ -77,17 +_,21 @@
+     }
+ 
+     public static @Nullable Vec3 findSafeDismountLocation(EntityType<?> entityType, CollisionGetter level, BlockPos pos, boolean onlySafePositions) {
+-        if (onlySafePositions && entityType.isBlockDangerous(level.getBlockState(pos))) {
++        BlockState posState = getBlockStateLoadedOrSolid(level, pos);
++        if (onlySafePositions && entityType.isBlockDangerous(posState)) {
+             return null;
+         } else {
+             double blockFloorHeight = level.getBlockFloorHeight(nonClimbableShape(level, pos), () -> nonClimbableShape(level, pos.below()));
+             if (!isBlockFloorValid(blockFloorHeight)) {
+                 return null;
+-            } else if (onlySafePositions && blockFloorHeight <= 0.0 && entityType.isBlockDangerous(level.getBlockState(pos.below()))) {
++            } else if (onlySafePositions && blockFloorHeight <= 0.0 && entityType.isBlockDangerous(getBlockStateLoadedOrSolid(level, pos.below()))) {
+                 return null;
+             } else {
+                 Vec3 vec3 = Vec3.upFromBottomCenterOf(pos, blockFloorHeight);
+                 AABB aabb = entityType.getDimensions().makeBoundingBox(vec3);
++                if (!ownsCollisionBox(level, aabb)) {
++                    return null;
++                }
+ 
+                 for (VoxelShape voxelShape : level.getBlockCollisions(null, aabb)) {
+                     if (!voxelShape.isEmpty()) {
+@@ -96,12 +_,35 @@
+                 }
+ 
+                 if (entityType != EntityType.PLAYER
+-                    || !level.getBlockState(pos).is(BlockTags.INVALID_SPAWN_INSIDE) && !level.getBlockState(pos.above()).is(BlockTags.INVALID_SPAWN_INSIDE)) {
++                    || !posState.is(BlockTags.INVALID_SPAWN_INSIDE) && !getBlockStateLoadedOrSolid(level, pos.above()).is(BlockTags.INVALID_SPAWN_INSIDE)) {
+                     return !level.getWorldBorder().isWithinBounds(aabb) ? null : vec3;
+                 } else {
+                     return null;
+                 }
+             }
+         }
++    }
++
++    private static boolean ownsCollisionBox(CollisionGetter level, AABB boundingBox) {
++        if (!(level instanceof ServerLevel serverLevel)) {
++            return true;
++        }
++        BoundingBox box = new BoundingBox(
++            Mth.floor(boundingBox.minX),
++            Mth.floor(boundingBox.minY),
++            Mth.floor(boundingBox.minZ),
++            Mth.ceil(boundingBox.maxX),
++            Mth.ceil(boundingBox.maxY),
++            Mth.ceil(boundingBox.maxZ)
++        );
++        return ShreddedPaper.isSync(serverLevel, box);
++    }
++
++    private static BlockState getBlockStateLoadedOrSolid(BlockGetter level, BlockPos pos) {
++        if (level instanceof Level loadedLevel) {
++            BlockState blockState = loadedLevel.getBlockStateIfLoaded(pos);
++            return blockState == null ? Blocks.BEDROCK.defaultBlockState() : blockState;
++        }
++        return level.getBlockState(pos);
+     }
+ }

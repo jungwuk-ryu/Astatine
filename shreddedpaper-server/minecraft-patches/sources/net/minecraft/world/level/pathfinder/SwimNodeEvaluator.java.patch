@@ -1,0 +1,12 @@
+--- a/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
++++ b/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
+@@ -91,7 +_,8 @@
+                 node = this.getNode(x, y, z);
+                 node.type = cachedBlockType;
+                 node.costMalus = Math.max(node.costMalus, pathfindingMalus);
+-                if (this.currentContext.level().getFluidState(new BlockPos(x, y, z)).isEmpty()) {
++                FluidState fluidState = this.currentContext.level().getFluidIfLoaded(new BlockPos(x, y, z)); // ShreddedPaper - avoid sync chunk loads during swim pathfinding
++                if (fluidState == null || fluidState.isEmpty()) {
+                     node.costMalus += 8.0F;
+                 }
+             }

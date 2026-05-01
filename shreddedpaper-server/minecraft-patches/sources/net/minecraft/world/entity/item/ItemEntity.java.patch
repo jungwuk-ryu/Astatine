@@ -1,5 +1,13 @@
 --- a/net/minecraft/world/entity/item/ItemEntity.java
 +++ b/net/minecraft/world/entity/item/ItemEntity.java
+@@ -27,6 +_,7 @@
+ import net.minecraft.world.item.ItemStack;
+ import net.minecraft.world.level.Explosion;
+ import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.portal.TeleportTransition;
 @@ -60,6 +_,7 @@
      public boolean immuneToFire = false;
      public boolean immuneToLightning = false;
@@ -17,6 +25,18 @@
              }
  
              if (this.level().isClientSide()) {
+@@ -186,7 +_,10 @@
+                     f = 1F;
+                 } else if (this.onGround()) {
+                     // Paper end - Friction API
+-                    f = this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getFriction() * 0.98F;
++                    BlockState movementBlockState = this.level().getBlockStateIfLoaded(this.getBlockPosBelowThatAffectsMyMovement()); // ShreddedPaper - avoid sync chunk loads from item friction checks
++                    if (movementBlockState != null) {
++                        f = movementBlockState.getBlock().getFriction() * 0.98F;
++                    }
+                 }
+ 
+                 this.setDeltaMovement(this.getDeltaMovement().multiply(f, 0.98, f));
 @@ -277,6 +_,7 @@
      }
  

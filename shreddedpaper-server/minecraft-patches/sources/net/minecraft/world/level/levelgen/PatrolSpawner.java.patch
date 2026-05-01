@@ -15,7 +15,7 @@
                      long dayCount;
                      if (level.paperConfig().entities.behavior.pillagerPatrols.start.perPlayer) {
                          dayCount = player.getStats().getValue(net.minecraft.stats.Stats.CUSTOM.get(net.minecraft.stats.Stats.PLAY_TIME)) / 24000L; // PLAY_TIME is counting in ticks
-@@ -93,6 +_,7 @@
+@@ -93,13 +_,17 @@
                              }
                          }
                      }
@@ -23,3 +23,14 @@
                  }
              }
          }
+     }
+ 
+     private boolean spawnPatrolMember(ServerLevel level, BlockPos pos, RandomSource random, boolean leader) {
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during patrol spawn probes
++        if (blockState == null) {
++            return false;
++        }
+         if (!NaturalSpawner.isValidEmptySpawnBlock(level, pos, blockState, blockState.getFluidState(), EntityType.PILLAGER)) {
+             return false;
+         } else if (!PatrollingMonster.checkPatrollingMonsterSpawnRules(EntityType.PILLAGER, level, EntitySpawnReason.PATROL, pos, random)) {

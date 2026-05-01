@@ -1,0 +1,29 @@
+--- a/net/minecraft/world/entity/ai/behavior/ValidateNearbyPoi.java
++++ b/net/minecraft/world/entity/ai/behavior/ValidateNearbyPoi.java
+@@ -2,6 +_,7 @@
+ 
+ import java.util.List;
+ import java.util.function.Predicate;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.GlobalPos;
+ import net.minecraft.core.Holder;
+@@ -25,6 +_,7 @@
+             BlockPos blockPos = globalPos.pos();
+             if (level.dimension() == globalPos.dimension() && blockPos.closerToCenterThan(entity.position(), 16.0)) {
+                 ServerLevel level1 = level.getServer().getLevel(globalPos.dimension());
++                if (level1 != null && !TickThread.isTickThreadFor(level1, blockPos)) return false; // ShreddedPaper - don't touch POI blocks outside this owner region
+                 if (level1 == null || !level1.getPoiManager().exists(blockPos, poiValidator)) {
+                     poiPos.erase();
+                 } else if (bedIsOccupied(level1, blockPos, entity)) {
+@@ -43,8 +_,8 @@
+     }
+ 
+     private static boolean bedIsOccupied(ServerLevel level, BlockPos pos, LivingEntity entity) {
+-        BlockState blockState = level.getBlockState(pos);
+-        return blockState.is(BlockTags.BEDS) && blockState.getValue(BedBlock.OCCUPIED) && !entity.isSleeping();
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads while validating POIs
++        return blockState != null && blockState.is(BlockTags.BEDS) && blockState.getValue(BedBlock.OCCUPIED) && !entity.isSleeping();
+     }
+ 
+     private static boolean bedIsOccupiedByVillager(ServerLevel level, BlockPos pos) {

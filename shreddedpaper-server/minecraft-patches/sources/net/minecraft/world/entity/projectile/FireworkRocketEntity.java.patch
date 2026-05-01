@@ -7,6 +7,14 @@
  import it.unimi.dsi.fastutil.doubles.DoubleDoubleImmutablePair;
  import java.util.List;
  import java.util.OptionalInt;
+@@ -25,6 +_,7 @@
+ import net.minecraft.world.item.component.Fireworks;
+ import net.minecraft.world.level.ClipContext;
+ import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
 @@ -137,6 +_,13 @@
              }
  
@@ -41,3 +49,15 @@
              hitResultOnMoveVector = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
              this.move(MoverType.SELF, handHoldingItemAngle);
              this.applyEffectsFromBlocks();
+@@ -233,7 +_,10 @@
+     @Override
+     protected void onHitBlock(BlockHitResult result) {
+         BlockPos blockPos = new BlockPos(result.getBlockPos());
+-        this.level().getBlockState(blockPos).entityInside(this.level(), blockPos, this, InsideBlockEffectApplier.NOOP, true);
++        BlockState blockState = this.level().getBlockStateIfLoaded(blockPos);
++        if (blockState != null) {
++            blockState.entityInside(this.level(), blockPos, this, InsideBlockEffectApplier.NOOP, true);
++        }
+         if (this.level() instanceof ServerLevel serverLevel && this.hasExplosion()) {
+             // Paper start - Call FireworkExplodeEvent
+             if (org.bukkit.craftbukkit.event.CraftEventFactory.callFireworkExplodeEvent(this)) {

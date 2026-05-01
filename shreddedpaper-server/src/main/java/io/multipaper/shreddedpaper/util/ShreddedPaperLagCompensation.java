@@ -20,8 +20,57 @@ import org.jetbrains.annotations.Nullable;
 public final class ShreddedPaperLagCompensation {
 
     private static final double FULL_TICK_MS = 50.0D;
+    private static final double DEFAULT_MOVED_TOO_QUICKLY_MULTIPLIER = 10.0D;
 
     private ShreddedPaperLagCompensation() {
+    }
+
+    public static double movedTooQuicklyThreshold(final double baseThreshold, final int moveTicks, final double speed) {
+        final double multiplier = Math.max(0.0D, org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier);
+        return movedTooQuicklyThreshold(baseThreshold, moveTicks, speed, multiplier);
+    }
+
+    public static boolean isMovedTooQuickly(
+            final double baseThreshold,
+            final int moveTicks,
+            final double speed,
+            final double moveSquared,
+            final double deltaY,
+            final double velocityY,
+            final double velocitySquared
+    ) {
+        final double multiplier = Math.max(0.0D, org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier);
+        final double threshold = movedTooQuicklyThreshold(baseThreshold, moveTicks, speed, multiplier);
+        double adjustedMoveSquared = moveSquared;
+        double adjustedVelocitySquared = velocitySquared;
+
+        if (DivineConfig.FixesCategory.movedTooQuicklyMultiplierYOverride) {
+            final double yMultiplier = Math.max(0.0D, DivineConfig.FixesCategory.movedTooQuicklyMultiplierY);
+            if (Double.compare(multiplier, yMultiplier) != 0) {
+                final double deltaYSquared = deltaY * deltaY;
+                final double velocityYSquared = velocityY * velocityY;
+                if (multiplier > 0.0D && yMultiplier > 0.0D) {
+                    final double yScale = multiplier / yMultiplier;
+                    final double yScaleSquaredDelta = yScale * yScale - 1.0D;
+                    adjustedMoveSquared += deltaYSquared * yScaleSquaredDelta;
+                    adjustedVelocitySquared += velocityYSquared * yScaleSquaredDelta;
+                } else {
+                    final double horizontalMoveSquared = Math.max(0.0D, moveSquared - deltaYSquared);
+                    final double horizontalVelocitySquared = Math.max(0.0D, velocitySquared - velocityYSquared);
+                    return horizontalMoveSquared - horizontalVelocitySquared > threshold
+                            || deltaYSquared - velocityYSquared > movedTooQuicklyThreshold(baseThreshold, moveTicks, speed, yMultiplier);
+                }
+            }
+        }
+
+        return adjustedMoveSquared - adjustedVelocitySquared > threshold;
+    }
+
+    private static double movedTooQuicklyThreshold(final double baseThreshold, final int moveTicks, final double speed, final double multiplier) {
+        final double multiplierScale = multiplier / DEFAULT_MOVED_TOO_QUICKLY_MULTIPLIER;
+        final double configuredFloor = baseThreshold * multiplierScale * multiplierScale;
+        final double configuredSpeedLimit = multiplier * (double) moveTicks * speed;
+        return Math.max(configuredFloor, configuredSpeedLimit * configuredSpeedLimit);
     }
 
     public static int compensatedMoveTicks(final ServerPlayer player, final int baseTicks) {

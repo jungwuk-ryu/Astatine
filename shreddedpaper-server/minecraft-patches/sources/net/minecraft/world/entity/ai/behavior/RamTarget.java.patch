@@ -1,0 +1,30 @@
+--- a/net/minecraft/world/entity/ai/behavior/RamTarget.java
++++ b/net/minecraft/world/entity/ai/behavior/RamTarget.java
+@@ -5,6 +_,7 @@
+ import java.util.Optional;
+ import java.util.function.Function;
+ import java.util.function.ToDoubleFunction;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvent;
+@@ -24,6 +_,7 @@
+ import net.minecraft.world.entity.ai.targeting.TargetingConditions;
+ import net.minecraft.world.entity.animal.goat.Goat;
+ import net.minecraft.world.item.enchantment.EnchantmentHelper;
++import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.Vec3;
+ 
+ public class RamTarget extends Behavior<Goat> {
+@@ -117,7 +_,10 @@
+     private boolean hasRammedHornBreakingBlock(ServerLevel level, Goat owner) {
+         Vec3 vec3 = owner.getDeltaMovement().multiply(1.0, 0.0, 1.0).normalize();
+         BlockPos blockPos = BlockPos.containing(owner.position().add(vec3));
+-        return level.getBlockState(blockPos).is(BlockTags.SNAPS_GOAT_HORN) || level.getBlockState(blockPos.above()).is(BlockTags.SNAPS_GOAT_HORN);
++        if (!TickThread.isTickThreadFor(level, blockPos) || !TickThread.isTickThreadFor(level, blockPos.above())) return false; // ShreddedPaper - avoid off-owner ram block checks
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during ram block checks
++        BlockState aboveState = level.getBlockStateIfLoaded(blockPos.above()); // ShreddedPaper - avoid sync chunk loads during ram block checks
++        return (blockState != null && blockState.is(BlockTags.SNAPS_GOAT_HORN)) || (aboveState != null && aboveState.is(BlockTags.SNAPS_GOAT_HORN));
+     }
+ 
+     protected void finishRam(ServerLevel level, Goat owner) {

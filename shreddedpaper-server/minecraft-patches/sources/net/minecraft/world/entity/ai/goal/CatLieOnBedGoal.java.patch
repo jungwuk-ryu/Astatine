@@ -1,0 +1,23 @@
+--- a/net/minecraft/world/entity/ai/goal/CatLieOnBedGoal.java
++++ b/net/minecraft/world/entity/ai/goal/CatLieOnBedGoal.java
+@@ -6,6 +_,7 @@
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.animal.feline.Cat;
+ import net.minecraft.world.level.LevelReader;
++import net.minecraft.world.level.block.state.BlockState;
+ 
+ public class CatLieOnBedGoal extends MoveToBlockGoal {
+     private final Cat cat;
+@@ -52,6 +_,11 @@
+ 
+     @Override
+     protected boolean isValidTarget(LevelReader level, BlockPos pos) {
+-        return level.isEmptyBlock(pos.above()) && level.getBlockState(pos).is(BlockTags.BEDS);
++        BlockState aboveState = level.getBlockStateIfLoaded(pos.above()); // ShreddedPaper - avoid sync chunk loads from cat bed target scans
++        if (aboveState == null || !aboveState.isAir()) {
++            return false;
++        }
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from cat bed target scans
++        return blockState != null && blockState.is(BlockTags.BEDS);
+     }
+ }

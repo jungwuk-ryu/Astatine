@@ -1,0 +1,107 @@
+--- a/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java
++++ b/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java
+@@ -44,6 +_,7 @@
+ import net.minecraft.world.level.storage.ValueOutput;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.Vec3;
++import net.minecraft.world.phys.shapes.Shapes;
+ import org.jspecify.annotations.Nullable;
+ 
+ public abstract class AbstractMinecart extends VehicleEntity {
+@@ -148,8 +_,10 @@
+             EntityType.createDefaultStackConfig(level, spawnedFrom, player).accept(abstractMinecart);
+             if (abstractMinecart.getBehavior() instanceof NewMinecartBehavior newMinecartBehavior) {
+                 BlockPos currentBlockPosOrRailBelow = abstractMinecart.getCurrentBlockPosOrRailBelow();
+-                BlockState blockState = level.getBlockState(currentBlockPosOrRailBelow);
+-                newMinecartBehavior.adjustToRails(currentBlockPosOrRailBelow, blockState, true);
++                BlockState blockState = level.getBlockStateIfLoaded(currentBlockPosOrRailBelow); // ShreddedPaper - avoid sync chunk loads during minecart spawn adjustment
++                if (blockState != null) {
++                    newMinecartBehavior.adjustToRails(currentBlockPosOrRailBelow, blockState, true);
++                }
+             }
+         }
+ 
+@@ -242,7 +_,10 @@
+             for (Pose pose1 : dismountPoses) {
+                 double d1 = livingEntity.getDimensions(pose1).height();
+                 int ceil = Mth.ceil(d - mutableBlockPos.getY() + d1);
+-                double d2 = DismountHelper.findCeilingFrom(mutableBlockPos, ceil, pos -> this.level().getBlockState(pos).getCollisionShape(this.level(), pos));
++                double d2 = DismountHelper.findCeilingFrom(mutableBlockPos, ceil, pos -> {
++                    BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during minecart dismount checks
++                    return blockState == null ? Shapes.empty() : blockState.getCollisionShape(this.level(), pos);
++                });
+                 if (d + d1 <= d2) {
+                     livingEntity.setPose(pose1);
+                     break;
+@@ -255,8 +_,8 @@
+ 
+     @Override
+     protected float getBlockSpeedFactor() {
+-        BlockState blockState = this.level().getBlockState(this.blockPosition());
+-        return blockState.is(BlockTags.RAILS) ? 1.0F : super.getBlockSpeedFactor();
++        BlockState blockState = this.level().getBlockStateIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads from minecart speed checks
++        return blockState != null && blockState.is(BlockTags.RAILS) ? 1.0F : super.getBlockSpeedFactor();
+     }
+ 
+     @Override
+@@ -347,11 +_,15 @@
+         int floor2 = Mth.floor(this.getZ());
+         if (useExperimentalMovement(this.level())) {
+             double d = this.getY() - 0.1 - 1.0E-5F;
+-            if (this.level().getBlockState(BlockPos.containing(floor, d, floor2)).is(BlockTags.RAILS)) {
++            BlockState belowState = this.level().getBlockStateIfLoaded(BlockPos.containing(floor, d, floor2)); // ShreddedPaper - avoid sync chunk loads from rail position checks
++            if (belowState != null && belowState.is(BlockTags.RAILS)) {
+                 floor1 = Mth.floor(d);
+             }
+-        } else if (this.level().getBlockState(new BlockPos(floor, floor1 - 1, floor2)).is(BlockTags.RAILS)) {
++        } else {
++            BlockState belowState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1 - 1, floor2)); // ShreddedPaper - avoid sync chunk loads from rail position checks
++            if (belowState != null && belowState.is(BlockTags.RAILS)) {
+             floor1--;
++            }
+         }
+ 
+         return new BlockPos(floor, floor1, floor2);
+@@ -413,12 +_,15 @@
+     private Double lastSpeed;
+ 
+     public double getControllableSpeed() {
+-        BlockState blockState = level().getBlockState(this.blockPosition());
+-        if (!blockState.isSolid()) {
+-            blockState = level().getBlockState(this.blockPosition().relative(Direction.DOWN));
++        BlockState blockState = level().getBlockStateIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads from controllable minecart checks
++        if (blockState == null || !blockState.isSolid()) {
++            BlockState belowState = level().getBlockStateIfLoaded(this.blockPosition().relative(Direction.DOWN)); // ShreddedPaper - avoid sync chunk loads from controllable minecart checks
++            if (belowState != null) {
++                blockState = belowState;
++            }
+         }
+-        Double speed = level().purpurConfig.minecartControllableBlockSpeeds.get(blockState.getBlock());
+-        if (!blockState.isSolid()) {
++        Double speed = blockState == null ? null : level().purpurConfig.minecartControllableBlockSpeeds.get(blockState.getBlock());
++        if (blockState == null || !blockState.isSolid()) {
+             speed = lastSpeed;
+         }
+         if (speed == null) {
+@@ -524,7 +_,10 @@
+     }
+ 
+     public Vec3 getRedstoneDirection(BlockPos pos) {
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from powered rail checks
++        if (blockState == null) {
++            return Vec3.ZERO;
++        }
+         if (blockState.is(Blocks.POWERED_RAIL) && blockState.getValue(PoweredRailBlock.POWERED)) {
+             RailShape railShape = blockState.getValue(((BaseRailBlock)blockState.getBlock()).getShapeProperty());
+             if (railShape == RailShape.EAST_WEST) {
+@@ -552,7 +_,8 @@
+     }
+ 
+     public boolean isRedstoneConductor(BlockPos pos) {
+-        return this.level().getBlockState(pos).isRedstoneConductor(this.level(), pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from powered rail checks
++        return blockState != null && blockState.isRedstoneConductor(this.level(), pos);
+     }
+ 
+     protected Vec3 applyNaturalSlowdown(Vec3 speed) {

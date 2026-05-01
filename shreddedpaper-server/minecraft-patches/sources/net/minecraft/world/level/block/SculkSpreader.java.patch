@@ -1,0 +1,59 @@
+--- a/net/minecraft/world/level/block/SculkSpreader.java
++++ b/net/minecraft/world/level/block/SculkSpreader.java
+@@ -261,11 +_,19 @@
+                 if (this.updateDelay > 0) {
+                     this.updateDelay--;
+                 } else {
+-                    BlockState blockState = level.getBlockState(this.pos);
++                    BlockState blockState = level.getBlockStateIfLoaded(this.pos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                        this.charge = 0;
++                        return;
++                    }
+                     SculkBehaviour blockBehaviour = getBlockBehaviour(blockState);
+                     if (shouldConvertBlocks && blockBehaviour.attemptSpreadVein(level, this.pos, blockState, this.facings, spreader.isWorldGeneration())) {
+                         if (blockBehaviour.canChangeBlockStateOnSpread()) {
+-                            blockState = level.getBlockState(this.pos);
++                            blockState = level.getBlockStateIfLoaded(this.pos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                                this.charge = 0;
++                                return;
++                            }
+                             blockBehaviour = getBlockBehaviour(blockState);
+                         }
+ 
+@@ -285,7 +_,11 @@
+                                 return;
+                             }
+ 
+-                            blockState = level.getBlockState(validMovementPos);
++                            blockState = level.getBlockStateIfLoaded(validMovementPos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                                this.charge = 0;
++                                return;
++                            }
+                         }
+ 
+                         if (blockState.getBlock() instanceof SculkBehaviour) {
+@@ -319,7 +_,10 @@
+ 
+             for (Vec3i vec3i : getRandomizedNonCornerNeighbourOffsets(random)) {
+                 mutableBlockPos1.setWithOffset(pos, vec3i);
+-                BlockState blockState = level.getBlockState(mutableBlockPos1);
++                BlockState blockState = level.getBlockStateIfLoaded(mutableBlockPos1); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    continue;
++                }
+                 if (blockState.getBlock() instanceof SculkBehaviour && isMovementUnobstructed(level, pos, mutableBlockPos1)) {
+                     mutableBlockPos.set(mutableBlockPos1);
+                     if (SculkVeinBlock.hasSubstrateAccess(level, blockState, mutableBlockPos1)) {
+@@ -357,7 +_,8 @@
+ 
+         private static boolean isUnobstructed(LevelAccessor level, BlockPos pos, Direction direction) {
+             BlockPos blockPos = pos.relative(direction);
+-            return !level.getBlockState(blockPos).isFaceSturdy(level, blockPos, direction.getOpposite());
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++            return blockState != null && !blockState.isFaceSturdy(level, blockPos, direction.getOpposite()); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+         }
+     }
+ }

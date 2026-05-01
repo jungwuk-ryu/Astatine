@@ -1,0 +1,44 @@
+--- a/net/minecraft/world/entity/monster/Ghast.java
++++ b/net/minecraft/world/entity/monster/Ghast.java
+@@ -352,7 +_,9 @@
+         }
+ 
+         private boolean blockTraversalPossible(BlockGetter level, @Nullable Vec3 from, @Nullable Vec3 to, BlockPos pos, boolean isInLava, boolean isInWater) {
+-            BlockState blockState = level.getBlockState(pos);
++            if (level instanceof ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, pos)) return false; // ShreddedPaper - avoid off-owner ghast path probes
++            BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during ghast path probes
++            if (blockState == null) return false;
+             if (blockState.isAir()) {
+                 return true;
+             } else {
+@@ -365,7 +_,8 @@
+                 } else if (blockState.is(BlockTags.HAPPY_GHAST_AVOIDS)) {
+                     return false;
+                 } else {
+-                    FluidState fluidState = level.getFluidState(pos);
++                    FluidState fluidState = level.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during ghast path probes
++                    if (fluidState == null) return false;
+                     if (!fluidState.isEmpty() && (!flag || this.ghast.collidedWithFluid(fluidState, pos, from, to))) {
+                         if (fluidState.is(FluidTags.WATER)) {
+                             return isInLava;
+@@ -519,13 +_,18 @@
+                 return true;
+             } else {
+                 BlockPos blockPos = BlockPos.containing(pos);
+-                if (!level.getBlockState(blockPos).isAir()) {
++                if (level instanceof ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos)) return false; // ShreddedPaper - avoid off-owner ghast target probes
++                BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during ghast target probes
++                if (blockState == null || !blockState.isAir()) {
+                     return false;
+                 } else {
+                     for (Direction direction : Direction.values()) {
+                         for (int i = 1; i < distanceToBlocks; i++) {
+                             BlockPos blockPos1 = blockPos.relative(direction, i);
+-                            if (!level.getBlockState(blockPos1).isAir()) {
++                            if (level instanceof ServerLevel serverLevel && !ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, blockPos1)) return false; // ShreddedPaper - avoid off-owner ghast target probes
++                            BlockState blockState1 = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during ghast target probes
++                            if (blockState1 == null) return false;
++                            if (!blockState1.isAir()) {
+                                 return true;
+                             }
+                         }

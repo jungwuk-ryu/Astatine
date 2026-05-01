@@ -1,0 +1,67 @@
+--- a/net/minecraft/world/entity/ai/behavior/TryFindLandNearWater.java
++++ b/net/minecraft/world/entity/ai/behavior/TryFindLandNearWater.java
+@@ -2,12 +_,15 @@
+ 
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.behavior.declarative.BehaviorBuilder;
+ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.ai.memory.WalkTarget;
+ import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import org.apache.commons.lang3.mutable.MutableLong;
+ 
+@@ -23,7 +_,8 @@
+                 .apply(
+                     instance,
+                     (attackTarget, walkTarget, lookTarget) -> (level, mob, gameTime) -> {
+-                        if (level.getFluidState(mob.blockPosition()).is(FluidTags.WATER)) {
++                        FluidState currentFluid = level.getFluidIfLoaded(mob.blockPosition()); // ShreddedPaper - avoid sync chunk loads during land-near-water searches
++                        if (currentFluid != null && currentFluid.is(FluidTags.WATER)) {
+                             return false;
+                         } else if (gameTime < mutableLong.longValue()) {
+                             mutableLong.setValue(gameTime + 40L);
+@@ -35,18 +_,26 @@
+ 
+                             label45:
+                             for (BlockPos blockPos1 : BlockPos.withinManhattan(blockPos, range, range, range)) {
+-                                if ((blockPos1.getX() != blockPos.getX() || blockPos1.getZ() != blockPos.getZ())
+-                                    && level.getBlockState(blockPos1).getCollisionShape(level, blockPos1, collisionContext).isEmpty()
+-                                    && !level.getBlockState(mutableBlockPos.setWithOffset(blockPos1, Direction.DOWN))
+-                                        .getCollisionShape(level, blockPos1, collisionContext)
+-                                        .isEmpty()) {
+-                                    for (Direction direction : Direction.Plane.HORIZONTAL) {
+-                                        mutableBlockPos.setWithOffset(blockPos1, direction);
+-                                        if (level.getBlockState(mutableBlockPos).isAir()
+-                                            && level.getBlockState(mutableBlockPos.move(Direction.DOWN)).is(Blocks.WATER)) {
+-                                            lookTarget.set(new BlockPosTracker(blockPos1));
+-                                            walkTarget.set(new WalkTarget(new BlockPosTracker(blockPos1), speedModifier, 0));
+-                                            break label45;
++                                if (blockPos1.getX() != blockPos.getX() || blockPos1.getZ() != blockPos.getZ()) {
++                                    mutableBlockPos.setWithOffset(blockPos1, Direction.DOWN);
++                                    if (!TickThread.isTickThreadFor(level, blockPos1) || !TickThread.isTickThreadFor(level, mutableBlockPos)) continue; // ShreddedPaper - avoid off-owner land-near-water searches
++                                    BlockState blockState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during land-near-water searches
++                                    BlockState belowState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during land-near-water searches
++                                    if (blockState == null || belowState == null) continue; // ShreddedPaper - loaded-only land-near-water searches
++                                    if (blockState.getCollisionShape(level, blockPos1, collisionContext).isEmpty()
++                                        && !belowState.getCollisionShape(level, blockPos1, collisionContext).isEmpty()) {
++                                        for (Direction direction : Direction.Plane.HORIZONTAL) {
++                                            mutableBlockPos.setWithOffset(blockPos1, direction);
++                                            if (!TickThread.isTickThreadFor(level, mutableBlockPos)) continue; // ShreddedPaper - avoid off-owner land-near-water searches
++                                            BlockState sideState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during land-near-water searches
++                                            mutableBlockPos.move(Direction.DOWN);
++                                            if (!TickThread.isTickThreadFor(level, mutableBlockPos)) continue; // ShreddedPaper - avoid off-owner land-near-water searches
++                                            BlockState sideBelowState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid sync chunk loads during land-near-water searches
++                                            if (sideState != null && sideBelowState != null && sideState.isAir() && sideBelowState.is(Blocks.WATER)) {
++                                                lookTarget.set(new BlockPosTracker(blockPos1));
++                                                walkTarget.set(new WalkTarget(new BlockPosTracker(blockPos1), speedModifier, 0));
++                                                break label45;
++                                            }
+                                         }
+                                     }
+                                 }

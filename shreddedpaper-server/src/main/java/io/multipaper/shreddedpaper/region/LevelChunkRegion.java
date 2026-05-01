@@ -33,6 +33,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -50,7 +51,7 @@ public class LevelChunkRegion {
     private final IteratorSafeOrderedReferenceSet<Entity> tickingEntities = new IteratorSafeOrderedReferenceSet<>(); // Use IteratorSafeOrderedReferenceSet to maintain entity tick order
     private final Set<Entity> trackedEntities = new ObjectLinkedOpenHashSet<>();
     private final RegionRuntimeState runtimeState;
-    private final PrioritisedTaskQueue internalTasks = new PrioritisedTaskQueue(); // Read-only tasks
+    private final PrioritisedTaskQueue internalTasks; // Read-only tasks
     private final ObjectLinkedOpenHashSet<ServerPlayer> players = new ObjectLinkedOpenHashSet<>();
     public final LongLinkedOpenHashSet unloadQueue = new LongLinkedOpenHashSet();
     public final List<TickingBlockEntity> tickingBlockEntities = new ReferenceArrayList<>();
@@ -77,6 +78,7 @@ public class LevelChunkRegion {
         this.level = level;
         this.owner = owner;
         this.regionPos = owner.primaryCell();
+        this.internalTasks = new PrioritisedTaskQueue(new AtomicLong(), 0L, ignored -> this.owner.armScheduler());
         this.runtimeState = RegionRuntimeState.getOrCreate(level, owner, creationReason);
         this.runtimeState.attach(this);
 
@@ -247,6 +249,10 @@ public class LevelChunkRegion {
         }
     }
 
+    public synchronized boolean addPlayerIfAbsent(ServerPlayer player) {
+        return this.players.add(player);
+    }
+
     public synchronized void removePlayer(ServerPlayer player) {
         if (!this.players.remove(player)) {
             throw new IllegalStateException("Tried to remove a player that wasn't in the region: " + player.getUUID());
@@ -255,6 +261,10 @@ public class LevelChunkRegion {
 
     public synchronized boolean removePlayerIfPresent(ServerPlayer player) {
         return this.players.remove(player);
+    }
+
+    public synchronized boolean containsPlayer(ServerPlayer player) {
+        return this.players.contains(player);
     }
 
     public synchronized List<ServerPlayer> getPlayers() {

@@ -1,0 +1,21 @@
+--- a/net/minecraft/world/entity/ai/sensing/PiglinSpecificSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/PiglinSpecificSensor.java
+@@ -6,6 +_,7 @@
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.Set;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.BlockTags;
+@@ -120,7 +_,9 @@
+     }
+ 
+     private static boolean isValidRepellent(ServerLevel level, BlockPos pos) {
+-        BlockState blockState = level.getBlockState(pos);
++        if (!TickThread.isTickThreadFor(level, pos)) return false; // ShreddedPaper - avoid off-owner repellent scans
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during repellent scans
++        if (blockState == null) return false;
+         boolean isPiglinRepellents = blockState.is(BlockTags.PIGLIN_REPELLENTS);
+         return isPiglinRepellents && blockState.is(Blocks.SOUL_CAMPFIRE) ? CampfireBlock.isLitCampfire(blockState) : isPiglinRepellents;
+     }

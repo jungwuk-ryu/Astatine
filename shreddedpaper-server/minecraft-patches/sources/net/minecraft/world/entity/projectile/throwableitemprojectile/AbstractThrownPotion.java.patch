@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/entity/projectile/throwableitemprojectile/AbstractThrownPotion.java
++++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/AbstractThrownPotion.java
+@@ -144,7 +_,10 @@
+     protected abstract boolean onHitAsPotion(ServerLevel level, ItemStack stack, HitResult hitResult); // Paper - Fix potions splash events & More Projectile API
+ 
+     private void dowseFire(BlockPos pos) {
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos);
++        if (blockState == null) {
++            return;
++        }
+         if (blockState.is(BlockTags.FIRE)) {
+             if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(this, pos, blockState.getFluidState().createLegacyBlock())) { // Paper - fix wrong block state
+             this.level().destroyBlock(pos, false, this);

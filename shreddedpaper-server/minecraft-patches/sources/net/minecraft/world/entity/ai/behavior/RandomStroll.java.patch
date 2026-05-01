@@ -1,0 +1,34 @@
+--- a/net/minecraft/world/entity/ai/behavior/RandomStroll.java
++++ b/net/minecraft/world/entity/ai/behavior/RandomStroll.java
+@@ -3,7 +_,9 @@
+ import java.util.Optional;
+ import java.util.function.Function;
+ import java.util.function.Predicate;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.behavior.declarative.BehaviorBuilder;
+@@ -12,6 +_,7 @@
+ import net.minecraft.world.entity.ai.util.AirAndWaterRandomPos;
+ import net.minecraft.world.entity.ai.util.GoalUtils;
+ import net.minecraft.world.entity.ai.util.LandRandomPos;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.Vec3;
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -66,7 +_,12 @@
+             }
+ 
+             boolean flag = GoalUtils.mobRestricted(mob, ints[0]);
+-            if (vec31 == null || mob.level().getFluidState(BlockPos.containing(vec31)).isEmpty() || GoalUtils.isRestricted(flag, mob, vec31)) {
++            BlockPos targetPos = vec31 == null ? null : BlockPos.containing(vec31);
++            FluidState fluidState = null;
++            if (targetPos != null && (!(mob.level() instanceof ServerLevel serverLevel) || TickThread.isTickThreadFor(serverLevel, targetPos))) { // ShreddedPaper - avoid off-owner random swim strolls
++                fluidState = mob.level().getFluidIfLoaded(targetPos); // ShreddedPaper - avoid sync chunk loads during random swim strolls
++            }
++            if (vec31 == null || fluidState == null || fluidState.isEmpty() || GoalUtils.isRestricted(flag, mob, vec31)) {
+                 return vec3;
+             }
+ 

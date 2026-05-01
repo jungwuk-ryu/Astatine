@@ -574,6 +574,8 @@ public final class DivineConfig {
     public static final class FixesCategory {
         public static boolean ignoreMovedTooQuicklyWhenLagging = true;
         public static boolean ignoreMovedWronglyWhenLagging = true;
+        public static boolean movedTooQuicklyMultiplierYOverride = true;
+        public static double movedTooQuicklyMultiplierY = 10.0D;
         public static boolean alwaysAllowWeirdMovement = false;
 
         private FixesCategory() {
@@ -593,12 +595,18 @@ public final class DivineConfig {
 
             ignoreMovedTooQuicklyWhenLagging = lagCompensation.ignoreMovedTooQuicklyWhenLagging;
             ignoreMovedWronglyWhenLagging = lagCompensation.ignoreMovedWronglyWhenLagging;
+            movedTooQuicklyMultiplierYOverride = lagCompensation.movedTooQuicklyMultiplierYOverride;
+            movedTooQuicklyMultiplierY = Math.max(0.0D, lagCompensation.movedTooQuicklyMultiplierY);
             alwaysAllowWeirdMovement = lagCompensation.alwaysAllowWeirdMovement;
+
+            lagCompensation.movedTooQuicklyMultiplierY = movedTooQuicklyMultiplierY;
         }
 
         private static void applyDefaults() {
             ignoreMovedTooQuicklyWhenLagging = true;
             ignoreMovedWronglyWhenLagging = true;
+            movedTooQuicklyMultiplierYOverride = true;
+            movedTooQuicklyMultiplierY = 10.0D;
             alwaysAllowWeirdMovement = false;
         }
     }

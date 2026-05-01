@@ -41,6 +41,14 @@
      private int tickCount;
      private int ackBlockChangesUpTo = -1;
      private final TickThrottler chatSpamThrottler = new TickThrottler(20, 200);
+@@ -291,6 +_,7 @@
+     private int aboveGroundVehicleTickCount;
+     private int receivedMovePacketCount;
+     private int knownMovePacketCount;
++    private long shreddedpaper$moveHandoffSequence; // ShreddedPaper - discard stale cross-region movement handoffs
+     private boolean receivedMovementThisTick;
+     // CraftBukkit start - add fields
+     private int lastTick = MinecraftServer.currentTick;
 @@ -369,7 +_,7 @@
          }
  
@@ -64,38 +72,273 @@
          this.resetPosition();
          this.player.xo = this.player.getX();
          this.player.yo = this.player.getY();
-@@ -627,6 +_,22 @@
-                     return;
-                 }
-                 // Paper end - Prevent moving into unloaded chunks
-+                // ShreddedPaper start - Check we own the destination location
-+                final Vec3 vehicleMovement = new Vec3(toX, toY, toZ).subtract(rootVehicle.position()); // ShreddedPaper - own full swept collision area
-+                final Vec3 passengerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position()); // ShreddedPaper - own full swept collision area
-+                if (!ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(rootVehicle.getBoundingBox().expandTowards(vehicleMovement)))
-+                    || !ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(this.player.getBoundingBox().expandTowards(passengerMovement)))) {
+@@ -576,6 +_,35 @@
+                 double d = clampHorizontal(packet.position().x()); final double toX = d; // Paper - OBFHELPER
+                 double d1 = clampVertical(packet.position().y()); final double toY = d1; // Paper - OBFHELPER
+                 double d2 = clampHorizontal(packet.position().z()); final double toZ = d2; // Paper - OBFHELPER
++                // ShreddedPaper start - process cross-region movement on every touched owner
++                final Vec3 vehicleMovement = new Vec3(toX, toY, toZ).subtract(rootVehicle.position());
++                final Vec3 passengerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position());
++                final BoundingBox movementOwnershipBox = shreddedpaper$movementOwnershipBox(
++                    rootVehicle.getBoundingBox().expandTowards(vehicleMovement),
++                    this.player.getBoundingBox().expandTowards(passengerMovement)
++                );
++                if (!shreddedpaper$isReasonableMovementOwnershipBox(movementOwnershipBox)) {
 +                    this.connection.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
 +                    return;
 +                }
-+                if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
-+                    && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
-+                    && (!serverLevel.areChunksLoadedForMove(this.player.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(this.player.position())))
-+                        || !serverLevel.areChunksLoadedForMove(rootVehicle.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(rootVehicle.position()))))) {
-+                    this.connection.send(ClientboundMoveVehiclePacket.fromEntity(rootVehicle));
++                if (!ShreddedPaper.isSync(serverLevel, movementOwnershipBox)) {
++                    final int expectedMovePacketCount = this.receivedMovePacketCount;
++                    final long expectedMoveHandoffSequence = ++this.shreddedpaper$moveHandoffSequence;
++                    final ServerLevel expectedLevel = serverLevel;
++                    final ServerPlayer expectedPlayer = this.player;
++                    final Entity expectedRootVehicle = rootVehicle;
++                    ShreddedPaper.ensureSync(this.player, serverLevel, movementOwnershipBox, () -> {
++                        if (!this.processedDisconnect && this.player == expectedPlayer && this.player.connection == this && this.player.level() == expectedLevel
++                            && this.player.getRootVehicle() == expectedRootVehicle && expectedRootVehicle == this.lastVehicle
++                            && !expectedRootVehicle.isRemoved() && expectedRootVehicle.getControllingPassenger() == this.player
++                            && this.receivedMovePacketCount == expectedMovePacketCount
++                            && this.shreddedpaper$moveHandoffSequence == expectedMoveHandoffSequence) {
++                            this.handleMoveVehicle(packet);
++                        }
++                    });
 +                    return;
 +                }
-+                // ShreddedPaper end - Check we own the destination location
-                 if (d7 - d6 > Math.max(100.0, Mth.square(org.spigotmc.SpigotConfig.movedTooQuicklyMultiplier * (float) i * speed)) && !this.isSingleplayerOwner()) {
-                     // CraftBukkit end
-                     LOGGER.warn("{} (vehicle of {}) moved too quickly! {},{},{}", rootVehicle.getPlainTextName(), this.player.getPlainTextName(), d3, d4, d5);
-@@ -985,7 +_,7 @@
++                // ShreddedPaper end - process cross-region movement on every touched owner
+                 float f = Mth.wrapDegrees(packet.yRot());
+                 float f1 = Mth.wrapDegrees(packet.xRot());
+                 double d3 = d - this.vehicleFirstGoodX;
+@@ -963,7 +_,11 @@
+             BaseCommandBlock baseCommandBlock = null;
+             CommandBlockEntity commandBlockEntity = null;
+             BlockPos pos = packet.getPos();
+-            BlockEntity blockEntity = this.player.level().getBlockEntity(pos);
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware command block edits
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.handleSetCommandBlock(packet))) { // ShreddedPaper - owner-aware command block edits
++                return; // ShreddedPaper - owner-aware command block edits
++            }
++            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
+             if (blockEntity instanceof CommandBlockEntity commandBlockEntity1) {
+                 commandBlockEntity = commandBlockEntity1;
+                 baseCommandBlock = commandBlockEntity1.getCommandBlock();
+@@ -973,7 +_,10 @@
+             boolean isTrackOutput = packet.isTrackOutput();
+             if (baseCommandBlock != null) {
+                 CommandBlockEntity.Mode mode = commandBlockEntity.getMode();
+-                BlockState blockState = this.player.level().getBlockState(pos);
++                BlockState blockState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during command block edits
++                if (blockState == null) {
++                    return;
++                }
+                 Direction direction = blockState.getValue(CommandBlock.FACING);
+ 
+                 BlockState blockState1 = switch (packet.getMode()) {
+@@ -983,9 +_,9 @@
+                 };
+                 BlockState blockState2 = blockState1.setValue(CommandBlock.FACING, direction).setValue(CommandBlock.CONDITIONAL, packet.isConditional());
                  if (blockState2 != blockState) {
-                     this.player.level().setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
+-                    this.player.level().setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
++                    serverLevel.setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
                      blockEntity.setBlockState(blockState2);
 -                    this.player.level().getChunkAt(pos).setBlockEntity(blockEntity);
-+                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(this.player.level(), blockEntity, RegionTaskClass.OWNER_HANDOFF);
++                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(serverLevel, blockEntity, RegionTaskClass.OWNER_HANDOFF);
                  }
  
                  baseCommandBlock.setCommand(command);
+@@ -999,17 +_,17 @@
+                     commandBlockEntity.onModeSwitch();
+                 }
+ 
+-                if (this.player.level().isCommandBlockEnabled()) {
+-                    baseCommandBlock.onUpdated(this.player.level());
++                if (serverLevel.isCommandBlockEnabled()) {
++                    baseCommandBlock.onUpdated(serverLevel);
+                 }
+ 
+                 if (!StringUtil.isNullOrEmpty(command)) {
+                     this.player
+                         .sendSystemMessage(
+-                            Component.translatable(
+-                                this.player.level().isCommandBlockEnabled() ? "advMode.setCommand.success" : "advMode.setCommand.disabled", command
+-                            )
+-                        );
++	                            Component.translatable(
++                                serverLevel.isCommandBlockEnabled() ? "advMode.setCommand.success" : "advMode.setCommand.disabled", command
++	                            )
++	                        );
+                 }
+             }
+         }
+@@ -1051,8 +_,14 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, serverLevel);
+         BlockPos blockPos = packet.pos();
+         if (this.player.isWithinBlockInteractionRange(blockPos, 1.0)) {
+-            if (serverLevel.isLoaded(blockPos)) {
+-                BlockState blockState = serverLevel.getBlockState(blockPos);
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(blockPos), () -> this.handlePickItemFromBlock(packet))) { // ShreddedPaper - owner-aware pick block
++                return; // ShreddedPaper - owner-aware pick block
++            }
++            {
++                BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during pick block
++                if (blockState == null) {
++                    return;
++                }
+                 boolean flag = this.player.hasInfiniteMaterials() && packet.includeData();
+                 ItemStack cloneItemStack = blockState.getCloneItemStack(serverLevel, blockPos, flag);
+                 if (!cloneItemStack.isEmpty()) {
+@@ -1155,8 +_,15 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.canUseGameMasterBlocks()) {
+             BlockPos pos = packet.getPos();
+-            BlockState blockState = this.player.level().getBlockState(pos);
+-            if (this.player.level().getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware structure block edits
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.handleSetStructureBlock(packet))) { // ShreddedPaper - owner-aware structure block edits
++                return; // ShreddedPaper - owner-aware structure block edits
++            }
++            BlockState blockState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during structure block edits
++            if (blockState == null) {
++                return;
++            }
++            if (serverLevel.getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
+                 structureBlockEntity.setMode(packet.getMode());
+                 structureBlockEntity.setStructureName(packet.getName());
+                 structureBlockEntity.setStructurePos(packet.getOffset());
+@@ -1181,7 +_,7 @@
+                     } else if (packet.getUpdateType() == StructureBlockEntity.UpdateType.LOAD_AREA) {
+                         if (!structureBlockEntity.isStructureLoadable()) {
+                             this.player.displayClientMessage(Component.translatable("structure_block.load_not_found", structureName), false);
+-                        } else if (structureBlockEntity.placeStructureIfSameSize(this.player.level())) {
++	                        } else if (structureBlockEntity.placeStructureIfSameSize(serverLevel)) {
+                             this.player.displayClientMessage(Component.translatable("structure_block.load_success", structureName), false);
+                         } else {
+                             this.player.displayClientMessage(Component.translatable("structure_block.load_prepare", structureName), false);
+@@ -1197,8 +_,8 @@
+                     this.player.displayClientMessage(Component.translatable("structure_block.invalid_structure_name", packet.getName()), false);
+                 }
+ 
+-                structureBlockEntity.setChanged();
+-                this.player.level().sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
++	                structureBlockEntity.setChanged();
++                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
+             }
+         }
+     }
+@@ -1208,12 +_,19 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.canUseGameMasterBlocks()) {
+             BlockPos blockPos = packet.position();
+-            BlockState blockState = this.player.level().getBlockState(blockPos);
+-            if (this.player.level().getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware test block edits
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(blockPos), () -> this.handleSetTestBlock(packet))) { // ShreddedPaper - owner-aware test block edits
++                return; // ShreddedPaper - owner-aware test block edits
++            }
++            BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during test block edits
++            if (blockState == null) {
++                return;
++            }
++            if (serverLevel.getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
+                 testBlockEntity.setMode(packet.mode());
+                 testBlockEntity.setMessage(packet.message());
+                 testBlockEntity.setChanged();
+-                this.player.level().sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
++                serverLevel.sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
+             }
+         }
+     }
+@@ -1222,7 +_,14 @@
+     public void handleTestInstanceBlockAction(ServerboundTestInstanceBlockActionPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         BlockPos blockPos = packet.pos();
+-        if (this.player.canUseGameMasterBlocks() && this.player.level().getBlockEntity(blockPos) instanceof TestInstanceBlockEntity testInstanceBlockEntity) {
++        if (this.player.canUseGameMasterBlocks()) {
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware test instance block edits
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(blockPos), () -> this.handleTestInstanceBlockAction(packet))) { // ShreddedPaper - owner-aware test instance block edits
++                return; // ShreddedPaper - owner-aware test instance block edits
++            }
++            if (!(serverLevel.getBlockEntity(blockPos) instanceof TestInstanceBlockEntity testInstanceBlockEntity)) {
++                return;
++            }
+             if (packet.action() != ServerboundTestInstanceBlockActionPacket.Action.QUERY
+                 && packet.action() != ServerboundTestInstanceBlockActionPacket.Action.INIT) {
+                 testInstanceBlockEntity.set(packet.data());
+@@ -1236,8 +_,11 @@
+                     testInstanceBlockEntity.runTest(this.player::sendSystemMessage);
+                 }
+ 
+-                BlockState blockState = this.player.level().getBlockState(blockPos);
+-                this.player.level().sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
++                BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during test instance block edits
++                if (blockState == null) {
++                    return;
++                }
++                serverLevel.sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
+             } else {
+                 Registry<GameTestInstance> registry = this.player.registryAccess().lookupOrThrow(Registries.TEST_INSTANCE);
+                 Optional<Holder.Reference<GameTestInstance>> optional = packet.data().test().flatMap(registry::get);
+@@ -1248,11 +_,11 @@
+                     component = Component.translatable("test_instance.description.no_test").withStyle(ChatFormatting.RED);
+                 }
+ 
+-                Optional<Vec3i> optional1;
++	                Optional<Vec3i> optional1;
+                 if (packet.action() == ServerboundTestInstanceBlockActionPacket.Action.QUERY) {
+                     optional1 = packet.data()
+                         .test()
+-                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(this.player.level(), (ResourceKey<GameTestInstance>)resourceKey));
++                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(serverLevel, (ResourceKey<GameTestInstance>)resourceKey));
+                 } else {
+                     optional1 = Optional.empty();
+                 }
+@@ -1267,17 +_,24 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.canUseGameMasterBlocks()) {
+             BlockPos pos = packet.getPos();
+-            BlockState blockState = this.player.level().getBlockState(pos);
+-            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware jigsaw block edits
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.handleSetJigsawBlock(packet))) { // ShreddedPaper - owner-aware jigsaw block edits
++                return; // ShreddedPaper - owner-aware jigsaw block edits
++            }
++            BlockState blockState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during jigsaw block edits
++            if (blockState == null) {
++                return;
++            }
++            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
+                 jigsawBlockEntity.setName(packet.getName());
+                 jigsawBlockEntity.setTarget(packet.getTarget());
+                 jigsawBlockEntity.setPool(ResourceKey.create(Registries.TEMPLATE_POOL, packet.getPool()));
+                 jigsawBlockEntity.setFinalState(packet.getFinalState());
+                 jigsawBlockEntity.setJoint(packet.getJoint());
+                 jigsawBlockEntity.setPlacementPriority(packet.getPlacementPriority());
+-                jigsawBlockEntity.setSelectionPriority(packet.getSelectionPriority());
+-                jigsawBlockEntity.setChanged();
+-                this.player.level().sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
++	                jigsawBlockEntity.setSelectionPriority(packet.getSelectionPriority());
++	                jigsawBlockEntity.setChanged();
++                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
+             }
+         }
+     }
+@@ -1287,8 +_,15 @@
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.canUseGameMasterBlocks()) {
+             BlockPos pos = packet.getPos();
+-            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
+-                jigsawBlockEntity.generate(this.player.level(), packet.levels(), packet.keepJigsaws());
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware jigsaw generation
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.handleJigsawGenerate(packet))) { // ShreddedPaper - owner-aware jigsaw generation
++                return; // ShreddedPaper - owner-aware jigsaw generation
++            }
++            if (serverLevel.getBlockStateIfLoaded(pos) == null) {
++                return;
++            }
++            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
++                jigsawBlockEntity.generate(serverLevel, packet.levels(), packet.keepJigsaws());
+             }
+         }
+     }
 @@ -1380,7 +_,7 @@
              Consumer<List<FilteredText>> consumer = optional.isPresent()
                  ? texts -> this.signBook(texts.get(0), texts.subList(1, texts.size()), slot, hasSignPerm) // Purpur - Allow color codes in books
@@ -105,26 +348,54 @@
          }
      }
  
-@@ -1574,6 +_,19 @@
-                                         // Paper end - Add fail move event
-                                     }
-                                     // Paper end - Prevent moving into unloaded chunks
-+                                    // ShreddedPaper start - Check we own the destination location
-+                                    final Vec3 playerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position()); // ShreddedPaper - own full swept collision area
-+                                    if (!ShreddedPaper.isSync(serverLevel, shreddedpaper$movementOwnershipBox(this.player.getBoundingBox().expandTowards(playerMovement)))) {
-+                                        this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
-+                                        return;
+@@ -1464,7 +_,16 @@
+     public void handleBlockEntityTagQuery(ServerboundBlockEntityTagQueryPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) {
+-            BlockEntity blockEntity = this.player.level().getBlockEntity(packet.getPos());
++            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware block entity query
++            BlockPos pos = packet.getPos(); // ShreddedPaper - owner-aware block entity query
++            if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.handleBlockEntityTagQuery(packet))) { // ShreddedPaper - owner-aware block entity query
++                return; // ShreddedPaper - owner-aware block entity query
++            }
++            if (serverLevel.getBlockStateIfLoaded(pos) == null) {
++                this.send(new ClientboundTagQueryPacket(packet.getTransactionId(), null));
++                return;
++            }
++            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
+             CompoundTag compoundTag = blockEntity != null ? blockEntity.saveWithoutMetadata(this.player.registryAccess()) : null;
+             this.send(new ClientboundTagQueryPacket(packet.getTransactionId(), compoundTag));
+         }
+@@ -1504,6 +_,29 @@
+                             this.player.level().getChunkSource().move(this.player);
+                             this.allowedPlayerTicks = 20; // CraftBukkit
+                         } else {
++                            // ShreddedPaper start - process cross-region movement on every touched owner
++                            final Vec3 playerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position());
++                            final BoundingBox movementOwnershipBox = shreddedpaper$movementOwnershipBox(this.player.getBoundingBox().expandTowards(playerMovement));
++                            if (!shreddedpaper$isReasonableMovementOwnershipBox(movementOwnershipBox)) {
++                                this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
++                                return;
++                            }
++                            if (!ShreddedPaper.isSync(serverLevel, movementOwnershipBox)) {
++                                final int expectedMovePacketCount = this.receivedMovePacketCount;
++                                final long expectedMoveHandoffSequence = ++this.shreddedpaper$moveHandoffSequence;
++                                final ServerLevel expectedLevel = serverLevel;
++                                final ServerPlayer expectedPlayer = this.player;
++                                ShreddedPaper.ensureSync(this.player, serverLevel, movementOwnershipBox, () -> {
++                                    if (!this.processedDisconnect && this.player == expectedPlayer && this.player.connection == this && this.player.level() == expectedLevel
++                                        && !this.player.isRemoved() && !this.player.isPassenger()
++                                        && this.receivedMovePacketCount == expectedMovePacketCount
++                                        && this.shreddedpaper$moveHandoffSequence == expectedMoveHandoffSequence) {
++                                        this.handleMovePlayer(packet);
 +                                    }
-+                                    if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
-+                                        && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()
-+                                        && !serverLevel.areChunksLoadedForMove(this.player.getBoundingBox().expandTowards(new Vec3(toX, toY, toZ).subtract(this.player.position())))) {
-+                                        this.internalTeleport(PositionMoveRotation.of(this.player), Collections.emptySet());
-+                                        return;
-+                                    }
-+                                    // ShreddedPaper end - Check we own the destination location
- 
-                                     if (this.shouldCheckPlayerMovement(isFallFlying)) {
-                                         float f2 = isFallFlying ? 300.0F : 100.0F;
++                                });
++                                return;
++                            }
++                            // ShreddedPaper end - process cross-region movement on every touched owner
+                             // CraftBukkit - Make sure the move is valid but then reset it for plugins to modify
+                             double prevX = this.player.getX();
+                             double prevY = this.player.getY();
 @@ -2072,6 +_,9 @@
                  case START_DESTROY_BLOCK:
                  case ABORT_DESTROY_BLOCK:
@@ -275,7 +546,7 @@
                  if (!serverLevel.getWorldBorder().isWithinBounds(target.blockPosition())) {
                      return;
                  }
-@@ -3041,24 +_,65 @@
+@@ -3041,24 +_,71 @@
          ServerboundClientCommandPacket.Action action = packet.getAction();
          switch (action) {
              case PERFORM_RESPAWN:
@@ -302,10 +573,13 @@
                      this.restartClientLoadTimerAfterRespawn();
                      CriteriaTriggers.CHANGED_DIMENSION.trigger(this.player, Level.END, Level.OVERWORLD);
 +                    }; // ShreddedPaper - async respawn
++                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
++                    final ChunkPos completionChunk = completionPlayer.chunkPosition(); // ShreddedPaper - async respawn fallback owner
++                    final Runnable fallbackRespawnCompletion = () -> ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn); // ShreddedPaper - async respawn fallback owner
 +                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
 +                        finishRespawn.run(); // ShreddedPaper - async respawn
-+                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, finishRespawn)) { // ShreddedPaper - async respawn
-+                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, fallbackRespawnCompletion)) { // ShreddedPaper - async respawn
++                        fallbackRespawnCompletion.run(); // ShreddedPaper - async respawn
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  } else {
@@ -334,10 +608,13 @@
                          this.player.level().getGameRules().set(GameRules.SPECTATORS_GENERATE_CHUNKS, false, this.player.level()); // CraftBukkit - per-world
                      }
 +                    }; // ShreddedPaper - async respawn
++                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
++                    final ChunkPos completionChunk = completionPlayer.chunkPosition(); // ShreddedPaper - async respawn fallback owner
++                    final Runnable fallbackRespawnCompletion = () -> ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn); // ShreddedPaper - async respawn fallback owner
 +                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
 +                        finishRespawn.run(); // ShreddedPaper - async respawn
-+                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, finishRespawn)) { // ShreddedPaper - async respawn
-+                        finishRespawn.run(); // ShreddedPaper - async respawn
++                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, fallbackRespawnCompletion)) { // ShreddedPaper - async respawn
++                        fallbackRespawnCompletion.run(); // ShreddedPaper - async respawn
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  }
@@ -352,7 +629,19 @@
      }
  
      private void updateSignText(ServerboundSignUpdatePacket packet, List<FilteredText> filteredText) {
-@@ -3795,6 +_,41 @@
+@@ -3595,7 +_,10 @@
+         this.player.resetLastActionTime();
+         ServerLevel serverLevel = this.player.level();
+         BlockPos pos = packet.getPos();
+-        if (serverLevel.hasChunkAt(pos)) {
++        if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.updateSignText(packet, filteredText))) { // ShreddedPaper - owner-aware sign updates
++            return; // ShreddedPaper - owner-aware sign updates
++        }
++        if (serverLevel.getBlockStateIfLoaded(pos) != null) { // ShreddedPaper - avoid sync chunk loads from sign updates
+             // Paper start - Add API for client-side signs
+             if (!new io.papermc.paper.event.packet.UncheckedSignChangeEvent(
+                 this.player.getBukkitEntity(),
+@@ -3795,6 +_,56 @@
          return !this.waitingForRespawn && this.clientLoadedTimeoutTimer <= 0;
      }
  
@@ -389,6 +678,21 @@
 +            Mth.floor(box.maxY),
 +            Mth.floor(box.maxZ)
 +        );
++    }
++
++    private static BoundingBox shreddedpaper$movementOwnershipBox(AABB first, AABB second) { // ShreddedPaper - own full swept collision area
++        return new BoundingBox(
++            Mth.floor(Math.min(first.minX, second.minX)),
++            Mth.floor(Math.min(first.minY, second.minY)),
++            Mth.floor(Math.min(first.minZ, second.minZ)),
++            Mth.floor(Math.max(first.maxX, second.maxX)),
++            Mth.floor(Math.max(first.maxY, second.maxY)),
++            Mth.floor(Math.max(first.maxZ, second.maxZ))
++        );
++    }
++
++    private static boolean shreddedpaper$isReasonableMovementOwnershipBox(BoundingBox box) { // ShreddedPaper - reject absurd move packets before multi-region handoff
++        return box.maxX() - box.minX() <= 512 && box.maxZ() - box.minZ() <= 512;
 +    }
 +
      public void tickClientLoadTimeout() {

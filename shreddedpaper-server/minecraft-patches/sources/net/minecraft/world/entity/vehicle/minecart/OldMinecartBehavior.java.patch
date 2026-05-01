@@ -1,0 +1,53 @@
+--- a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
+@@ -57,7 +_,7 @@
+         if (this.level() instanceof ServerLevel serverLevel) {
+             this.minecart.applyGravity();
+             BlockPos var11 = this.minecart.getCurrentBlockPosOrRailBelow();
+-            BlockState blockState = this.level().getBlockState(var11);
++            BlockState blockState = this.level().getBlockStateIfLoaded(var11); // ShreddedPaper - avoid sync chunk loads from minecart ticking
+             boolean isRail = BaseRailBlock.isRail(blockState);
+             this.minecart.setOnRails(isRail);
+             if (isRail) {
+@@ -103,7 +_,10 @@
+     @Override
+     public void moveAlongTrack(ServerLevel level) {
+         BlockPos currentBlockPosOrRailBelow = this.minecart.getCurrentBlockPosOrRailBelow();
+-        BlockState blockState = this.level().getBlockState(currentBlockPosOrRailBelow);
++        BlockState blockState = this.level().getBlockStateIfLoaded(currentBlockPosOrRailBelow); // ShreddedPaper - avoid sync chunk loads from minecart rail movement
++        if (blockState == null) {
++            return;
++        }
+         this.minecart.resetFallDistance();
+         double x = this.minecart.getX();
+         double y = this.minecart.getY();
+@@ -276,11 +_,12 @@
+         int floor = Mth.floor(x);
+         int floor1 = Mth.floor(y);
+         int floor2 = Mth.floor(z);
+-        if (this.level().getBlockState(new BlockPos(floor, floor1 - 1, floor2)).is(BlockTags.RAILS)) {
++        BlockState belowState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1 - 1, floor2)); // ShreddedPaper - avoid sync chunk loads from minecart rail probes
++        if (belowState != null && belowState.is(BlockTags.RAILS)) {
+             floor1--;
+         }
+ 
+-        BlockState blockState = this.level().getBlockState(new BlockPos(floor, floor1, floor2));
++        BlockState blockState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1, floor2)); // ShreddedPaper - avoid sync chunk loads from minecart rail probes
+         if (BaseRailBlock.isRail(blockState)) {
+             RailShape railShape = blockState.getValue(((BaseRailBlock)blockState.getBlock()).getShapeProperty());
+             y = floor1;
+@@ -314,11 +_,12 @@
+         int floor = Mth.floor(x);
+         int floor1 = Mth.floor(y);
+         int floor2 = Mth.floor(z);
+-        if (this.level().getBlockState(new BlockPos(floor, floor1 - 1, floor2)).is(BlockTags.RAILS)) {
++        BlockState belowState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1 - 1, floor2)); // ShreddedPaper - avoid sync chunk loads from minecart rail probes
++        if (belowState != null && belowState.is(BlockTags.RAILS)) {
+             floor1--;
+         }
+ 
+-        BlockState blockState = this.level().getBlockState(new BlockPos(floor, floor1, floor2));
++        BlockState blockState = this.level().getBlockStateIfLoaded(new BlockPos(floor, floor1, floor2)); // ShreddedPaper - avoid sync chunk loads from minecart rail probes
+         if (BaseRailBlock.isRail(blockState)) {
+             RailShape railShape = blockState.getValue(((BaseRailBlock)blockState.getBlock()).getShapeProperty());
+             Pair<Vec3i, Vec3i> pair = AbstractMinecart.exits(railShape);

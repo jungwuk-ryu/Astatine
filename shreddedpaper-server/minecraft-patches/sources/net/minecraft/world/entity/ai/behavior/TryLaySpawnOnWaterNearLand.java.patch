@@ -1,0 +1,37 @@
+--- a/net/minecraft/world/entity/ai/behavior/TryLaySpawnOnWaterNearLand.java
++++ b/net/minecraft/world/entity/ai/behavior/TryLaySpawnOnWaterNearLand.java
+@@ -2,6 +_,7 @@
+ 
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.sounds.SoundSource;
+ import net.minecraft.world.entity.LivingEntity;
+@@ -10,6 +_,7 @@
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.level.material.Fluids;
+ 
+ public class TryLaySpawnOnWaterNearLand {
+@@ -28,10 +_,15 @@
+ 
+                             for (Direction direction : Direction.Plane.HORIZONTAL) {
+                                 BlockPos blockPos1 = blockPos.relative(direction);
+-                                if (level.getBlockState(blockPos1).getCollisionShape(level, blockPos1).getFaceShape(Direction.UP).isEmpty()
+-                                    && level.getFluidState(blockPos1).is(Fluids.WATER)) {
++                                if (!TickThread.isTickThreadFor(level, blockPos1)) continue; // ShreddedPaper - avoid off-owner spawn placement scans
++                                BlockState supportState = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during spawn placement scans
++                                FluidState supportFluid = level.getFluidIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads during spawn placement scans
++                                if (supportState != null && supportFluid != null && supportState.getCollisionShape(level, blockPos1).getFaceShape(Direction.UP).isEmpty()
++                                    && supportFluid.is(Fluids.WATER)) {
+                                     BlockPos blockPos2 = blockPos1.above();
+-                                    if (level.getBlockState(blockPos2).isAir()) {
++                                    if (!TickThread.isTickThreadFor(level, blockPos2)) continue; // ShreddedPaper - avoid off-owner spawn placement
++                                    BlockState aboveState = level.getBlockStateIfLoaded(blockPos2); // ShreddedPaper - avoid sync chunk loads during spawn placement
++                                    if (aboveState != null && aboveState.isAir()) {
+                                         BlockState blockState = spawnBlock.defaultBlockState();
+                                         // CraftBukkit start
+                                         if (!org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(entity, blockPos2, blockState)) {

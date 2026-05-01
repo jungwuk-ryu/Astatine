@@ -1,0 +1,41 @@
+--- a/net/minecraft/server/level/WorldGenRegion.java
++++ b/net/minecraft/server/level/WorldGenRegion.java
+@@ -184,7 +_,20 @@
+     @Nullable
+     @Override
+     public ChunkAccess getChunkIfLoadedImmediately(int x, int z) {
+-        return this.getChunk(x, z, ChunkStatus.FULL, false);
++        // ShreddedPaper start - loaded-only worldgen chunk probes must not create crash reports
++        int chessboardDistance = this.center.getPos().getChessboardDistance(x, z);
++        if (chessboardDistance >= this.generatingStep.directDependencies().size()) {
++            return null;
++        }
++
++        ChunkStatus maximumAllowedStatus = this.generatingStep.directDependencies().get(chessboardDistance);
++        if (!ChunkStatus.FULL.isOrBefore(maximumAllowedStatus)) {
++            return null;
++        }
++
++        GenerationChunkHolder generationChunkHolder = this.cache.get(x, z);
++        return generationChunkHolder == null ? null : generationChunkHolder.getChunkIfPresentUnchecked(maximumAllowedStatus);
++        // ShreddedPaper end - loaded-only worldgen chunk probes must not create crash reports
+     }
+ 
+     @Nullable
+@@ -511,12 +_,14 @@
+ 
+     @Override
+     public boolean isStateAtPosition(BlockPos pos, Predicate<BlockState> state) {
+-        return state.test(this.getBlockState(pos));
++        BlockState blockState = this.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid crash-reporting unloaded worldgen predicate probes
++        return blockState != null && state.test(blockState);
+     }
+ 
+     @Override
+     public boolean isFluidAtPosition(BlockPos pos, Predicate<FluidState> predicate) {
+-        return predicate.test(this.getFluidState(pos));
++        FluidState fluidState = this.getFluidIfLoaded(pos); // ShreddedPaper - avoid crash-reporting unloaded worldgen predicate probes
++        return fluidState != null && predicate.test(fluidState);
+     }
+ 
+     @Override

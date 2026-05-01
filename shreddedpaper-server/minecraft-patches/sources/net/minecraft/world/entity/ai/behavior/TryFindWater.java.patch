@@ -1,0 +1,41 @@
+--- a/net/minecraft/world/entity/ai/behavior/TryFindWater.java
++++ b/net/minecraft/world/entity/ai/behavior/TryFindWater.java
+@@ -1,6 +_,7 @@
+ package net.minecraft.world.entity.ai.behavior;
+ 
+ import net.minecraft.core.BlockPos;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.behavior.declarative.BehaviorBuilder;
+@@ -8,6 +_,7 @@
+ import net.minecraft.world.entity.ai.memory.WalkTarget;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
+ import org.apache.commons.lang3.mutable.MutableLong;
+ 
+ public class TryFindWater {
+@@ -20,7 +_,8 @@
+                     instance.registered(MemoryModuleType.LOOK_TARGET)
+                 )
+                 .apply(instance, (attackTarget, walkTarget, lookTarget) -> (level, mob, gameTime) -> {
+-                    if (level.getFluidState(mob.blockPosition()).is(FluidTags.WATER)) {
++                    FluidState currentFluid = level.getFluidIfLoaded(mob.blockPosition()); // ShreddedPaper - avoid sync chunk loads during water searches
++                    if (currentFluid != null && currentFluid.is(FluidTags.WATER)) {
+                         return false;
+                     } else if (gameTime < mutableLong.longValue()) {
+                         mutableLong.setValue(gameTime + 20L + 2L);
+@@ -32,8 +_,10 @@
+ 
+                         for (BlockPos blockPos3 : BlockPos.withinManhattan(blockPos2, range, range, range)) {
+                             if (blockPos3.getX() != blockPos2.getX() || blockPos3.getZ() != blockPos2.getZ()) {
+-                                BlockState blockState = mob.level().getBlockState(blockPos3.above());
+-                                BlockState blockState1 = mob.level().getBlockState(blockPos3);
++                                if (!TickThread.isTickThreadFor(level, blockPos3) || !TickThread.isTickThreadFor(level, blockPos3.above())) continue; // ShreddedPaper - avoid off-owner water searches
++                                BlockState blockState = level.getBlockStateIfLoaded(blockPos3.above()); // ShreddedPaper - avoid sync chunk loads during water searches
++                                BlockState blockState1 = level.getBlockStateIfLoaded(blockPos3); // ShreddedPaper - avoid sync chunk loads during water searches
++                                if (blockState == null || blockState1 == null) continue;
+                                 if (blockState1.is(Blocks.WATER)) {
+                                     if (blockState.isAir()) {
+                                         blockPos = blockPos3.immutable();

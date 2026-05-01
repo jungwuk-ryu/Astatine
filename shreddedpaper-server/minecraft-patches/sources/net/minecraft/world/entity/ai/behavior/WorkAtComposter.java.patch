@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/entity/ai/behavior/WorkAtComposter.java
++++ b/net/minecraft/world/entity/ai/behavior/WorkAtComposter.java
+@@ -25,7 +_,10 @@
+         Optional<GlobalPos> memory = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE);
+         if (!memory.isEmpty()) {
+             GlobalPos globalPos = memory.get();
+-            BlockState blockState = level.getBlockState(globalPos.pos());
++            BlockState blockState = level.getBlockStateIfLoaded(globalPos.pos()); // ShreddedPaper - avoid sync chunk loads from villager workstation ticks
++            if (blockState == null) {
++                return;
++            }
+             if (blockState.is(Blocks.COMPOSTER)) {
+                 this.makeBread(level, villager);
+                 this.compostItems(level, villager, globalPos, blockState);

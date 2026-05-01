@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/level/block/SculkBehaviour.java
++++ b/net/minecraft/world/level/block/SculkBehaviour.java
+@@ -16,7 +_,7 @@
+             LevelAccessor level, BlockPos pos, BlockState state, @Nullable Collection<Direction> directions, boolean markForPostprocessing
+         ) {
+             if (directions == null) {
+-                return ((SculkVeinBlock)Blocks.SCULK_VEIN).getSameSpaceSpreader().spreadAll(level.getBlockState(pos), level, pos, markForPostprocessing) > 0L;
++                return ((SculkVeinBlock)Blocks.SCULK_VEIN).getSameSpaceSpreader().spreadAll(state, level, pos, markForPostprocessing) > 0L; // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+             } else {
+                 return !directions.isEmpty()
+                     ? (state.isAir() || state.getFluidState().is(Fluids.WATER)) && SculkVeinBlock.regrow(level, pos, state, directions)

@@ -26,9 +26,11 @@
  import java.util.Arrays;
  import java.util.Collection;
  import java.util.Collections;
-@@ -309,6 +_,7 @@
+@@ -308,7 +_,9 @@
+     private final Set<String> pluginsBlockingSleep = new java.util.HashSet<>(); // Paper - API to allow/disallow tick sleeping
      public static final long SERVER_INIT = System.nanoTime(); // Paper - Lag compensation
      public boolean lagging = false; // Purpur - Lagging threshold
++    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // ShreddedPaper - region-aware lag compensation
      protected boolean upnp = false; // Purpur - UPnP Port Forwarding
 +    public static boolean isBukkitSchedulerHearbeat = false;
      // Paper start - improve tick loop
@@ -114,13 +116,21 @@
          // Paper end - Improved watchdog support - move final shutdown items here
      }
  
+@@ -1357,6 +_,7 @@
+ 
+                 this.currentTickStart = tickStart;
+                 ++MinecraftServer.currentTick;
++                this.tpsCalculator.doTick(); // ShreddedPaper - region-aware lag compensation
+                 // Paper end - improve tick loop
+ 
+                 boolean flag = l == 0L;
 @@ -1622,7 +_,12 @@
                      this.autoSave();
                  }
  
+-                this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +                try { // ShreddedPaper start - track Bukkit scheduler heartbeat
 +                    MinecraftServer.isBukkitSchedulerHearbeat = true;
--                this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +                    this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +                } finally {
 +                    MinecraftServer.isBukkitSchedulerHearbeat = false;
@@ -141,9 +151,9 @@
      protected void tickChildren(BooleanSupplier hasTimeLeft) {
          ProfilerFiller profilerFiller = Profiler.get();
          this.getPlayerList().getPlayers().forEach(serverPlayer1 -> serverPlayer1.connection.suspendFlushing());
+-        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +        try { // ShreddedPaper start - track Bukkit scheduler heartbeat
 +            MinecraftServer.isBukkitSchedulerHearbeat = true;
--        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +            this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
 +        } finally {
 +            MinecraftServer.isBukkitSchedulerHearbeat = false;
@@ -194,14 +204,12 @@
          for (ServerLevel serverLevel : this.getAllLevels()) {
              serverLevel.hasPhysicsEvent = org.bukkit.event.block.BlockPhysicsEvent.getHandlerList().getRegisteredListeners().length > 0; // Paper - BlockPhysicsEvent
              serverLevel.hasEntityMoveEvent = io.papermc.paper.event.entity.EntityMoveEvent.getHandlerList().getRegisteredListeners().length > 0; // Paper - Add EntityMoveEvent
-@@ -1853,7 +_,9 @@
+@@ -1853,7 +_,7 @@
              profilerFiller.push("tick");
  
              try {
 -                serverLevel.tick(hasTimeLeft);
-+                futures.add(CompletableFuture.supplyAsync(() -> serverLevel.tickAsync(hasTimeLeft), serverLevel.levelThread).thenCompose(v -> v).thenRun(() -> { // ShreddedPaper - tick worlds async
-+                    serverLevel.explosionDensityCache.clear(); // Paper - Optimize explosions // ShreddedPaper - moved up from below
-+                })); // ShreddedPaper
++                futures.add(this.scheduleLevelTick(serverLevel, hasTimeLeft)); // ShreddedPaper - tick worlds async
              } catch (Throwable var7) {
                  CrashReport crashReport = CrashReport.forThrowable(var7, "Exception ticking world");
                  serverLevel.fillReportDetails(crashReport);
@@ -229,7 +237,7 @@
          profilerFiller.popPush("players");
          this.playerList.tick();
          profilerFiller.popPush("debugSubscribers");
-@@ -1885,9 +_,12 @@
+@@ -1885,14 +_,47 @@
  
          profilerFiller.popPush("send chunks");
  
@@ -245,3 +253,38 @@
          }
  
          profilerFiller.pop();
+         this.serverActivityMonitor.tick();
+     }
++
++    // ShreddedPaper start - tick worlds async
++    private CompletableFuture<Void> scheduleLevelTick(final ServerLevel serverLevel, final BooleanSupplier hasTimeLeft) {
++        final CompletableFuture<Void> result = new CompletableFuture<>();
++        serverLevel.levelThread.execute(() -> {
++            final CompletableFuture<Void> tickFuture;
++            try {
++                tickFuture = serverLevel.tickAsync(hasTimeLeft);
++            } catch (final Throwable throwable) {
++                result.completeExceptionally(throwable);
++                return;
++            }
++
++            tickFuture.whenComplete((ignored, throwable) -> {
++                if (throwable != null) {
++                    result.completeExceptionally(throwable);
++                    return;
++                }
++
++                try {
++                    serverLevel.explosionDensityCache.clear(); // Paper - Optimize explosions
++                    result.complete(null);
++                } catch (final Throwable completionThrowable) {
++                    result.completeExceptionally(completionThrowable);
++                }
++            });
++        });
++        return result;
++    }
++    // ShreddedPaper end - tick worlds async
+ 
+     // Paper start - per world respawn data - read "server global" respawn data from overworld dimension reference
+     public void updateEffectiveRespawnData() {

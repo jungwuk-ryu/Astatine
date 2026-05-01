@@ -1,0 +1,19 @@
+--- a/net/minecraft/world/entity/ai/goal/CatSitOnBlockGoal.java
++++ b/net/minecraft/world/entity/ai/goal/CatSitOnBlockGoal.java
+@@ -44,10 +_,14 @@
+ 
+     @Override
+     protected boolean isValidTarget(LevelReader level, BlockPos pos) {
+-        if (!level.isEmptyBlock(pos.above())) {
++        BlockState aboveState = level.getBlockStateIfLoaded(pos.above()); // ShreddedPaper - avoid sync chunk loads from cat sit target scans
++        if (aboveState == null || !aboveState.isAir()) {
+             return false;
+         } else {
+-            BlockState blockState = level.getBlockState(pos);
++            BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from cat sit target scans
++            if (blockState == null) {
++                return false;
++            }
+             return blockState.is(Blocks.CHEST)
+                 ? ChestBlockEntity.getOpenCount(level, pos) < 1
+                 : blockState.is(Blocks.FURNACE) && blockState.getValue(FurnaceBlock.LIT)

@@ -1,0 +1,17 @@
+--- a/src/main/java/org/spigotmc/SpigotConfig.java
++++ b/src/main/java/org/spigotmc/SpigotConfig.java
+@@ -133,0 +_,8 @@
++    private static double getDoubleWithRootFallback(String path, String rootPath, double def) {
++        if (!SpigotConfig.config.contains(path) && SpigotConfig.config.contains(rootPath)) {
++            SpigotConfig.config.set(path, SpigotConfig.config.getDouble(rootPath));
++            SpigotConfig.config.set(rootPath, null);
++        }
++
++        return SpigotConfig.getDouble(path, def);
++    }
+@@ -292,1 +_,1 @@
+-        SpigotConfig.movedWronglyThreshold = SpigotConfig.getDouble("settings.moved-wrongly-threshold", 0.0625D);
++        SpigotConfig.movedWronglyThreshold = SpigotConfig.getDoubleWithRootFallback("settings.moved-wrongly-threshold", "moved-wrongly-threshold", 0.0625D);
+@@ -297,1 +_,1 @@
+-        SpigotConfig.movedTooQuicklyMultiplier = SpigotConfig.getDouble("settings.moved-too-quickly-multiplier", 10.0D);
++        SpigotConfig.movedTooQuicklyMultiplier = SpigotConfig.getDoubleWithRootFallback("settings.moved-too-quickly-multiplier", "moved-too-quickly-multiplier", 10.0D);

@@ -20,6 +20,19 @@
                      }
                  }
  
+@@ -224,7 +_,11 @@
+ 
+     @VisibleForDebug
+     public static void spawnCategoryForPosition(MobCategory category, ServerLevel level, BlockPos pos) {
+-        spawnCategoryForPosition(category, level, level.getChunk(pos), pos, (entityType, spawnPos, chunk) -> true, (mob, chunk) -> {});
++        ChunkAccess chunk = level.getChunkIfLoadedImmediately(pos); // ShreddedPaper - do not sync-load chunks from direct spawn probes
++        if (chunk == null) {
++            return;
++        }
++        spawnCategoryForPosition(category, level, chunk, pos, (entityType, spawnPos, chunkAccess) -> true, (mob, chunkAccess) -> {});
+     }
+ 
+     public static void spawnCategoryForPosition(
 @@ -300,6 +_,9 @@
  
                                  mobForSpawn.snapTo(d, y, d1, level.random.nextFloat() * 360.0F, 0.0F);
@@ -30,3 +43,56 @@
                                      spawnGroupData = mobForSpawn.finalizeSpawn(
                                          level, level.getCurrentDifficultyAt(mobForSpawn.blockPosition()), EntitySpawnReason.NATURAL, spawnGroupData
                                      );
+@@ -439,7 +_,11 @@
+     }
+ 
+     public static boolean isInNetherFortressBounds(BlockPos pos, ServerLevel level, MobCategory category, StructureManager structureManager) {
+-        if (category == MobCategory.MONSTER && level.getBlockState(pos.below()).is(Blocks.NETHER_BRICKS)) {
++        if (category != MobCategory.MONSTER) {
++            return false;
++        }
++        BlockState belowState = level.getBlockStateIfLoaded(pos.below()); // ShreddedPaper - avoid sync chunk loads during spawn predicates
++        if (belowState != null && belowState.is(Blocks.NETHER_BRICKS)) {
+             Structure structure = structureManager.registryAccess().lookupOrThrow(Registries.STRUCTURE).getValue(BuiltinStructures.FORTRESS);
+             return structure != null && structureManager.getStructureAt(pos, structure).isValid();
+         } else {
+@@ -487,6 +_,9 @@
+ 
+                         for (int i6 = 0; !flag && i6 < 4; i6++) {
+                             BlockPos topNonCollidingPos = getTopNonCollidingPos(level, spawnerData.type(), i1, i2);
++                            if (topNonCollidingPos == null) {
++                                continue;
++                            }
+                             if (spawnerData.type().canSummon() && SpawnPlacements.isSpawnPositionOk(spawnerData.type(), level, topNonCollidingPos)) {
+                                 float width = spawnerData.type().getWidth();
+                                 double d = Mth.clamp((double)i1, (double)minBlockX + width, minBlockX + 16.0 - width);
+@@ -542,17 +_,26 @@
+         }
+     }
+ 
+-    private static BlockPos getTopNonCollidingPos(LevelReader level, EntityType<?> entityType, int x, int z) {
++    private static @Nullable BlockPos getTopNonCollidingPos(LevelReader level, EntityType<?> entityType, int x, int z) {
+         int height = level.getHeight(SpawnPlacements.getHeightmapType(entityType), x, z);
+         BlockPos.MutableBlockPos mutableBlockPos = new BlockPos.MutableBlockPos(x, height, z);
+         if (level.dimensionType().hasCeiling()) {
++            BlockState blockState;
+             do {
+                 mutableBlockPos.move(Direction.DOWN);
+-            } while (!level.getBlockState(mutableBlockPos).isAir());
++                blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid unloaded worldgen chunk probes
++                if (blockState == null) {
++                    return null;
++                }
++            } while (!blockState.isAir());
+ 
+             do {
+                 mutableBlockPos.move(Direction.DOWN);
+-            } while (level.getBlockState(mutableBlockPos).isAir() && mutableBlockPos.getY() > level.getMinY());
++                blockState = level.getBlockStateIfLoaded(mutableBlockPos); // ShreddedPaper - avoid unloaded worldgen chunk probes
++                if (blockState == null) {
++                    return null;
++                }
++            } while (blockState.isAir() && mutableBlockPos.getY() > level.getMinY());
+         }
+ 
+         return SpawnPlacements.getPlacementType(entityType).adjustSpawnPosition(level, mutableBlockPos.immutable());

@@ -1,0 +1,43 @@
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -114,6 +_,7 @@
+ import net.minecraft.world.level.block.state.pattern.BlockInWorld;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
++import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.level.storage.ValueInput;
+ import net.minecraft.world.level.storage.ValueOutput;
+ import net.minecraft.world.phys.AABB;
+@@ -1532,7 +_,8 @@
+             if (this.isSwimming()) {
+                 double d = this.getLookAngle().y;
+                 double d1 = d < -0.2 ? 0.085 : 0.06;
+-                if (d <= 0.0 || this.jumping || !this.level().getFluidState(BlockPos.containing(this.getX(), this.getY() + 1.0 - 0.1, this.getZ())).isEmpty()) {
++                FluidState swimFluidState = this.level().getFluidIfLoaded(BlockPos.containing(this.getX(), this.getY() + 1.0 - 0.1, this.getZ())); // ShreddedPaper - avoid sync chunk loads during player swimming
++                if (d <= 0.0 || this.jumping || swimFluidState == null || !swimFluidState.isEmpty()) {
+                     Vec3 deltaMovement = this.getDeltaMovement();
+                     this.setDeltaMovement(deltaMovement.add(0.0, (d - deltaMovement.y) * d1, 0.0));
+                 }
+@@ -1563,7 +_,8 @@
+     }
+ 
+     protected boolean freeAt(BlockPos pos) {
+-        return !this.level().getBlockState(pos).isSuffocating(this.level(), pos);
++        BlockState blockState = this.level().getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from player free-space probes
++        return blockState == null || !blockState.isSuffocating(this.level(), pos);
+     }
+ 
+     @Override
+@@ -1640,7 +_,11 @@
+         } else {
+             BlockPos primaryStepSoundBlockPos = this.getPrimaryStepSoundBlockPos(pos);
+             if (!pos.equals(primaryStepSoundBlockPos)) {
+-                BlockState blockState = this.level().getBlockState(primaryStepSoundBlockPos);
++                BlockState blockState = this.level().getBlockStateIfLoaded(primaryStepSoundBlockPos); // ShreddedPaper - avoid sync chunk loads from player step sounds
++                if (blockState == null) {
++                    super.playStepSound(pos, state);
++                    return;
++                }
+                 if (blockState.is(BlockTags.COMBINATION_STEP_SOUND_BLOCKS)) {
+                     this.playCombinationStepSounds(blockState, state);
+                 } else {

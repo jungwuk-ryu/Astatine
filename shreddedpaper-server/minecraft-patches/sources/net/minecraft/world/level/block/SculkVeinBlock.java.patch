@@ -1,0 +1,87 @@
+--- a/net/minecraft/world/level/block/SculkVeinBlock.java
++++ b/net/minecraft/world/level/block/SculkVeinBlock.java
+@@ -71,13 +_,20 @@
+         if (state.is(this)) {
+             for (Direction direction : DIRECTIONS) {
+                 BooleanProperty faceProperty = getFaceProperty(direction);
+-                if (state.getValue(faceProperty) && level.getBlockState(pos.relative(direction)).is(Blocks.SCULK)) {
++                BlockState adjacentState = level.getBlockStateIfLoaded(pos.relative(direction)); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (adjacentState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    continue;
++                }
++                if (state.getValue(faceProperty) && adjacentState.is(Blocks.SCULK)) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+                     state = state.setValue(faceProperty, false);
+                 }
+             }
+ 
+             if (!hasAnyFace(state)) {
+-                FluidState fluidState = level.getFluidState(pos);
++                FluidState fluidState = level.getFluidIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (fluidState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    return;
++                }
+                 state = (fluidState.isEmpty() ? Blocks.AIR : Blocks.WATER).defaultBlockState();
+             }
+ 
+@@ -98,13 +_,19 @@
+     }
+ 
+     private boolean attemptPlaceSculk(SculkSpreader spreader, LevelAccessor level, BlockPos pos, RandomSource random, BlockPos sourceBlock) { // CraftBukkit
+-        BlockState blockState = level.getBlockState(pos);
++        BlockState blockState = level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++            return false;
++        }
+         TagKey<Block> tagKey = spreader.replaceableBlocks();
+ 
+         for (Direction direction : Direction.allShuffled(random)) {
+             if (hasFace(blockState, direction)) {
+                 BlockPos blockPos = pos.relative(direction);
+-                BlockState blockState1 = level.getBlockState(blockPos);
++                BlockState blockState1 = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (blockState1 == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    continue;
++                }
+                 if (blockState1.is(tagKey)) {
+                     BlockState blockState2 = Blocks.SCULK.defaultBlockState();
+                     // CraftBukkit start - Call BlockSpreadEvent
+@@ -120,7 +_,10 @@
+                     for (Direction direction1 : DIRECTIONS) {
+                         if (direction1 != opposite) {
+                             BlockPos blockPos1 = blockPos.relative(direction1);
+-                            BlockState blockState3 = level.getBlockState(blockPos1);
++                            BlockState blockState3 = level.getBlockStateIfLoaded(blockPos1); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                            if (blockState3 == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                                continue;
++                            }
+                             if (blockState3.is(this)) {
+                                 this.onDischarged(level, blockState3, blockPos1, random);
+                             }
+@@ -140,7 +_,8 @@
+             return false;
+         } else {
+             for (Direction direction : DIRECTIONS) {
+-                if (hasFace(state, direction) && level.getBlockState(pos.relative(direction)).is(BlockTags.SCULK_REPLACEABLE)) {
++                BlockState blockState = level.getBlockStateIfLoaded(pos.relative(direction)); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                if (hasFace(state, direction) && blockState != null && blockState.is(BlockTags.SCULK_REPLACEABLE)) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+                     return true;
+                 }
+             }
+@@ -159,11 +_,15 @@
+ 
+         @Override
+         public boolean stateCanBeReplaced(BlockGetter level, BlockPos pos, BlockPos spreadPos, Direction direction, BlockState state) {
+-            BlockState blockState = level.getBlockState(spreadPos.relative(direction));
++            BlockState blockState = level.getBlockStateIfLoaded(spreadPos.relative(direction)); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                return false;
++            }
+             if (!blockState.is(Blocks.SCULK) && !blockState.is(Blocks.SCULK_CATALYST) && !blockState.is(Blocks.MOVING_PISTON)) {
+                 if (pos.distManhattan(spreadPos) == 2) {
+                     BlockPos blockPos = pos.relative(direction.getOpposite());
+-                    if (level.getBlockState(blockPos).isFaceSturdy(level, blockPos, direction)) {
++                    BlockState supportState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
++                    if (supportState == null || supportState.isFaceSturdy(level, blockPos, direction)) { // ShreddedPaper - avoid sync chunk loads from sculk spread ticks
+                         return false;
+                     }
+                 }

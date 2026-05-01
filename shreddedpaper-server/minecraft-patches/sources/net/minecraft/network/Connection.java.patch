@@ -93,7 +93,7 @@
          if (sendListener != null) {
              channelFuture = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet); // Paper - Optimize network
              channelFuture.addListener(sendListener);
-@@ -500,19 +_,25 @@
+@@ -500,18 +_,24 @@
      }
  
      // Paper start - Optimize network: Rewrite this to be safer if ran off main thread
@@ -121,7 +121,6 @@
          return false;
      }
  
-     private boolean processQueue() {
 @@ -556,7 +_,8 @@
      private static int currTick; // Paper - Buffer joins to world
      private static int tickSecond; // Purpur - Max joins per second

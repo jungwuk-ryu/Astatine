@@ -1,0 +1,147 @@
+--- a/net/minecraft/world/level/block/VineBlock.java
++++ b/net/minecraft/world/level/block/VineBlock.java
+@@ -4,6 +_,7 @@
+ import java.util.Map;
+ import java.util.Map.Entry;
+ import java.util.function.Function;
++import net.minecraft.ReportedException;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
+@@ -107,14 +_,15 @@
+                 return false;
+             } else {
+                 BooleanProperty booleanProperty = PROPERTY_BY_DIRECTION.get(direction);
+-                BlockState blockState = level.getBlockState(pos.above());
+-                return blockState.is(this) && blockState.getValue(booleanProperty);
++                BlockState blockState = getBlockStateIfLoadedOrNull(level, pos.above()); // ShreddedPaper - avoid sync-loading vine support checks
++                return blockState != null && blockState.is(this) && blockState.getValue(booleanProperty);
+             }
+         }
+     }
+ 
+     public static boolean isAcceptableNeighbour(BlockGetter level, BlockPos neighborPos, Direction attachedFace) {
+-        return MultifaceBlock.canAttachTo(level, attachedFace, neighborPos, level.getBlockState(neighborPos));
++        BlockState neighborState = getBlockStateIfLoadedOrNull(level, neighborPos); // ShreddedPaper - avoid sync-loading vine neighbours
++        return neighborState != null && MultifaceBlock.canAttachTo(level, attachedFace, neighborPos, neighborState);
+     }
+ 
+     private BlockState getUpdatedState(BlockState state, BlockGetter level, BlockPos pos) {
+@@ -131,10 +_,10 @@
+                 boolean canSupportAtFace = this.canSupportAtFace(level, pos, direction);
+                 if (!canSupportAtFace) {
+                     if (blockState == null) {
+-                        blockState = level.getBlockState(blockPos);
++                        blockState = getBlockStateIfLoadedOrNull(level, blockPos); // ShreddedPaper - avoid sync-loading vine support fallback
+                     }
+ 
+-                    canSupportAtFace = blockState.is(this) && blockState.getValue(propertyForFace);
++                    canSupportAtFace = blockState != null && blockState.is(this) && blockState.getValue(propertyForFace);
+                 }
+ 
+                 state = state.setValue(propertyForFace, canSupportAtFace);
+@@ -172,7 +_,11 @@
+                 if (random1.getAxis().isHorizontal() && !state.getValue(getPropertyForFace(random1))) {
+                     if (this.canSpread(level, pos)) {
+                         BlockPos blockPos1 = pos.relative(random1);
+-                        BlockState blockState = level.getBlockState(blockPos1);
++                        BlockState blockState = getBlockStateIfLoadedOrNull(level, blockPos1); // ShreddedPaper - avoid sync-loading vine spread target
++                        if (blockState == null) {
++                            return;
++                        }
++
+                         if (blockState.isAir()) {
+                             Direction clockWise = random1.getClockWise();
+                             Direction counterClockWise = random1.getCounterClockWise();
+@@ -188,9 +_,9 @@
+                                 org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockSpreadEvent(level, source, blockPos1, this.defaultBlockState().setValue(getPropertyForFace(counterClockWise), true), Block.UPDATE_CLIENTS);
+                             } else {
+                                 Direction opposite = random1.getOpposite();
+-                                if (value && level.isEmptyBlock(blockPos2) && isAcceptableNeighbour(level, pos.relative(clockWise), opposite)) {
++                                if (value && isEmptyBlockIfLoaded(level, blockPos2) && isAcceptableNeighbour(level, pos.relative(clockWise), opposite)) {
+                                     org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockSpreadEvent(level, source, blockPos2, this.defaultBlockState().setValue(getPropertyForFace(opposite), true), Block.UPDATE_CLIENTS);
+-                                } else if (value1 && level.isEmptyBlock(blockPos3) && isAcceptableNeighbour(level, pos.relative(counterClockWise), opposite)) {
++                                } else if (value1 && isEmptyBlockIfLoaded(level, blockPos3) && isAcceptableNeighbour(level, pos.relative(counterClockWise), opposite)) {
+                                     org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockSpreadEvent(level, source, blockPos3, this.defaultBlockState().setValue(getPropertyForFace(opposite), true), Block.UPDATE_CLIENTS);
+                                 } else if (random.nextFloat() < 0.05 && isAcceptableNeighbour(level, blockPos1.above(), Direction.UP)) {
+                                     org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockSpreadEvent(level, source, blockPos1, this.defaultBlockState().setValue(UP, true), Block.UPDATE_CLIENTS);
+@@ -208,7 +_,7 @@
+                             return;
+                         }
+ 
+-                        if (level.isEmptyBlock(blockPos)) {
++                        if (isEmptyBlockIfLoaded(level, blockPos)) {
+                             if (!this.canSpread(level, pos)) {
+                                 return;
+                             }
+@@ -231,7 +_,11 @@
+ 
+                     if (pos.getY() > level.getMinY()) {
+                         BlockPos blockPos1 = pos.below();
+-                        BlockState blockState = level.getBlockState(blockPos1);
++                        BlockState blockState = getBlockStateIfLoadedOrNull(level, blockPos1); // ShreddedPaper - avoid sync-loading downward vine spread
++                        if (blockState == null) {
++                            return;
++                        }
++
+                         if (blockState.isAir() || blockState.is(this)) {
+                             BlockState blockState2 = blockState.isAir() ? this.defaultBlockState() : blockState;
+                             BlockState blockState3 = this.copyRandomFaces(state, blockState2, random);
+@@ -262,13 +_,56 @@
+         return state.getValue(NORTH) || state.getValue(EAST) || state.getValue(SOUTH) || state.getValue(WEST);
+     }
+ 
++    private static boolean isEmptyBlockIfLoaded(BlockGetter level, BlockPos pos) {
++        BlockState state = getBlockStateIfLoadedOrNull(level, pos);
++        return state != null && state.isAir();
++    }
++
++    private static @Nullable BlockState getBlockStateIfLoadedOrNull(BlockGetter level, BlockPos pos) {
++        if (level instanceof LevelReader levelReader && !levelReader.hasChunkAt(pos)) {
++            return null;
++        }
++
++        try {
++            return level.getBlockStateIfLoaded(pos);
++        } catch (ReportedException exception) {
++            if (isWorldGenChunkUnavailable(exception)) {
++                return null;
++            }
++
++            throw exception;
++        } catch (IllegalStateException exception) {
++            if (isWorldGenChunkUnavailable(exception)) {
++                return null;
++            }
++
++            throw exception;
++        }
++    }
++
++    private static boolean isWorldGenChunkUnavailable(Throwable throwable) {
++        for (Throwable current = throwable; current != null; current = current.getCause()) {
++            String message = current.getMessage();
++            if (message != null && message.contains("Requested chunk unavailable during world generation")) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
+     private boolean canSpread(BlockGetter level, BlockPos pos) {
+         int i = 4;
+         Iterable<BlockPos> iterable = BlockPos.betweenClosed(pos.getX() - 4, pos.getY() - 1, pos.getZ() - 4, pos.getX() + 4, pos.getY() + 1, pos.getZ() + 4);
+         int i1 = 5;
+ 
+         for (BlockPos blockPos : iterable) {
+-            if (level.getBlockState(blockPos).is(this)) {
++            BlockState blockState = getBlockStateIfLoadedOrNull(level, blockPos); // ShreddedPaper - avoid sync-loading vine spread scan
++            if (blockState == null) {
++                return false;
++            }
++
++            if (blockState.is(this)) {
+                 if (--i1 <= 0) {
+                     return false;
+                 }

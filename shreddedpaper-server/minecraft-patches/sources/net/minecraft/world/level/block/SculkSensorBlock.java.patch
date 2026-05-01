@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/level/block/SculkSensorBlock.java
++++ b/net/minecraft/world/level/block/SculkSensorBlock.java
+@@ -255,7 +_,10 @@
+     public static void tryResonateVibration(@Nullable Entity entity, Level level, BlockPos pos, int frequency) {
+         for (Direction direction : Direction.values()) {
+             BlockPos blockPos = pos.relative(direction);
+-            BlockState blockState = level.getBlockState(blockPos);
++            BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from sculk sensor ticks
++            if (blockState == null) { // ShreddedPaper - avoid sync chunk loads from sculk sensor ticks
++                continue;
++            }
+             if (blockState.is(BlockTags.VIBRATION_RESONATORS)) {
+                 level.gameEvent(VibrationSystem.getResonanceEventByFrequency(frequency), blockPos, GameEvent.Context.of(entity, blockState));
+                 float f = RESONANCE_PITCH_BEND[frequency];

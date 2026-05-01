@@ -1,5 +1,7 @@
 package io.multipaper.shreddedpaper.threading;
 
+import ca.spottedleaf.moonrise.common.util.TickThread;
+import io.multipaper.shreddedpaper.ShreddedPaper;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +29,10 @@ public class ShreddedPaperEntityTicker {
                 if (true) { // Paper - rewrite chunk system
                     Entity vehicle = entity.getVehicle();
                     if (vehicle != null) {
+                        if (!TickThread.isTickThreadFor(vehicle)) {
+                            ShreddedPaper.ensureSync(entity, vehicle, () -> tickEntity(entity));
+                            return;
+                        }
                         if (!vehicle.isRemoved() && vehicle.hasPassenger(entity)) {
                             return;
                         }

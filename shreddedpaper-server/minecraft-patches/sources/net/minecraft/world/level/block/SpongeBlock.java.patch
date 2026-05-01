@@ -1,0 +1,26 @@
+--- a/net/minecraft/world/level/block/SpongeBlock.java
++++ b/net/minecraft/world/level/block/SpongeBlock.java
+@@ -64,6 +_,9 @@
+                     if (blockPos.equals(pos)) {
+                         return BlockPos.TraversalNodeStatus.ACCEPT;
+                     } else {
++                        if (!level.isLoaded(blockPos)) { // ShreddedPaper - avoid sync chunk loads during sponge neighbour updates
++                            return BlockPos.TraversalNodeStatus.SKIP;
++                        }
+                         // CraftBukkit start
+                         BlockState blockState = blockList.getBlockState(blockPos);
+                         FluidState fluidState = blockList.getFluidState(blockPos);
+@@ -112,8 +_,11 @@
+ 
+             for (org.bukkit.craftbukkit.block.CraftBlockState snapshot : snapshots) {
+                 BlockPos blockPos = snapshot.getPosition();
+-                BlockState blockState = level.getBlockState(blockPos);
+-                FluidState fluidState = level.getFluidState(blockPos);
++                BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during sponge neighbour updates
++                FluidState fluidState = level.getFluidIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during sponge neighbour updates
++                if (blockState == null || fluidState == null) { // ShreddedPaper - avoid sync chunk loads during sponge neighbour updates
++                    continue;
++                }
+ 
+                 if (!fluidState.is(FluidTags.WATER)) {
+                 } else if (blockState.getBlock() instanceof BucketPickup bucketPickup && !bucketPickup.pickupBlock(null, level, blockPos, blockState).isEmpty()) {

@@ -122,6 +122,28 @@
          this.timeoutCachedNode = Vec3i.ZERO;
          this.timeoutTimer = 0L;
          this.timeoutLimit = 0.0;
+@@ -403,7 +_,10 @@
+             for (int i = 0; i < this.path.getNodeCount(); i++) {
+                 Node node = this.path.getNode(i);
+                 Node node1 = i + 1 < this.path.getNodeCount() ? this.path.getNode(i + 1) : null;
+-                BlockState blockState = this.level.getBlockState(new BlockPos(node.x, node.y, node.z));
++                BlockState blockState = this.level.getBlockStateIfLoaded(new BlockPos(node.x, node.y, node.z)); // ShreddedPaper - avoid sync chunk loads while trimming paths
++                if (blockState == null) {
++                    continue;
++                }
+                 if (blockState.is(BlockTags.CAULDRONS)) {
+                     this.path.replaceNode(i, node.cloneAndMove(node.x, node.y + 1, node.z));
+                     if (node1 != null && node.y >= node1.y) {
+@@ -432,7 +_,8 @@
+ 
+     public boolean isStableDestination(BlockPos pos) {
+         BlockPos blockPos = pos.below();
+-        return this.level.getBlockState(blockPos).isSolidRender();
++        BlockState blockState = this.level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads from navigation stability checks
++        return blockState != null && blockState.isSolidRender();
+     }
+ 
+     public NodeEvaluator getNodeEvaluator() {
 @@ -450,7 +_,7 @@
      public boolean shouldRecomputePath(BlockPos pos) {
          if (this.hasDelayedRecomputation) {
