@@ -37,6 +37,7 @@ public class ShreddedPaperRegionLocker {
     private final ThreadLocal<Set<RegionPos>> localLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> readOnlyLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> writeLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
+    private final ThreadLocal<Set<ReadOnlyRegionLock>> activeReadLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> unmodifiableLocalLocks = ThreadLocal.withInitial(() -> Collections.unmodifiableSet(localLocks.get()));
     private final ThreadLocal<CurrentThreadWritePromotion> currentThreadWritePromotion = ThreadLocal.withInitial(CurrentThreadWritePromotion::new);
 
@@ -120,6 +121,37 @@ public class ShreddedPaperRegionLocker {
      */
     public Set<Map.Entry<RegionPos, LockedRegion>> getAllLockedRegions() {
         return Collections.unmodifiableSet(lockedRegions.entrySet());
+    }
+
+    public int releaseCurrentThreadLocks() {
+        final List<ReadOnlyRegionLock> activeLocks = new ArrayList<>(this.activeReadLocks.get());
+        int released = 0;
+        for (final ReadOnlyRegionLock lock : activeLocks) {
+            released += lock.readLocks.size();
+            lock.unlock();
+        }
+
+        // The active lock registry should cover all normal paths. Keep this as a
+        // last-resort cleanup so a worker never returns to the scheduler queue
+        // while still owning region entries.
+        final Thread current = Thread.currentThread();
+        final List<LockedRegion> leakedRegions = this.lockedRegions.entrySet().stream()
+                .filter(entry -> entry.getValue().owner() == current)
+                .map(Map.Entry::getValue)
+                .toList();
+        for (final LockedRegion lockedRegion : leakedRegions) {
+            if (this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion)) {
+                released++;
+                lockedRegion.complete();
+            }
+        }
+
+        this.localLocks.get().clear();
+        this.readOnlyLocks.get().clear();
+        this.writeLocks.get().clear();
+        this.activeReadLocks.get().clear();
+        this.currentThreadWritePromotion.get().forceClose();
+        return released;
     }
 
     public RegionLock lockRegion(RegionPos regionPos) {
@@ -450,12 +482,19 @@ public class ShreddedPaperRegionLocker {
                 this.owner = null;
             }
         }
+
+        private void forceClose() {
+            this.depth = 0;
+            this.owner = null;
+        }
     }
 
     public class ReadOnlyRegionLock implements RegionLock {
         private final List<LockedRegion> readLocks;
         private final Thread thread;
         private long globalLockStamp = 0;
+        private boolean registered;
+        private boolean unlocked;
 
         private ReadOnlyRegionLock(int expectedRegionCount) {
             this.thread = Thread.currentThread();
@@ -470,6 +509,7 @@ public class ShreddedPaperRegionLocker {
             if (globalLockStamp == 0 && (globalLockStamp = ShreddedPaperRegionLocker.this.globalLock.tryReadLock()) == 0) {
                 return false;
             }
+            this.registerActiveLock();
 
             LockedRegion lockedRegion = ShreddedPaperRegionLocker.this.lockedRegions.compute(regionPos, (k, prevValue) -> {
                 if (prevValue == null) {
@@ -500,6 +540,10 @@ public class ShreddedPaperRegionLocker {
             if (this.thread != Thread.currentThread()) {
                 throw new IllegalStateException("Cannot unlock a lock from a different thread [expected=%s,got=%s]".formatted(thread, Thread.currentThread()));
             }
+            if (this.unlocked) {
+                return;
+            }
+            this.unlocked = true;
 
             for (LockedRegion lockedRegion : this.readLocks) {
                 ShreddedPaperRegionLocker.this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion);
@@ -513,6 +557,18 @@ public class ShreddedPaperRegionLocker {
 
             if (this.globalLockStamp != 0) {
                 ShreddedPaperRegionLocker.this.globalLock.unlockRead(this.globalLockStamp);
+                this.globalLockStamp = 0;
+            }
+            if (this.registered) {
+                ShreddedPaperRegionLocker.this.activeReadLocks.get().remove(this);
+                this.registered = false;
+            }
+        }
+
+        private void registerActiveLock() {
+            if (!this.registered) {
+                ShreddedPaperRegionLocker.this.activeReadLocks.get().add(this);
+                this.registered = true;
             }
         }
 

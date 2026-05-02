@@ -190,13 +190,13 @@ public final class RegionTickScheduler {
                     continue;
                 }
                 if (!schedulerEventEnabled) {
-                    handle.runOneTick();
+                    this.runOneTickAndReleaseLeaks(handle);
                     continue;
                 }
 
                 final long scheduledStartNanos = handle.scheduledStartNanos;
                 final RegionLoadClass loadClass = handle.state.overloadController().loadClass();
-                handle.runOneTick();
+                this.runOneTickAndReleaseLeaks(handle);
                 this.commitSchedulerEvent(degradedOnly, handle, loadClass, schedulerSampleCount, scheduledStartNanos, waitStartNanos, dequeueNanos, System.nanoTime());
             } catch (final InterruptedException interrupted) {
                 if (!this.running.get()) {
@@ -205,6 +205,23 @@ public final class RegionTickScheduler {
                 }
             } catch (final Throwable throwable) {
                 LOGGER.error("Independent region scheduler worker failed", throwable);
+            }
+        }
+    }
+
+    private void runOneTickAndReleaseLeaks(final RegionHandle handle) {
+        try {
+            handle.runOneTick();
+        } finally {
+            final int released = handle.level.chunkScheduler.getRegionLocker().releaseCurrentThreadLocks();
+            if (released > 0) {
+                LOGGER.error(
+                        "Released {} leaked region lock(s) from {} after ticking {} {}",
+                        released,
+                        Thread.currentThread().getName(),
+                        handle.level.getWorld().getName(),
+                        handle.state.regionPos()
+                );
             }
         }
     }
