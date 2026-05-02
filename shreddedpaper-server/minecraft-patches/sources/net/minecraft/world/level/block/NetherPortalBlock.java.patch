@@ -10,6 +10,14 @@
  import java.util.Map;
  import java.util.Optional;
  import net.minecraft.core.BlockPos;
+@@ -15,6 +_,7 @@
+ import net.minecraft.core.particles.ParticleTypes;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.server.level.ServerLevel;
++import net.minecraft.util.Util;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.sounds.SoundSource;
+ import net.minecraft.util.BlockUtil;
 @@ -33,6 +_,7 @@
  import net.minecraft.world.level.block.state.properties.EnumProperty;
  import net.minecraft.world.level.border.WorldBorder;
@@ -126,14 +134,17 @@
 +                BlockPos blockPos = optional.get(); // ShreddedPaper - async teleportation
 +                final BoundingBox foundBox = this.portalOwnershipBox(blockPos, 21); // ShreddedPaper - async teleportation
 +                return this.loadPortalChunksAsync(level, blockPos, 21, net.minecraft.world.level.chunk.status.ChunkStatus.FULL).thenApplyAsync(ignored -> { // ShreddedPaper - async teleportation
-+                    BlockState blockState = level.getBlockState(blockPos); // ShreddedPaper - async teleportation
++                    BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - async teleportation
++                    if (blockState == null || !blockState.hasProperty(BlockStateProperties.HORIZONTAL_AXIS)) { // ShreddedPaper - async teleportation
++                        return null; // ShreddedPaper - async teleportation
++                    } // ShreddedPaper - async teleportation
 +                    BlockUtil.FoundRectangle largestRectangleAround = BlockUtil.getLargestRectangleAround( // ShreddedPaper - async teleportation
 +                        blockPos, // ShreddedPaper - async teleportation
 +                        blockState.getValue(BlockStateProperties.HORIZONTAL_AXIS), // ShreddedPaper - async teleportation
 +                        21, // ShreddedPaper - async teleportation
 +                        Direction.Axis.Y, // ShreddedPaper - async teleportation
 +                        21, // ShreddedPaper - async teleportation
-+                        blockPos1 -> level.getBlockState(blockPos1) == blockState // ShreddedPaper - async teleportation
++                        blockPos1 -> level.getBlockStateIfLoaded(blockPos1) == blockState // ShreddedPaper - async teleportation
 +                    ); // ShreddedPaper - async teleportation
 +                    TeleportTransition.PostTeleportTransition postTeleportTransition = TeleportTransition.PLAY_PORTAL_SOUND.then(entity1 -> entity1.placePortalTicket(blockPos)); // ShreddedPaper - async teleportation
 +                    return createDimensionTransition(level, largestRectangleAround, sourceAxis, relativePortalPosition, entity, postTeleportTransition); // ShreddedPaper - async teleportation
@@ -170,27 +181,40 @@
 +    } // ShreddedPaper - async teleportation
 +
 +    private CompletableFuture<Void> loadPortalChunksAsync(ServerLevel level, BlockPos center, int radius, net.minecraft.world.level.chunk.status.ChunkStatus status) { // ShreddedPaper - async teleportation
-+        final int safeRadius = Math.max(0, radius); // ShreddedPaper - async teleportation
-+        final int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() - safeRadius); // ShreddedPaper - async teleportation
-+        final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() - safeRadius); // ShreddedPaper - async teleportation
-+        final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() + safeRadius); // ShreddedPaper - async teleportation
-+        final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() + safeRadius); // ShreddedPaper - async teleportation
-+        final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
-+        for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
-+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
-+                chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, status, true)); // ShreddedPaper - async teleportation
-+            } // ShreddedPaper - async teleportation
-+        } // ShreddedPaper - async teleportation
-+
-+        return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenRun(() -> { // ShreddedPaper - async teleportation
-+            for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
-+                if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
-+                    throw new IllegalStateException("Could not load Nether portal chunk for " + center + " at status " + status); // ShreddedPaper - async teleportation
++        return CompletableFuture.supplyAsync(() -> { // ShreddedPaper - async teleportation
++            final int safeRadius = Math.max(0, radius); // ShreddedPaper - async teleportation
++            final int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() - safeRadius); // ShreddedPaper - async teleportation
++            final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() - safeRadius); // ShreddedPaper - async teleportation
++            final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() + safeRadius); // ShreddedPaper - async teleportation
++            final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() + safeRadius); // ShreddedPaper - async teleportation
++            final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
++            for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
++                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
++                    chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, status, true)); // ShreddedPaper - async teleportation
 +                } // ShreddedPaper - async teleportation
 +            } // ShreddedPaper - async teleportation
-+        }); // ShreddedPaper - async teleportation
++
++            return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenRun(() -> { // ShreddedPaper - async teleportation
++                for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
++                    if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
++                        throw new IllegalStateException("Could not load Nether portal chunk for " + center + " at status " + status); // ShreddedPaper - async teleportation
++                    } // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
++            }); // ShreddedPaper - async teleportation
++        }, Util.backgroundExecutor().forName("netherPortalChunkLoad")).thenCompose(future -> future); // ShreddedPaper - async teleportation
 +    }
 +
  
      private static TeleportTransition getDimensionTransitionFromExit(
          Entity entity, BlockPos pos, BlockUtil.FoundRectangle rectangle, ServerLevel level, TeleportTransition.PostTeleportTransition postTeleportTransition
+@@ -278,8 +_,8 @@
+         TeleportTransition.PostTeleportTransition postTeleportTransition
+     ) {
+         BlockPos blockPos = rectangle.minCorner;
+-        BlockState blockState = level.getBlockState(blockPos);
+-        Direction.Axis axis1 = blockState.getOptionalValue(BlockStateProperties.HORIZONTAL_AXIS).orElse(Direction.Axis.X);
++        BlockState blockState = level.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during async portal completion
++        Direction.Axis axis1 = blockState == null ? Direction.Axis.X : blockState.getOptionalValue(BlockStateProperties.HORIZONTAL_AXIS).orElse(Direction.Axis.X); // ShreddedPaper - avoid sync chunk loads during async portal completion
+         double d = rectangle.axis1Size;
+         double d1 = rectangle.axis2Size;
+         EntityDimensions dimensions = entity.getDimensions(entity.getPose());

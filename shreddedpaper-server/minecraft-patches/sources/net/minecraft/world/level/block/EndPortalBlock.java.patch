@@ -11,6 +11,14 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.Direction;
  import net.minecraft.core.particles.ParticleTypes;
+@@ -13,6 +_,7 @@
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.util.RandomSource;
++import net.minecraft.util.Util;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.InsideBlockEffectApplier;
 @@ -76,7 +_,7 @@
      }
  
@@ -87,35 +95,37 @@
      }
 +
 +    private static CompletableFuture<Void> createEndPlatformAsync(ServerLevel level, BlockPos platformPos, boolean dropBlocks, Entity entity) { // ShreddedPaper - async teleportation
-+        final net.minecraft.world.level.levelgen.structure.BoundingBox box = new net.minecraft.world.level.levelgen.structure.BoundingBox(platformPos.getX() - 2, platformPos.getY() - 1, platformPos.getZ() - 2, platformPos.getX() + 2, platformPos.getY() + 2, platformPos.getZ() + 2); // ShreddedPaper - async teleportation
-+        final int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(box.minX()); // ShreddedPaper - async teleportation
-+        final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(box.minZ()); // ShreddedPaper - async teleportation
-+        final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(box.maxX()); // ShreddedPaper - async teleportation
-+        final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(box.maxZ()); // ShreddedPaper - async teleportation
-+        final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
-+        for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
-+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
-+                chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true)); // ShreddedPaper - async teleportation
++        return CompletableFuture.supplyAsync(() -> { // ShreddedPaper - async teleportation
++            final net.minecraft.world.level.levelgen.structure.BoundingBox box = new net.minecraft.world.level.levelgen.structure.BoundingBox(platformPos.getX() - 2, platformPos.getY() - 1, platformPos.getZ() - 2, platformPos.getX() + 2, platformPos.getY() + 2, platformPos.getZ() + 2); // ShreddedPaper - async teleportation
++            final int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(box.minX()); // ShreddedPaper - async teleportation
++            final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(box.minZ()); // ShreddedPaper - async teleportation
++            final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(box.maxX()); // ShreddedPaper - async teleportation
++            final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(box.maxZ()); // ShreddedPaper - async teleportation
++            final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
++            for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
++                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
++                    chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true)); // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
 +            } // ShreddedPaper - async teleportation
-+        } // ShreddedPaper - async teleportation
 +
-+        return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenCompose(ignored -> { // ShreddedPaper - async teleportation
-+            for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
-+                if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
-+                    throw new IllegalStateException("Could not load End platform chunk for " + platformPos); // ShreddedPaper - async teleportation
++            return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenCompose(ignored -> { // ShreddedPaper - async teleportation
++                for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
++                    if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
++                        throw new IllegalStateException("Could not load End platform chunk for " + platformPos); // ShreddedPaper - async teleportation
++                    } // ShreddedPaper - async teleportation
 +                } // ShreddedPaper - async teleportation
-+            } // ShreddedPaper - async teleportation
-+            final CompletableFuture<Void> resultFuture = new CompletableFuture<>(); // ShreddedPaper - async teleportation
-+            ShreddedPaper.runSync(level, box, () -> { // ShreddedPaper - async teleportation
-+                try { // ShreddedPaper - async teleportation
-+                    EndPlatformFeature.createEndPlatform(level, platformPos, dropBlocks, entity); // ShreddedPaper - async teleportation
-+                    resultFuture.complete(null); // ShreddedPaper - async teleportation
-+                } catch (Throwable throwable) { // ShreddedPaper - async teleportation
-+                    resultFuture.completeExceptionally(throwable); // ShreddedPaper - async teleportation
-+                } // ShreddedPaper - async teleportation
++                final CompletableFuture<Void> resultFuture = new CompletableFuture<>(); // ShreddedPaper - async teleportation
++                ShreddedPaper.runSync(level, box, () -> { // ShreddedPaper - async teleportation
++                    try { // ShreddedPaper - async teleportation
++                        EndPlatformFeature.createEndPlatform(level, platformPos, dropBlocks, entity); // ShreddedPaper - async teleportation
++                        resultFuture.complete(null); // ShreddedPaper - async teleportation
++                    } catch (Throwable throwable) { // ShreddedPaper - async teleportation
++                        resultFuture.completeExceptionally(throwable); // ShreddedPaper - async teleportation
++                    } // ShreddedPaper - async teleportation
++                }); // ShreddedPaper - async teleportation
++                return resultFuture; // ShreddedPaper - async teleportation
 +            }); // ShreddedPaper - async teleportation
-+            return resultFuture; // ShreddedPaper - async teleportation
-+        }); // ShreddedPaper - async teleportation
++        }, Util.backgroundExecutor().forName("endPlatformChunkLoad")).thenCompose(future -> future); // ShreddedPaper - async teleportation
 +    } // ShreddedPaper - async teleportation
  
      @Override
