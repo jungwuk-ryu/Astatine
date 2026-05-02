@@ -364,9 +364,13 @@ public class LevelChunkRegion {
     }
 
     public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos) {
+        this.recordTickStats(tickStartNanos, tickDurationNanos, tickStartNanos);
+    }
+
+    public synchronized void recordTickStats(long tickStartNanos, long tickDurationNanos, long scheduledStartNanos) {
         tickDurationNanos = Math.max(0L, tickDurationNanos);
         pruneTickStats(tickStartNanos);
-        this.tickSamples.addLast(new TickSample(tickStartNanos, tickStartNanos + tickDurationNanos, tickDurationNanos, this.lastTickStatsStartNanos));
+        this.tickSamples.addLast(new TickSample(tickStartNanos, tickStartNanos + tickDurationNanos, tickDurationNanos, this.lastTickStatsStartNanos, scheduledStartNanos));
         this.lastTickStatsStartNanos = tickStartNanos;
     }
 
@@ -379,9 +383,11 @@ public class LevelChunkRegion {
         final long tickInterval = this.level.tickRateManager().nanosecondsPerTick();
         long totalTimeBetweenTicks = 0L;
         long totalTimeTicking = 0L;
+        long totalScheduleLag = 0L;
 
         for (TickSample sample : this.tickSamples) {
             totalTimeTicking += sample.durationNanos();
+            totalScheduleLag += Math.max(0L, sample.startNanos() - sample.scheduledStartNanos());
             if (sample.previousStartNanos() == NO_PREVIOUS_TICK) {
                 totalTimeBetweenTicks += Math.max(tickInterval, sample.durationNanos());
             } else {
@@ -391,7 +397,9 @@ public class LevelChunkRegion {
 
         final double tps = totalTimeBetweenTicks <= 0L ? 1.0E9D / (double) tickInterval : (double) this.tickSamples.size() / ((double) totalTimeBetweenTicks / 1.0E9D);
         final double mspt = (double) totalTimeTicking / (double) this.tickSamples.size() * 1.0E-6D;
-        return new TickStats(tps, mspt);
+        final double cadenceMs = (double) totalTimeBetweenTicks / (double) this.tickSamples.size() * 1.0E-6D;
+        final double scheduleLagMs = (double) totalScheduleLag / (double) this.tickSamples.size() * 1.0E-6D;
+        return new TickStats(tps, mspt, cadenceMs, scheduleLagMs);
     }
 
     private void pruneTickStats(long nowNanos) {
@@ -732,9 +740,9 @@ public class LevelChunkRegion {
         }
     }
 
-    private record TickSample(long startNanos, long endNanos, long durationNanos, long previousStartNanos) {
+    private record TickSample(long startNanos, long endNanos, long durationNanos, long previousStartNanos, long scheduledStartNanos) {
     }
 
-    public record TickStats(double tps, double mspt) {
+    public record TickStats(double tps, double mspt, double cadenceMs, double scheduleLagMs) {
     }
 }

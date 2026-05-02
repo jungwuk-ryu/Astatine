@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -40,13 +41,15 @@ public class LevelChunkRegionMap {
     private static final Logger LOGGER = LogUtils.getClassLogger();
     private static final int MAX_MERGED_OWNER_CELLS = 64;
     private static final int MAX_SPLITS_PER_PROBE = 1;
+    private static final int MAIN_THREAD_INTERNAL_TASK_SCAN_LIMIT = 64;
     private static final long SPLIT_COOLDOWN_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(10L);
 
     private final ServerLevel level;
     private final SimpleStampedLock regionsLock = new SimpleStampedLock();
     private final Long2ObjectOpenHashMap<RegionOwner> ownersByCell = new Long2ObjectOpenHashMap<>(2048, 0.5f);
     private final Long2ObjectOpenHashMap<RegionOwner> ownersById = new Long2ObjectOpenHashMap<>(2048, 0.5f);
-    private volatile List<LevelChunkRegion> regionsSnapshot;
+    private final AtomicInteger mainThreadInternalTaskScanCursor = new AtomicInteger();
+    private volatile List<LevelChunkRegion> regionsSnapshot = List.of();
 
     public LevelChunkRegionMap(ServerLevel level) {
         this.level = level;
@@ -528,27 +531,55 @@ public class LevelChunkRegionMap {
     }
 
     private List<LevelChunkRegion> regionsSnapshot() {
-        return regionsLock.read(() -> {
-            List<LevelChunkRegion> snapshot = this.regionsSnapshot;
-            if (snapshot != null) {
-                return snapshot;
+        return this.regionsSnapshot;
+    }
+
+    public boolean pollMainThreadInternalTask(final ShreddedPaperRegionLocker regionLocker, final boolean shutdown) {
+        final List<LevelChunkRegion> snapshot = this.regionsSnapshot();
+        final int size = snapshot.size();
+        if (size == 0) {
+            return false;
+        }
+
+        final int limit = shutdown ? size : Math.min(size, MAIN_THREAD_INTERNAL_TASK_SCAN_LIMIT);
+        final int start = Math.floorMod(this.mainThreadInternalTaskScanCursor.getAndAdd(limit), size);
+        boolean executed = false;
+        for (int offset = 0; offset < limit; offset++) {
+            final LevelChunkRegion region = snapshot.get((start + offset) % size);
+            if (shutdown) {
+                executed |= region.getInternalTaskQueue().executeTask();
+                continue;
             }
 
-            final List<LevelChunkRegion> regions = new ArrayList<>(ownersById.size());
-            for (final RegionOwner owner : this.ownersById.values()) {
-                final LevelChunkRegion region = owner.region();
-                if (region != null) {
-                    regions.add(region);
+            if (region.getInternalTaskQueue().hasNoScheduledTasks()) {
+                continue;
+            }
+
+            final RegionOwner owner = region.getOwner();
+            final ShreddedPaperRegionLocker.RegionLock lock = regionLocker.internalTryTakeExactLockNow(
+                    owner.internalSortedCellKeysSnapshot(),
+                    owner.internalSortedIsolationCellKeysSnapshot(ShreddedPaperRegionLocker.REGION_LOCK_RADIUS)
+            );
+            if (lock != null) {
+                try {
+                    executed |= region.getInternalTaskQueue().executeTask();
+                } finally {
+                    lock.unlock();
                 }
             }
-            snapshot = List.copyOf(regions);
-            this.regionsSnapshot = snapshot;
-            return snapshot;
-        });
+        }
+        return executed;
     }
 
     private void invalidateRegionsSnapshot() {
-        this.regionsSnapshot = null;
+        final List<LevelChunkRegion> regions = new ArrayList<>(ownersById.size());
+        for (final RegionOwner owner : this.ownersById.values()) {
+            final LevelChunkRegion region = owner.region();
+            if (region != null) {
+                regions.add(region);
+            }
+        }
+        this.regionsSnapshot = List.copyOf(regions);
     }
 
     public void addTickingEntity(Entity entity) {

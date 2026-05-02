@@ -130,7 +130,7 @@ public class ShreddedPaperChunkTicker {
             final ScheduledTickContext tickContext,
             final long scheduledStartNanos
     ) {
-        this._tickRegion(level, region, tickContext.timeInhabited(), tickContext.filteredSpawningCategories(), tickContext.spawnState(), budget);
+        this._tickRegion(level, region, tickContext.timeInhabited(), tickContext.filteredSpawningCategories(), tickContext.spawnState(), budget, scheduledStartNanos);
     }
 
     public static boolean isCurrentlyTickingRegion(Level level, RegionPos regionPos) {
@@ -143,6 +143,10 @@ public class ShreddedPaperChunkTicker {
     }
 
     private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState, final RegionTickBudget budget) {
+        this._tickRegion(level, region, timeInhabited, filteredSpawningCategories, spawnState, budget, System.nanoTime());
+    }
+
+    private void _tickRegion(final ServerLevel level, final LevelChunkRegion region, final long timeInhabited, final List<MobCategory> filteredSpawningCategories, final NaturalSpawner.SpawnState spawnState, final RegionTickBudget budget, final long scheduledStartNanos) {
         final long tickStartNanos = System.nanoTime();
         try {
             currentlyTickingRegion.set(region);
@@ -219,7 +223,7 @@ public class ShreddedPaperChunkTicker {
             }
         } finally {
             try {
-                region.recordTickStats(tickStartNanos, System.nanoTime() - tickStartNanos);
+                region.recordTickStats(tickStartNanos, System.nanoTime() - tickStartNanos, scheduledStartNanos);
             } finally {
                 currentlyTickingRegion.remove();
             }

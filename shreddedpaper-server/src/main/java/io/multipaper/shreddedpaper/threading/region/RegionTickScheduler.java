@@ -184,7 +184,7 @@ public final class RegionTickScheduler {
                 final long schedulerSampleCount = RegionSchedulerEvent.isEventEnabled() ? RegionSchedulerEvent.nextSampleCount() : 0L;
                 final boolean schedulerEventEnabled = RegionSchedulerEvent.shouldCommitSample(schedulerSampleCount);
                 final long waitStartNanos = schedulerEventEnabled ? System.nanoTime() : 0L;
-                final RegionHandle handle = degradedOnly ? this.degradedQueue.take() : this.takeNormalOrSteal();
+                final RegionHandle handle = degradedOnly ? this.takeDegradedOrStealNormal() : this.takeNormalOrSteal();
                 final long dequeueNanos = schedulerEventEnabled ? System.nanoTime() : 0L;
                 if (handle == null || handle.retired.get()) {
                     continue;
@@ -218,6 +218,14 @@ public final class RegionTickScheduler {
             return normal;
         }
         return this.degradedQueue.poll();
+    }
+
+    private RegionHandle takeDegradedOrStealNormal() throws InterruptedException {
+        final RegionHandle degraded = this.degradedQueue.poll(1L, TimeUnit.MILLISECONDS);
+        if (degraded != null) {
+            return degraded;
+        }
+        return this.normalQueue.poll();
     }
 
     private void commitSchedulerEvent(
@@ -260,7 +268,7 @@ public final class RegionTickScheduler {
         }
         final RegionLoadClass loadClass = handle.state.overloadController().loadClass();
         if (loadClass == RegionLoadClass.QUARANTINED) {
-            LOGGER.warn("Region {} {} is quarantined and will not be requeued", handle.level.getWorld().getName(), handle.state.regionPos());
+            this.degradedQueue.offer(handle);
             return;
         }
         if (loadClass == RegionLoadClass.DEGRADED) {
