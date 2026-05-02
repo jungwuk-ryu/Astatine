@@ -1,0 +1,348 @@
+{
+  "generatedAt": "2026-04-28T11:49:04.766Z",
+  "note": "Audited root-covered critical async ownership candidates. Release gates fail if this set changes without review.",
+  "candidates": [
+    {
+      "id": "AO-02A44A57",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerChunkCache.java",
+      "sink": "sync-load-call",
+      "evidence": "return load ? this.syncLoad(chunkX, chunkZ, toStatus) : null;"
+    },
+    {
+      "id": "AO-033ED8EA",
+      "path": "shreddedpaper-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return this.world.getChunkSource().getChunk(chunkX, chunkZ, status, true);"
+    },
+    {
+      "id": "AO-17C5F354",
+      "path": "shreddedpaper-server/paper-patches/files/src/main/java/org/bukkit/craftbukkit/CraftChunk.java.patch",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getWorld().getChunkAt(this.x, this.z); // Transient load for this tick"
+    },
+    {
+      "id": "AO-1AC006D7",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "LevelChunk chunkAt = this.getChunkAt(pos);"
+    },
+    {
+      "id": "AO-1C74A373",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerLevel.java",
+      "sink": "sync-load-call",
+      "evidence": "return this.moonrise$getChunkTaskScheduler().syncLoadNonFull(chunkX, chunkZ, status);"
+    },
+    {
+      "id": "AO-2C3D567C",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return ((LevelReader)this).getChunk(chunkX, chunkZ, status, true);"
+    },
+    {
+      "id": "AO-2ED38B4E",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return (LevelChunk) cps.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true); // Paper - avoid a method jump"
+    },
+    {
+      "id": "AO-3FBB1C28",
+      "path": "shreddedpaper-server/minecraft-patches/sources/net/minecraft/server/level/ServerChunkCache.java.patch",
+      "sink": "sync-load-call",
+      "evidence": "private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {"
+    },
+    {
+      "id": "AO-42E10F5C",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "sync-load-call",
+      "evidence": "public default ChunkAccess moonrise$syncLoadNonFull(final int chunkX, final int chunkZ, final ChunkStatus status) {"
+    },
+    {
+      "id": "AO-49146E5A",
+      "path": "shreddedpaper-server/paper-patches/files/src/main/java/org/bukkit/craftbukkit/CraftWorld.java.patch",
+      "sink": "getchunk-load-true",
+      "evidence": "net.minecraft.world.level.chunk.LevelChunk chunk = (net.minecraft.world.level.chunk.LevelChunk) this.world.getChunk(x, z, ChunkStatus.FULL, true);"
+    },
+    {
+      "id": "AO-4F9D7FB2",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/chunk/ChunkGenerator.java",
+      "sink": "sync-load-call",
+      "evidence": "ChunkAccess chunk = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemLevelReader)level).moonrise$syncLoadNonFull(chunkPos.x, chunkPos.z, ChunkStatus.STRUCTURE_STARTS); // Paper - rewrite chunk system"
+    },
+    {
+      "id": "AO-57A9E97D",
+      "path": "shreddedpaper-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java",
+      "sink": "sync-load-call",
+      "evidence": "public ChunkAccess syncLoadNonFull(final int chunkX, final int chunkZ, final ChunkStatus status) {"
+    },
+    {
+      "id": "AO-6335E178",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos).removeBlockEntity(pos);"
+    },
+    {
+      "id": "AO-6E5F28FA",
+      "path": "shreddedpaper-server/paper-patches/files/src/main/java/org/bukkit/craftbukkit/CraftWorld.java.patch",
+      "sink": "bukkit-chunk-load",
+      "evidence": "public boolean loadChunk(int x, int z, boolean generate) {"
+    },
+    {
+      "id": "AO-763556FF",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/dimension/end/EndDragonFight.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.level.getChunkAt(new BlockPos(this.origin.getX(), 128 + this.origin.getY(), this.origin.getZ()));"
+    },
+    {
+      "id": "AO-7E39FD50",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerChunkCache.java",
+      "sink": "sync-load-call",
+      "evidence": "private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {"
+    },
+    {
+      "id": "AO-966F7C6D",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return ((Level)(Object)this).getChunk(x, z, status, true);"
+    },
+    {
+      "id": "AO-969B8806",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "ChunkAccess chunk = this.getChunk(pos.getX() >> 4, pos.getZ() >> 4, ChunkStatus.FULL, true); // Paper - manually inline to reduce hops and avoid unnecessary null check to reduce total byte code size, this should never return null and if it does we will see it the next line but the real stack trace will matter in the chunk engine"
+    },
+    {
+      "id": "AO-A75EAB54",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(blockPos).addAndRegisterBlockEntity(blockEntity);"
+    },
+    {
+      "id": "AO-AAA0271E",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return this.getChunk(chunkX, chunkZ, chunkStatus, true);"
+    },
+    {
+      "id": "AO-AC0BE08E",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "return this.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);"
+    },
+    {
+      "id": "AO-AST-0DEB8C53",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos)"
+    },
+    {
+      "id": "AO-AST-0FC853DB",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "cps.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true)"
+    },
+    {
+      "id": "AO-AST-3441BEB0",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true)"
+    },
+    {
+      "id": "AO-AST-3CD22A98",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.loadChunk(chunk.getX(), chunk.getZ())"
+    },
+    {
+      "id": "AO-AST-3E491CB2",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerChunkCache.java",
+      "sink": "sync-load-call",
+      "evidence": "this.syncLoad(chunkX, chunkZ, toStatus)"
+    },
+    {
+      "id": "AO-AST-426A533D",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftChunk.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getWorld().getChunkAt(this.x, this.z)"
+    },
+    {
+      "id": "AO-AST-4ACA5E2A",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.getChunk(chunkX, chunkZ, chunkStatus, true)"
+    },
+    {
+      "id": "AO-AST-50DF3DDB",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftChunk.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getWorld().loadChunk(this.getX(), this.getZ(), generate)"
+    },
+    {
+      "id": "AO-AST-5AC0DFA6",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(x, z)"
+    },
+    {
+      "id": "AO-AST-66CE46B4",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/dimension/end/EndDragonFight.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.level.getChunkAt(dragonChunkProbe)"
+    },
+    {
+      "id": "AO-AST-6957B2BE",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos)"
+    },
+    {
+      "id": "AO-AST-7591A63D",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(block.getX() >> 4, block.getZ() >> 4)"
+    },
+    {
+      "id": "AO-AST-7831684D",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos)"
+    },
+    {
+      "id": "AO-AST-793701DF",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerLevel.java",
+      "sink": "sync-load-call",
+      "evidence": "this.moonrise$getChunkTaskScheduler().syncLoadNonFull(chunkX, chunkZ, status)"
+    },
+    {
+      "id": "AO-AST-7B8408DE",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.world.getChunk(x, z, ChunkStatus.FULL, true)"
+    },
+    {
+      "id": "AO-AST-7F247F22",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.world.getChunkSource().getChunk(x, z, generate || isChunkGenerated(x, z) ? ChunkStatus.FULL : ChunkStatus.EMPTY, true)"
+    },
+    {
+      "id": "AO-AST-84F70585",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.world.getChunkSource().getChunk(x, z, ChunkStatus.FULL, true)"
+    },
+    {
+      "id": "AO-AST-8FDED9B0",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos)"
+    },
+    {
+      "id": "AO-AST-A3FF52C1",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.getChunk(pos.getX() >> 4, pos.getZ() >> 4, ChunkStatus.FULL, true)"
+    },
+    {
+      "id": "AO-AST-A84E0523",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(blockPos)"
+    },
+    {
+      "id": "AO-AST-A85918E4",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos)"
+    },
+    {
+      "id": "AO-AST-B1CEC426",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java",
+      "sink": "getchunk-load-true",
+      "evidence": "((LevelReader)this).getChunk(chunkX, chunkZ, status, true)"
+    },
+    {
+      "id": "AO-AST-B5C3575A",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftChunk.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getWorld().getChunkAt(this.x, this.z)"
+    },
+    {
+      "id": "AO-AST-BC03140D",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "getchunk-load-true",
+      "evidence": "((Level)(Object)this).getChunk(x, z, status, true)"
+    },
+    {
+      "id": "AO-AST-BF78F8F0",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(x, z, false)"
+    },
+    {
+      "id": "AO-AST-D5FEC077",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftChunk.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getWorld().loadChunk(this.getX(), this.getZ(), true)"
+    },
+    {
+      "id": "AO-AST-F8F872D7",
+      "path": "paper-server/src/main/java/org/bukkit/craftbukkit/CraftWorld.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(x, z)"
+    },
+    {
+      "id": "AO-AST-FDBF3200",
+      "path": "shreddedpaper-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkTaskScheduler.java",
+      "sink": "getchunk-load-true",
+      "evidence": "this.world.getChunkSource().getChunk(chunkX, chunkZ, status, true)"
+    },
+    {
+      "id": "AO-B472A997",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "public final LevelChunk getChunkAt(BlockPos pos) { // Paper - help inline"
+    },
+    {
+      "id": "AO-C60336A6",
+      "path": "shreddedpaper-server/src/minecraft/java/ca/spottedleaf/moonrise/patches/chunk_system/level/ChunkSystemLevelReader.java",
+      "sink": "sync-load-call",
+      "evidence": "public ChunkAccess moonrise$syncLoadNonFull(final int chunkX, final int chunkZ, final ChunkStatus status);"
+    },
+    {
+      "id": "AO-CFEBA295",
+      "path": "shreddedpaper-server/paper-patches/files/src/main/java/org/bukkit/craftbukkit/CraftWorld.java.patch",
+      "sink": "getchunk-load-true",
+      "evidence": "ChunkAccess chunk = this.world.getChunkSource().getChunk(x, z, generate || isChunkGenerated(x, z) ? ChunkStatus.FULL : ChunkStatus.EMPTY, true); // Paper"
+    },
+    {
+      "id": "AO-D4457A2E",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "this.getChunkAt(pos).markUnsaved();"
+    },
+    {
+      "id": "AO-D67C4D40",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": "LevelChunk chunkAt = this.getChunkAt(pos);"
+    },
+    {
+      "id": "AO-DF3F0692",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/server/level/ServerLevel.java",
+      "sink": "sync-load-call",
+      "evidence": "public final ChunkAccess moonrise$syncLoadNonFull(final int chunkX, final int chunkZ, final net.minecraft.world.level.chunk.status.ChunkStatus status) {"
+    },
+    {
+      "id": "AO-E0FC4A69",
+      "path": "shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/Level.java",
+      "sink": "bukkit-chunk-load",
+      "evidence": ": this.getChunkAt(pos).getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);"
+    },
+    {
+      "id": "AO-FC688F37",
+      "path": "shreddedpaper-server/paper-patches/files/src/main/java/org/bukkit/craftbukkit/CraftWorld.java.patch",
+      "sink": "bukkit-chunk-load",
+      "evidence": "public Chunk getChunkAt(int x, int z) {"
+    }
+  ]
+}

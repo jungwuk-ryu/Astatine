@@ -160,6 +160,10 @@ function Invoke-SmokeCommand([string]$Command, [int]$SleepMs = 1000) {
     $response = Send-RconCommand $Command 20000
     if (![string]::IsNullOrWhiteSpace($response)) {
         Write-Host $response.Trim()
+        $plainResponse = Remove-MinecraftColors $response
+        if ($plainResponse -match "(?i)(^|\n)\s*(Error:|Unknown or incomplete command|Player not found|No player was found|An unexpected error occurred)") {
+            throw "RCON command failed: $Command :: $($plainResponse.Trim())"
+        }
     }
     Start-Sleep -Milliseconds $SleepMs
 }
@@ -217,9 +221,9 @@ try {
 
     if (!$SkipPlayerTeleport) {
         @(
-            "execute as $PlayerName at @s run tp @s 0 ~ 0",
-            "execute as $PlayerName at @s run tp @s 64 ~ 64",
-            "execute as $PlayerName at @s run tp @s 0 ~ 0"
+            "execute as $PlayerName at @s run minecraft:tp @s 0 ~ 0",
+            "execute as $PlayerName at @s run minecraft:tp @s 64 ~ 64",
+            "execute as $PlayerName at @s run minecraft:tp @s 0 ~ 0"
         ) | ForEach-Object { $commands.Add($_) }
     }
 
@@ -252,10 +256,10 @@ try {
         "moved wrongly"
     )
 
-    $matches = New-Object System.Collections.Generic.List[string]
+    $matchedPatterns = New-Object System.Collections.Generic.List[string]
     foreach ($pattern in $patterns) {
         if ($newLog -match [regex]::Escape($pattern)) {
-            $matches.Add($pattern)
+            $matchedPatterns.Add($pattern)
         }
     }
 
@@ -265,10 +269,10 @@ try {
     }
     $newCrashReports = @($afterCrashReports | Where-Object { $beforeCrashReports -notcontains $_ })
 
-    if ($matches.Count -gt 0 -or $newCrashReports.Count -gt 0) {
+    if ($matchedPatterns.Count -gt 0 -or $newCrashReports.Count -gt 0) {
         Write-Host "Smoke failed."
-        if ($matches.Count -gt 0) {
-            Write-Host "Matched log patterns: $($matches -join ', ')"
+        if ($matchedPatterns.Count -gt 0) {
+            Write-Host "Matched log patterns: $($matchedPatterns -join ', ')"
         }
         if ($newCrashReports.Count -gt 0) {
             Write-Host "New crash reports:"
