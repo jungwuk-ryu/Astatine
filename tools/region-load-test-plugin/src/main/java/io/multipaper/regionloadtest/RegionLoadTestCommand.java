@@ -9,11 +9,22 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
+import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Arrow;
+import org.bukkit.entity.Creeper;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ExperienceOrb;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Skeleton;
+import org.bukkit.entity.Slime;
 import org.bukkit.entity.TNTPrimed;
 import org.bukkit.entity.Villager;
 import org.bukkit.entity.Zombie;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,6 +37,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,15 +52,21 @@ public final class RegionLoadTestCommand implements TabExecutor {
         "tntspread",
         "villagers",
         "path",
+        "redstone",
+        "mobfarm",
+        "pvp",
+        "vehicles",
         "tracker",
         "broadcast",
         "scheduler",
+        "watchdogstall",
         "crossqueue",
         "syncload",
         "chunkgen",
         "chunkload",
         "scenario",
         "probe",
+        "playercheck",
         "status",
         "at"
     );
@@ -96,7 +114,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
             effectiveArgs[0] = subcommand;
             System.arraycopy(args, 6, effectiveArgs, 1, args.length - 6);
         }
-        final long commandBatch = "cleanup".equals(subcommand) ? this.plugin.currentBatch() : this.plugin.startBatch();
+        final long commandBatch = this.opensNewBatch(subcommand) ? this.plugin.startBatch() : this.plugin.currentBatch();
 
         switch (subcommand) {
             case "cleanup" -> {
@@ -131,6 +149,34 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
                 return this.handlePathfindingLoad(sender, anchor, effectiveArgs, commandBatch);
             }
+            case "redstone" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleRedstoneBoundaryLoad(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "mobfarm" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleMobFarmLoad(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "pvp" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handlePvpProjectileLoad(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "vehicles" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                return this.handleVehiclePassengerLoad(sender, anchor, effectiveArgs, commandBatch);
+            }
             case "tracker" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
                 if (anchor == null) {
@@ -147,6 +193,9 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
             case "scheduler" -> {
                 return this.handleSchedulerFlood(sender, anchorOverride, effectiveArgs, commandBatch);
+            }
+            case "watchdogstall" -> {
+                return this.handleWatchdogStall(sender, anchorOverride, effectiveArgs);
             }
             case "crossqueue" -> {
                 final Location anchor = this.anchorFor(sender, anchorOverride);
@@ -189,6 +238,9 @@ public final class RegionLoadTestCommand implements TabExecutor {
                     return true;
                 }
                 return this.handleProbe(sender, anchor, effectiveArgs, commandBatch);
+            }
+            case "playercheck" -> {
+                return this.handlePlayerCheck(sender, effectiveArgs);
             }
             case "status" -> {
                 return this.handleStatus(sender);
@@ -413,6 +465,10 @@ public final class RegionLoadTestCommand implements TabExecutor {
 
     private void spawnVillager(final Location spawnHint, final int lifeTicks) {
         final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.setBlockTypeIfLoaded(world, spawnLocation.getBlockX(), spawnLocation.getBlockY() - 1, spawnLocation.getBlockZ(), Material.STONE, false)) {
+            return;
+        }
         final Villager villager = spawnLocation.getWorld().spawn(spawnLocation, Villager.class, entity -> {
             entity.setRemoveWhenFarAway(false);
             entity.setAdult();
@@ -454,24 +510,58 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return true;
         }
 
+        final AtomicInteger queuedTasks = new AtomicInteger();
+        final AtomicInteger completedTasks = new AtomicInteger();
+        final AtomicInteger rejectedTasks = new AtomicInteger();
+        final AtomicInteger spawned = new AtomicInteger();
+        final AtomicInteger skippedUnloaded = new AtomicInteger();
+        final AtomicInteger pathStarted = new AtomicInteger();
+        final AtomicInteger crossChunkMoves = new AtomicInteger();
+        final AtomicInteger progressed = new AtomicInteger();
+        final AtomicInteger arrived = new AtomicInteger();
+        final AtomicInteger removed = new AtomicInteger();
         for (int i = 0; i < count; i++) {
             final double dx = this.offset(i, spread);
             final double dz = this.offset(i * 17, spread);
             final Location spawnHint = base.clone().add(dx, 0.0D, dz);
-            final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
-                try {
-                    if (this.plugin.shouldAbortBatch(commandBatch)) {
-                        return;
+            try {
+                final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
+                    try {
+                        if (this.plugin.shouldAbortBatch(commandBatch)) {
+                            return;
+                        }
+                        this.spawnPathfindingMob(base, spawnHint, dx, dz, lifeTicks, spawned, skippedUnloaded,
+                            pathStarted, crossChunkMoves, progressed, arrived, removed);
+                    } finally {
+                        completedTasks.incrementAndGet();
+                        this.plugin.untrackTask(scheduledTask);
                     }
-                    this.spawnPathfindingMob(base, spawnHint, dx, dz, lifeTicks);
-                } finally {
-                    this.plugin.untrackTask(scheduledTask);
-                }
-            });
-            this.plugin.trackTask(task);
+                });
+                this.plugin.trackTask(task);
+                queuedTasks.incrementAndGet();
+            } catch (final RejectedExecutionException rejectedExecutionException) {
+                rejectedTasks.incrementAndGet();
+            }
         }
 
-        sender.sendMessage("Queued pathfinding load: spawned=" + count + ", spread=" + spread + ", lifeTicks=" + lifeTicks);
+        final int summaryDelayTicks = Math.max(40, Math.min(lifeTicks, 800));
+        this.plugin.trackTask(Bukkit.getGlobalRegionScheduler().runDelayed(this.plugin, task -> {
+            try {
+                this.replyLater(sender, "pathfinding load finished: requested=" + count
+                    + ", spread=" + spread + ", lifeTicks=" + lifeTicks
+                    + ", queued=" + queuedTasks.get() + ", completed=" + completedTasks.get()
+                    + ", rejected=" + rejectedTasks.get() + ", spawned=" + spawned.get()
+                    + ", skippedUnloaded=" + skippedUnloaded.get() + ", pathStarted=" + pathStarted.get()
+                    + ", crossChunkMoves=" + crossChunkMoves.get() + ", progressed=" + progressed.get()
+                    + ", arrived=" + arrived.get()
+                    + ", removed=" + removed.get());
+            } finally {
+                this.plugin.untrackTask(task);
+            }
+        }, summaryDelayTicks));
+
+        sender.sendMessage("Queued pathfinding load: requested=" + count + ", spread=" + spread
+            + ", lifeTicks=" + lifeTicks + ", queued=" + queuedTasks.get() + ", rejected=" + rejectedTasks.get());
         return true;
     }
 
@@ -480,9 +570,21 @@ public final class RegionLoadTestCommand implements TabExecutor {
         final Location spawnHint,
         final double dx,
         final double dz,
-        final int lifeTicks
+        final int lifeTicks,
+        final AtomicInteger spawned,
+        final AtomicInteger skippedUnloaded,
+        final AtomicInteger pathStarted,
+        final AtomicInteger crossChunkMoves,
+        final AtomicInteger progressed,
+        final AtomicInteger arrived,
+        final AtomicInteger removed
     ) {
         final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.setBlockTypeIfLoaded(world, spawnLocation.getBlockX(), spawnLocation.getBlockY() - 1, spawnLocation.getBlockZ(), Material.STONE, false)) {
+            skippedUnloaded.incrementAndGet();
+            return;
+        }
         final Zombie zombie = base.getWorld().spawn(spawnLocation, Zombie.class, mob -> {
             mob.setCanPickupItems(false);
             mob.setRemoveWhenFarAway(false);
@@ -492,24 +594,78 @@ public final class RegionLoadTestCommand implements TabExecutor {
             }
         });
 
+        spawned.incrementAndGet();
         this.plugin.trackEntity(zombie);
         final Location destination = spawnLocation.clone().add(
-            this.localStep(-dx),
+            dx == 0.0D ? 24.0D : Math.copySign(Math.max(24.0D, Math.abs(dx)), -dx),
             0.0D,
-            this.localStep(-dz)
+            dz == 0.0D ? 0.0D : Math.copySign(Math.max(24.0D, Math.abs(dz)), -dz)
         );
+        if (!world.isChunkLoaded(destination.getBlockX() >> 4, destination.getBlockZ() >> 4)) {
+            skippedUnloaded.incrementAndGet();
+            zombie.remove();
+            this.plugin.untrackEntity(zombie.getUniqueId());
+            return;
+        }
         zombie.getPathfinder().moveTo(destination, 1.1D);
+        pathStarted.incrementAndGet();
 
         final UUID entityId = zombie.getUniqueId();
+        final AtomicBoolean crossedChunk = new AtomicBoolean();
+        final AtomicBoolean reachedDestination = new AtomicBoolean();
+        final AtomicInteger monitorTicks = new AtomicInteger(Math.max(1, Math.min(lifeTicks, 240)));
+        final AtomicReference<ScheduledTask> monitorRef = new AtomicReference<>();
         final AtomicReference<ScheduledTask> taskRef = new AtomicReference<>();
+        final int startChunkX = spawnLocation.getBlockX() >> 4;
+        final int startChunkZ = spawnLocation.getBlockZ() >> 4;
+        final double initialDistanceSquared = spawnLocation.distanceSquared(destination);
+        final double progressDistanceSquared = Math.max(9.0D, initialDistanceSquared * 0.64D);
+        final AtomicBoolean madeProgress = new AtomicBoolean();
+        try {
+            final ScheduledTask monitorTask = zombie.getScheduler().runAtFixedRate(this.plugin, task -> {
+                if (!zombie.isValid() || monitorTicks.addAndGet(-10) < 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    return;
+                }
+                final Location current = zombie.getLocation();
+                if (!crossedChunk.get()
+                    && ((current.getBlockX() >> 4) != startChunkX || (current.getBlockZ() >> 4) != startChunkZ)) {
+                    if (crossedChunk.compareAndSet(false, true)) {
+                        crossChunkMoves.incrementAndGet();
+                    }
+                }
+                if (!madeProgress.get() && current.distanceSquared(destination) <= progressDistanceSquared) {
+                    if (madeProgress.compareAndSet(false, true)) {
+                        progressed.incrementAndGet();
+                    }
+                }
+                if (!reachedDestination.get() && current.distanceSquared(destination) <= 9.0D) {
+                    if (reachedDestination.compareAndSet(false, true)) {
+                        arrived.incrementAndGet();
+                    }
+                }
+            }, () -> this.plugin.untrackTask(monitorRef.get()), 10L, 10L);
+            monitorRef.set(monitorTask);
+            this.plugin.trackTask(monitorTask);
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            // The spawn itself is still useful load; the summary will expose lack of movement evidence.
+        }
         final ScheduledTask removalTask = zombie.getScheduler().runDelayed(this.plugin, task -> {
             try {
+                final ScheduledTask monitorTask = monitorRef.get();
+                if (monitorTask != null) {
+                    monitorTask.cancel();
+                    this.plugin.untrackTask(monitorTask);
+                }
                 zombie.remove();
+                removed.incrementAndGet();
             } finally {
                 this.plugin.untrackTask(task);
                 this.plugin.untrackEntity(entityId);
             }
         }, () -> {
+            this.plugin.untrackTask(monitorRef.get());
             this.plugin.untrackTask(taskRef.get());
             this.plugin.untrackEntity(entityId);
         }, lifeTicks);
@@ -517,12 +673,592 @@ public final class RegionLoadTestCommand implements TabExecutor {
         this.plugin.trackTask(removalTask);
     }
 
+    private boolean handleRedstoneBoundaryLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt redstone <lanes> [ticks=1200] [length=64] [periodTicks=1]");
+            return true;
+        }
+
+        final Integer lanes = this.parseInt(sender, args[1], "lanes");
+        final Integer ticks = args.length >= 3 ? this.parseInt(sender, args[2], "ticks") : 1200;
+        final Integer length = args.length >= 4 ? this.parseInt(sender, args[3], "length") : 64;
+        final Integer periodTicks = args.length >= 5 ? this.parseInt(sender, args[4], "periodTicks") : 1;
+        if (lanes == null || ticks == null || length == null || periodTicks == null) {
+            return true;
+        }
+        if (lanes < 1 || lanes > 32 || ticks < 1 || length < 1 || length > 192 || periodTicks < 1) {
+            sender.sendMessage("lanes must be 1..32, ticks positive, length 1..192, periodTicks positive.");
+            return true;
+        }
+
+        final World world = Objects.requireNonNull(base.getWorld());
+        final int baseX = base.getBlockX();
+        final int baseY = Math.max(world.getMinHeight() + 2, Math.min(world.getMaxHeight() - 2, base.getBlockY()));
+        final int baseZ = base.getBlockZ();
+        final AtomicInteger expectedTasks = new AtomicInteger(Integer.MAX_VALUE);
+        final AtomicInteger completedTasks = new AtomicInteger();
+        final AtomicInteger pulseWrites = new AtomicInteger();
+        final AtomicInteger skippedUnloaded = new AtomicInteger();
+        final AtomicInteger rejectedTasks = new AtomicInteger();
+        int queued = 0;
+        for (int lane = 0; lane < lanes; lane++) {
+            final int z = baseZ + lane - lanes / 2;
+            for (int step = 0; step < length; step++) {
+                final int x = baseX - length / 2 + step;
+                final Location cell = new Location(world, x, baseY, z);
+                if (this.queueRedstonePulse(cell, ticks, periodTicks, commandBatch, lane + step,
+                    expectedTasks, completedTasks, pulseWrites, skippedUnloaded, sender,
+                    lanes, length, rejectedTasks)) {
+                    queued++;
+                } else {
+                    rejectedTasks.incrementAndGet();
+                }
+            }
+        }
+        expectedTasks.set(queued);
+        if (queued == 0) {
+            this.replyLater(sender, "redstone boundary load finished: lanes=" + lanes
+                + ", length=" + length + ", ticks=" + ticks + ", periodTicks=" + periodTicks
+                + ", pulseTasks=0, completed=0, rejected=" + rejectedTasks.get()
+                + ", writes=0, skippedUnloaded=0");
+        }
+
+        sender.sendMessage("Queued redstone boundary load: lanes=" + lanes
+            + ", length=" + length + ", ticks=" + ticks + ", periodTicks=" + periodTicks
+            + ", pulseTasks=" + queued + ", rejected=" + rejectedTasks.get());
+        return true;
+    }
+
+    private boolean queueRedstonePulse(
+        final Location cell,
+        final int ticks,
+        final int periodTicks,
+        final long commandBatch,
+        final int phaseOffset,
+        final AtomicInteger expectedTasks,
+        final AtomicInteger completedTasks,
+        final AtomicInteger pulseWrites,
+        final AtomicInteger skippedUnloaded,
+        final CommandSender sender,
+        final int lanes,
+        final int length,
+        final AtomicInteger rejectedTasks
+    ) {
+        final World world = Objects.requireNonNull(cell.getWorld());
+        final int x = cell.getBlockX();
+        final int y = cell.getBlockY();
+        final int z = cell.getBlockZ();
+        final AtomicInteger remainingTicks = new AtomicInteger(ticks);
+        final AtomicInteger phase = new AtomicInteger(phaseOffset);
+        try {
+            final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, cell, task -> {
+                if (this.plugin.shouldAbortBatch(commandBatch) || remainingTicks.addAndGet(-periodTicks) < 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    this.finishRedstonePulse(expectedTasks, completedTasks, pulseWrites, skippedUnloaded, sender,
+                        lanes, length, ticks, periodTicks, rejectedTasks);
+                    return;
+                }
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                    skippedUnloaded.incrementAndGet();
+                    return;
+                }
+
+                if (!this.setBlockTypeIfLoaded(world, x, y - 1, z, Material.STONE, false)) {
+                    skippedUnloaded.incrementAndGet();
+                    return;
+                }
+                final Material material = switch (Math.floorMod(phase.getAndIncrement(), 10)) {
+                    case 0, 1 -> Material.REDSTONE_BLOCK;
+                    case 2, 3 -> Material.REDSTONE_WIRE;
+                    case 4 -> Material.REPEATER;
+                    case 5 -> Material.OBSERVER;
+                    case 6 -> Material.PISTON;
+                    case 7 -> Material.REDSTONE_TORCH;
+                    default -> Material.AIR;
+                };
+                if (this.setBlockTypeIfLoaded(world, x, y, z, material, true)) {
+                    pulseWrites.incrementAndGet();
+                } else {
+                    skippedUnloaded.incrementAndGet();
+                }
+            }, 1L, periodTicks);
+            this.plugin.trackTask(scheduledTask);
+            return true;
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            return false;
+        }
+    }
+
+    private void finishRedstonePulse(
+        final AtomicInteger expectedTasks,
+        final AtomicInteger completedTasks,
+        final AtomicInteger pulseWrites,
+        final AtomicInteger skippedUnloaded,
+        final CommandSender sender,
+        final int lanes,
+        final int length,
+        final int ticks,
+        final int periodTicks,
+        final AtomicInteger rejectedTasks
+    ) {
+        final int completed = completedTasks.incrementAndGet();
+        final int expected = expectedTasks.get();
+        if (completed == expected) {
+            this.replyLater(sender, "redstone boundary load finished: lanes=" + lanes
+                + ", length=" + length + ", ticks=" + ticks + ", periodTicks=" + periodTicks
+                + ", pulseTasks=" + expected + ", completed=" + completed + ", rejected=" + rejectedTasks.get()
+                + ", writes=" + pulseWrites.get() + ", skippedUnloaded=" + skippedUnloaded.get());
+        }
+    }
+
+    private boolean handleMobFarmLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt mobfarm <spawners> [mobsPerWave=3] [lifeTicks=1200] [periodTicks=20] [spread=32]");
+            return true;
+        }
+
+        final Integer spawners = this.parseInt(sender, args[1], "spawners");
+        final Integer mobsPerWave = args.length >= 3 ? this.parseInt(sender, args[2], "mobsPerWave") : 3;
+        final Integer lifeTicks = args.length >= 4 ? this.parseInt(sender, args[3], "lifeTicks") : 1200;
+        final Integer periodTicks = args.length >= 5 ? this.parseInt(sender, args[4], "periodTicks") : 20;
+        final Integer spread = args.length >= 6 ? this.parseInt(sender, args[5], "spread") : 32;
+        if (spawners == null || mobsPerWave == null || lifeTicks == null || periodTicks == null || spread == null) {
+            return true;
+        }
+        if (spawners < 1 || spawners > 64 || mobsPerWave < 1 || mobsPerWave > 12
+            || lifeTicks < 1 || periodTicks < 1 || spread < 1 || spread > 192) {
+            sender.sendMessage("spawners must be 1..64, mobsPerWave 1..12, lifeTicks/periodTicks positive, spread 1..192.");
+            return true;
+        }
+
+        int queued = 0;
+        int rejected = 0;
+        for (int i = 0; i < spawners; i++) {
+            final double dx = this.offset(i * 13, spread);
+            final double dz = this.offset(i * 29, spread);
+            final Location spawnHint = base.clone().add(dx, 0.0D, dz);
+            if (this.queueMobFarmSpawner(base, spawnHint, mobsPerWave, lifeTicks, periodTicks, commandBatch, i)) {
+                queued++;
+            } else {
+                rejected++;
+            }
+        }
+
+        sender.sendMessage("Queued mob farm load: spawners=" + spawners
+            + ", mobsPerWave=" + mobsPerWave + ", lifeTicks=" + lifeTicks
+            + ", periodTicks=" + periodTicks + ", spread=" + spread
+            + ", queued=" + queued + ", rejected=" + rejected);
+        return true;
+    }
+
+    private boolean queueMobFarmSpawner(
+        final Location base,
+        final Location spawnHint,
+        final int mobsPerWave,
+        final int lifeTicks,
+        final int periodTicks,
+        final long commandBatch,
+        final int spawnerIndex
+    ) {
+        final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
+        final AtomicInteger remainingTicks = new AtomicInteger(lifeTicks);
+        final AtomicInteger wave = new AtomicInteger();
+        try {
+            final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, spawnLocation, task -> {
+                if (this.plugin.shouldAbortBatch(commandBatch) || remainingTicks.addAndGet(-periodTicks) < 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    return;
+                }
+
+                final World world = Objects.requireNonNull(spawnLocation.getWorld());
+                if (!this.setBlockTypeIfLoaded(world, spawnLocation.getBlockX(), spawnLocation.getBlockY() - 1, spawnLocation.getBlockZ(), Material.STONE, false)) {
+                    return;
+                }
+                final int currentWave = wave.getAndIncrement();
+                for (int i = 0; i < mobsPerWave; i++) {
+                    this.spawnMobFarmEntity(base, spawnLocation.clone().add((i % 3) - 1.0D, 0.0D, i / 3.0D), lifeTicks, spawnerIndex + currentWave + i);
+                }
+                if ((currentWave & 1) == 0) {
+                    this.spawnFarmDrops(spawnLocation, lifeTicks);
+                }
+            }, 1L, periodTicks);
+            this.plugin.trackTask(scheduledTask);
+            return true;
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            return false;
+        }
+    }
+
+    private void spawnMobFarmEntity(final Location base, final Location spawnLocation, final int lifeTicks, final int selector) {
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.isChunkLoaded(spawnLocation)) {
+            return;
+        }
+        final Entity entity = switch (Math.floorMod(selector, 4)) {
+            case 0 -> world.spawn(spawnLocation, Zombie.class, mob -> {
+                mob.setAdult();
+                mob.setCanPickupItems(false);
+                mob.setRemoveWhenFarAway(false);
+                if (mob.getAttribute(Attribute.MOVEMENT_SPEED) != null) {
+                    Objects.requireNonNull(mob.getAttribute(Attribute.MOVEMENT_SPEED)).setBaseValue(0.42D);
+                }
+            });
+            case 1 -> world.spawn(spawnLocation, Skeleton.class, mob -> {
+                mob.setRemoveWhenFarAway(false);
+                mob.setCanPickupItems(false);
+            });
+            case 2 -> world.spawn(spawnLocation, Creeper.class, mob -> {
+                mob.setRemoveWhenFarAway(false);
+                mob.setExplosionRadius(2);
+            });
+            default -> world.spawn(spawnLocation, Slime.class, mob -> {
+                mob.setRemoveWhenFarAway(false);
+                mob.setSize(2);
+            });
+        };
+        final Vector towardBase = new Vector(
+            base.getX() - spawnLocation.getX(),
+            0.15D,
+            base.getZ() - spawnLocation.getZ()
+        );
+        if (towardBase.lengthSquared() > 0.001D) {
+            entity.setVelocity(towardBase.normalize().multiply(0.35D));
+        }
+        this.trackAndRemove(entity, lifeTicks);
+    }
+
+    private void spawnFarmDrops(final Location spawnLocation, final int lifeTicks) {
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.isChunkLoaded(spawnLocation)) {
+            return;
+        }
+        final Item item = world.dropItem(spawnLocation.clone().add(0.0D, 0.4D, 0.0D), new ItemStack(Material.ROTTEN_FLESH, 1));
+        item.setPickupDelay(20);
+        this.trackAndRemove(item, Math.min(lifeTicks, 600));
+        final ExperienceOrb orb = world.spawn(spawnLocation.clone().add(0.0D, 0.8D, 0.0D), ExperienceOrb.class, entity -> entity.setExperience(1));
+        this.trackAndRemove(orb, Math.min(lifeTicks, 600));
+    }
+
+    private boolean handlePvpProjectileLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt pvp <launchers> [projectilesPerBurst=4] [lifeTicks=600] [periodTicks=8] [spread=48] [tntEvery=4]");
+            return true;
+        }
+
+        final Integer launchers = this.parseInt(sender, args[1], "launchers");
+        final Integer projectilesPerBurst = args.length >= 3 ? this.parseInt(sender, args[2], "projectilesPerBurst") : 4;
+        final Integer lifeTicks = args.length >= 4 ? this.parseInt(sender, args[3], "lifeTicks") : 600;
+        final Integer periodTicks = args.length >= 5 ? this.parseInt(sender, args[4], "periodTicks") : 8;
+        final Integer spread = args.length >= 6 ? this.parseInt(sender, args[5], "spread") : 48;
+        final Integer tntEvery = args.length >= 7 ? this.parseInt(sender, args[6], "tntEvery") : 4;
+        if (launchers == null || projectilesPerBurst == null || lifeTicks == null || periodTicks == null || spread == null || tntEvery == null) {
+            return true;
+        }
+        if (launchers < 1 || launchers > 64 || projectilesPerBurst < 1 || projectilesPerBurst > 16
+            || lifeTicks < 1 || periodTicks < 1 || spread < 4 || spread > 256 || tntEvery < 0) {
+            sender.sendMessage("launchers 1..64, projectilesPerBurst 1..16, lifeTicks/periodTicks positive, spread 4..256, tntEvery >= 0.");
+            return true;
+        }
+
+        int queued = 0;
+        int rejected = 0;
+        for (int i = 0; i < launchers; i++) {
+            final double angle = (Math.PI * 2.0D * i) / Math.max(1, launchers);
+            final Location launcher = base.clone().add(Math.cos(angle) * spread, 2.0D, Math.sin(angle) * spread);
+            if (this.queueProjectileLauncher(base, launcher, projectilesPerBurst, lifeTicks, periodTicks, tntEvery, commandBatch, i)) {
+                queued++;
+            } else {
+                rejected++;
+            }
+        }
+
+        sender.sendMessage("Queued PVP projectile load: launchers=" + launchers
+            + ", projectilesPerBurst=" + projectilesPerBurst + ", lifeTicks=" + lifeTicks
+            + ", periodTicks=" + periodTicks + ", spread=" + spread + ", tntEvery=" + tntEvery
+            + ", queued=" + queued + ", rejected=" + rejected);
+        return true;
+    }
+
+    private boolean queueProjectileLauncher(
+        final Location target,
+        final Location launcher,
+        final int projectilesPerBurst,
+        final int lifeTicks,
+        final int periodTicks,
+        final int tntEvery,
+        final long commandBatch,
+        final int launcherIndex
+    ) {
+        final AtomicInteger remainingTicks = new AtomicInteger(lifeTicks);
+        final AtomicInteger burst = new AtomicInteger();
+        try {
+            final ScheduledTask scheduledTask = Bukkit.getRegionScheduler().runAtFixedRate(this.plugin, launcher, task -> {
+                if (this.plugin.shouldAbortBatch(commandBatch) || remainingTicks.addAndGet(-periodTicks) < 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    return;
+                }
+
+                final World world = Objects.requireNonNull(launcher.getWorld());
+                if (!this.setBlockTypeIfLoaded(world, launcher.getBlockX(), launcher.getBlockY() - 1, launcher.getBlockZ(), Material.STONE, false)) {
+                    return;
+                }
+                final int currentBurst = burst.getAndIncrement();
+                for (int i = 0; i < projectilesPerBurst; i++) {
+                    final Location origin = launcher.clone().add(0.0D, 1.2D + (i % 2) * 0.2D, 0.0D);
+                    final Vector direction = new Vector(
+                        target.getX() - origin.getX(),
+                        target.getY() + 1.0D - origin.getY(),
+                        target.getZ() - origin.getZ()
+                    );
+                    if (direction.lengthSquared() < 0.001D) {
+                        continue;
+                    }
+                    final Arrow arrow = world.spawnArrow(origin, direction.normalize(), 2.4F, 7.5F);
+                    arrow.setCritical(true);
+                    arrow.setPickupStatus(AbstractArrow.PickupStatus.DISALLOWED);
+                    arrow.setKnockbackStrength(1);
+                    this.trackAndRemove(arrow, Math.min(lifeTicks, 400));
+                }
+                if (tntEvery > 0 && currentBurst % tntEvery == launcherIndex % tntEvery) {
+                    this.spawnChaosTnt(launcher.clone().add(0.0D, 0.8D, 0.0D), target, Math.min(80, Math.max(30, periodTicks * 6)));
+                }
+            }, 1L, periodTicks);
+            this.plugin.trackTask(scheduledTask);
+            return true;
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            return false;
+        }
+    }
+
+    private void spawnChaosTnt(final Location spawnLocation, final Location target, final int fuseTicks) {
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.isChunkLoaded(spawnLocation)) {
+            return;
+        }
+        final TNTPrimed tnt = world.spawn(spawnLocation, TNTPrimed.class, entity -> {
+            entity.setFuseTicks(fuseTicks);
+            entity.setYield(2.0F);
+            entity.setIsIncendiary(false);
+        });
+        final Vector direction = new Vector(
+            target.getX() - spawnLocation.getX(),
+            0.35D,
+            target.getZ() - spawnLocation.getZ()
+        );
+        if (direction.lengthSquared() > 0.001D) {
+            tnt.setVelocity(direction.normalize().multiply(0.45D));
+        }
+        this.trackAndRemove(tnt, fuseTicks + 100);
+    }
+
+    private boolean handleVehiclePassengerLoad(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /rlt vehicles <count> [lifeTicks=1200] [spread=48]");
+            return true;
+        }
+
+        final Integer count = this.parseInt(sender, args[1], "count");
+        final Integer lifeTicks = args.length >= 3 ? this.parseInt(sender, args[2], "lifeTicks") : 1200;
+        final Integer spread = args.length >= 4 ? this.parseInt(sender, args[3], "spread") : 48;
+        if (count == null || lifeTicks == null || spread == null) {
+            return true;
+        }
+        if (count < 1 || count > 128 || lifeTicks < 1 || spread < 1 || spread > 256) {
+            sender.sendMessage("count must be 1..128, lifeTicks positive, spread 1..256.");
+            return true;
+        }
+
+        final AtomicInteger queuedTasks = new AtomicInteger();
+        final AtomicInteger completedTasks = new AtomicInteger();
+        final AtomicInteger rejectedTasks = new AtomicInteger();
+        final AtomicInteger spawned = new AtomicInteger();
+        final AtomicInteger skippedUnloaded = new AtomicInteger();
+        final AtomicInteger mounted = new AtomicInteger();
+        final AtomicInteger crossChunkMoves = new AtomicInteger();
+        final AtomicInteger passengerRetained = new AtomicInteger();
+        final AtomicInteger removed = new AtomicInteger();
+        for (int i = 0; i < count; i++) {
+            final int index = i;
+            final double dx = this.offset(i * 7, spread);
+            final double dz = this.offset(i * 19, spread);
+            final Location spawnHint = base.clone().add(dx, 0.0D, dz);
+            try {
+                final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
+                    try {
+                        if (!this.plugin.shouldAbortBatch(commandBatch)) {
+                            this.spawnVehiclePassenger(base, spawnHint, lifeTicks, index, spawned, skippedUnloaded,
+                                mounted, crossChunkMoves, passengerRetained, removed);
+                        }
+                    } finally {
+                        completedTasks.incrementAndGet();
+                        this.plugin.untrackTask(scheduledTask);
+                    }
+                });
+                this.plugin.trackTask(task);
+                queuedTasks.incrementAndGet();
+            } catch (final RejectedExecutionException rejectedExecutionException) {
+                rejectedTasks.incrementAndGet();
+            }
+        }
+
+        final int summaryDelayTicks = Math.max(40, lifeTicks + 20);
+        this.plugin.trackTask(Bukkit.getGlobalRegionScheduler().runDelayed(this.plugin, task -> {
+            try {
+                this.replyLater(sender, "vehicle/passenger load finished: requested=" + count
+                    + ", lifeTicks=" + lifeTicks + ", spread=" + spread
+                    + ", queued=" + queuedTasks.get() + ", completed=" + completedTasks.get()
+                    + ", rejected=" + rejectedTasks.get() + ", spawned=" + spawned.get()
+                    + ", skippedUnloaded=" + skippedUnloaded.get() + ", mounted=" + mounted.get()
+                    + ", crossChunkMoves=" + crossChunkMoves.get() + ", passengerRetained=" + passengerRetained.get()
+                    + ", removed=" + removed.get());
+            } finally {
+                this.plugin.untrackTask(task);
+            }
+        }, summaryDelayTicks));
+
+        sender.sendMessage("Queued vehicle/passenger load: count=" + count
+            + ", lifeTicks=" + lifeTicks + ", spread=" + spread
+            + ", queued=" + queuedTasks.get() + ", rejected=" + rejectedTasks.get());
+        return true;
+    }
+
+    private void spawnVehiclePassenger(
+        final Location base,
+        final Location spawnHint,
+        final int lifeTicks,
+        final int index,
+        final AtomicInteger spawned,
+        final AtomicInteger skippedUnloaded,
+        final AtomicInteger mounted,
+        final AtomicInteger crossChunkMoves,
+        final AtomicInteger passengerRetained,
+        final AtomicInteger removed
+    ) {
+        final Location spawnLocation = this.surfaceSpawnLocation(spawnHint);
+        final World world = Objects.requireNonNull(spawnLocation.getWorld());
+        if (!this.setBlockTypeIfLoaded(world, spawnLocation.getBlockX(), spawnLocation.getBlockY() - 1, spawnLocation.getBlockZ(), Material.REDSTONE_BLOCK, false)
+            || !this.setBlockTypeIfLoaded(world, spawnLocation.getBlockX(), spawnLocation.getBlockY(), spawnLocation.getBlockZ(), Material.POWERED_RAIL, false)) {
+            skippedUnloaded.incrementAndGet();
+            return;
+        }
+        final Minecart cart = world.spawn(spawnLocation.clone().add(0.0D, 0.2D, 0.0D), Minecart.class);
+        final Skeleton passenger = world.spawn(spawnLocation.clone().add(0.0D, 0.4D, 0.0D), Skeleton.class, entity -> {
+            entity.setRemoveWhenFarAway(false);
+            entity.setCanPickupItems(false);
+        });
+        spawned.incrementAndGet();
+        if (cart.addPassenger(passenger)) {
+            mounted.incrementAndGet();
+        }
+        this.trackAndRemove(cart, lifeTicks, removed);
+        this.trackAndRemove(passenger, lifeTicks, removed);
+
+        final AtomicInteger remainingTicks = new AtomicInteger(lifeTicks);
+        final AtomicBoolean crossedChunk = new AtomicBoolean();
+        final AtomicBoolean retainedPassenger = new AtomicBoolean();
+        final int startChunkX = spawnLocation.getBlockX() >> 4;
+        final int startChunkZ = spawnLocation.getBlockZ() >> 4;
+        final AtomicReference<ScheduledTask> taskRef = new AtomicReference<>();
+        try {
+            final ScheduledTask motionTask = cart.getScheduler().runAtFixedRate(this.plugin, task -> {
+                if (!cart.isValid() || remainingTicks.addAndGet(-2) < 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    return;
+                }
+                final Location current = cart.getLocation();
+                if (!crossedChunk.get()
+                    && ((current.getBlockX() >> 4) != startChunkX || (current.getBlockZ() >> 4) != startChunkZ)) {
+                    if (crossedChunk.compareAndSet(false, true)) {
+                        crossChunkMoves.incrementAndGet();
+                    }
+                }
+                if (!retainedPassenger.get() && remainingTicks.get() <= lifeTicks - 40
+                    && cart.getPassengers().contains(passenger)) {
+                    if (retainedPassenger.compareAndSet(false, true)) {
+                        passengerRetained.incrementAndGet();
+                    }
+                }
+                final double xDirection = Math.copySign(1.0D, base.getX() - cart.getLocation().getX() + ((index & 1) == 0 ? 0.5D : -0.5D));
+                final double zDirection = Math.copySign(0.25D, base.getZ() - cart.getLocation().getZ());
+                cart.setVelocity(new Vector(xDirection * 0.55D, 0.0D, zDirection));
+            }, () -> this.plugin.untrackTask(taskRef.get()), 1L, 2L);
+            taskRef.set(motionTask);
+            this.plugin.trackTask(motionTask);
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            cart.remove();
+            passenger.remove();
+            removed.addAndGet(2);
+        }
+    }
+
+    private void trackAndRemove(final Entity entity, final int lifeTicks) {
+        this.trackAndRemove(entity, lifeTicks, null);
+    }
+
+    private void trackAndRemove(final Entity entity, final int lifeTicks, final AtomicInteger removed) {
+        this.plugin.trackEntity(entity);
+        final UUID entityId = entity.getUniqueId();
+        final AtomicReference<ScheduledTask> taskRef = new AtomicReference<>();
+        try {
+            final ScheduledTask removalTask = entity.getScheduler().runDelayed(this.plugin, task -> {
+                try {
+                    if (entity.isValid()) {
+                        entity.remove();
+                    }
+                    if (removed != null) {
+                        removed.incrementAndGet();
+                    }
+                } finally {
+                    this.plugin.untrackTask(task);
+                    this.plugin.untrackEntity(entityId);
+                }
+            }, () -> {
+                this.plugin.untrackTask(taskRef.get());
+                this.plugin.untrackEntity(entityId);
+            }, Math.max(1, lifeTicks));
+            taskRef.set(removalTask);
+            this.plugin.trackTask(removalTask);
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            if (entity.isValid()) {
+                entity.remove();
+            }
+            if (removed != null) {
+                removed.incrementAndGet();
+            }
+            this.plugin.untrackEntity(entityId);
+        }
+    }
+
     private Location surfaceSpawnLocation(final Location hint) {
         final World world = Objects.requireNonNull(hint.getWorld());
         final int blockX = hint.getBlockX();
         final int blockZ = hint.getBlockZ();
-        final int y = Math.min(world.getMaxHeight() - 1, Math.max(world.getMinHeight() + 1, world.getHighestBlockYAt(blockX, blockZ) + 1));
+        final int y = Math.min(world.getMaxHeight() - 1, Math.max(world.getMinHeight() + 1, hint.getBlockY()));
         return new Location(world, blockX + 0.5D, y, blockZ + 0.5D, hint.getYaw(), hint.getPitch());
+    }
+
+    private boolean isChunkLoaded(final Location location) {
+        final World world = Objects.requireNonNull(location.getWorld());
+        return world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4);
+    }
+
+    private boolean setBlockTypeIfLoaded(
+        final World world,
+        final int x,
+        final int y,
+        final int z,
+        final Material material,
+        final boolean applyPhysics
+    ) {
+        if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+            return false;
+        }
+        world.getBlockAt(x, y, z).setType(material, applyPhysics);
+        return true;
     }
 
     private boolean handleTrackerFlood(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
@@ -542,23 +1278,31 @@ public final class RegionLoadTestCommand implements TabExecutor {
             return true;
         }
 
+        int queued = 0;
+        int rejected = 0;
         for (int i = 0; i < count; i++) {
             final double angle = (Math.PI * 2.0D * i) / Math.max(1, count);
             final Location spawnHint = base.clone().add(Math.cos(angle) * 4.0D, 0.0D, Math.sin(angle) * 4.0D);
-            final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
-                try {
-                    if (this.plugin.shouldAbortBatch(commandBatch)) {
-                        return;
+            try {
+                final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, spawnHint, scheduledTask -> {
+                    try {
+                        if (this.plugin.shouldAbortBatch(commandBatch)) {
+                            return;
+                        }
+                        this.spawnTrackerStand(base, spawnHint, angle, distance, ticks);
+                    } finally {
+                        this.plugin.untrackTask(scheduledTask);
                     }
-                    this.spawnTrackerStand(base, spawnHint, angle, distance, ticks);
-                } finally {
-                    this.plugin.untrackTask(scheduledTask);
-                }
-            });
-            this.plugin.trackTask(task);
+                });
+                this.plugin.trackTask(task);
+                queued++;
+            } catch (final RejectedExecutionException rejectedExecutionException) {
+                rejected++;
+            }
         }
 
-        sender.sendMessage("Queued tracker flood: stands=" + count + ", ticks=" + ticks + ", distance=" + distance);
+        sender.sendMessage("Queued tracker flood: stands=" + count + ", ticks=" + ticks
+            + ", distance=" + distance + ", queued=" + queued + ", rejected=" + rejected);
         return true;
     }
 
@@ -571,6 +1315,9 @@ public final class RegionLoadTestCommand implements TabExecutor {
     ) {
         final Location resting = spawnHint.clone();
         final Location shifted = resting.clone().add(Math.cos(angle) * distance, 0.0D, Math.sin(angle) * distance);
+        if (!this.isChunkLoaded(resting)) {
+            return;
+        }
         final ArmorStand stand = base.getWorld().spawn(resting, ArmorStand.class, entity -> {
             entity.setMarker(true);
             entity.setSmall(true);
@@ -585,32 +1332,37 @@ public final class RegionLoadTestCommand implements TabExecutor {
         this.plugin.trackEntity(stand);
         final AtomicInteger remaining = new AtomicInteger(ticks);
         final AtomicReference<ScheduledTask> taskRef = new AtomicReference<>();
-        final ScheduledTask scheduledTask = stand.getScheduler().runAtFixedRate(this.plugin, task -> {
-            if (!stand.isValid()) {
-                task.cancel();
-                this.plugin.untrackTask(task);
-                this.plugin.untrackEntity(entityId);
-                return;
-            }
-            if (remaining.getAndDecrement() <= 0) {
-                task.cancel();
-                this.plugin.untrackTask(task);
-                try {
-                    stand.remove();
-                } finally {
+        try {
+            final ScheduledTask scheduledTask = stand.getScheduler().runAtFixedRate(this.plugin, task -> {
+                if (!stand.isValid()) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
                     this.plugin.untrackEntity(entityId);
+                    return;
                 }
-                return;
-            }
+                if (remaining.getAndDecrement() <= 0) {
+                    task.cancel();
+                    this.plugin.untrackTask(task);
+                    try {
+                        stand.remove();
+                    } finally {
+                        this.plugin.untrackEntity(entityId);
+                    }
+                    return;
+                }
 
-            final Location target = (remaining.get() & 1) == 0 ? resting : shifted;
-            stand.teleportAsync(target);
-        }, () -> {
-            this.plugin.untrackTask(taskRef.get());
+                final Location target = (remaining.get() & 1) == 0 ? resting : shifted;
+                stand.teleportAsync(target);
+            }, () -> {
+                this.plugin.untrackTask(taskRef.get());
+                this.plugin.untrackEntity(entityId);
+            }, 1L, 1L);
+            taskRef.set(scheduledTask);
+            this.plugin.trackTask(scheduledTask);
+        } catch (final RejectedExecutionException rejectedExecutionException) {
+            stand.remove();
             this.plugin.untrackEntity(entityId);
-        }, 1L, 1L);
-        taskRef.set(scheduledTask);
-        this.plugin.trackTask(scheduledTask);
+        }
     }
 
     private boolean handleBroadcastFlood(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
@@ -716,11 +1468,14 @@ public final class RegionLoadTestCommand implements TabExecutor {
     ) {
         final Material material = (phase & 1) == 0 ? Material.WHITE_CONCRETE : Material.BLACK_CONCRETE;
         final int maxLayers = Math.max(1, world.getMaxHeight() - y - 1);
+        if (!world.isChunkLoaded(chunkX, chunkZ)) {
+            return;
+        }
         for (int blockIndex = 0; blockIndex < blocksPerChunk; blockIndex++) {
             final int localX = blockIndex & 15;
             final int localZ = (blockIndex >> 4) & 15;
             final int localY = y + ((blockIndex >> 8) % maxLayers);
-            world.getBlockAt((chunkX << 4) + localX, localY, (chunkZ << 4) + localZ).setType(material, false);
+            this.setBlockTypeIfLoaded(world, (chunkX << 4) + localX, localY, (chunkZ << 4) + localZ, material, false);
         }
     }
 
@@ -799,6 +1554,57 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("Queued scheduler flood: mode=" + mode + ", tasks=" + tasks
             + ", payloadIterations=" + payloadIterations);
         return true;
+    }
+
+    private boolean handleWatchdogStall(final CommandSender sender, final Location anchorOverride, final String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage("Usage: /rlt watchdogstall <global|region> <millis>");
+            return true;
+        }
+
+        final String mode = args[1].toLowerCase(Locale.ROOT);
+        final Integer millis = this.parseInt(sender, args[2], "millis");
+        if (millis == null) {
+            return true;
+        }
+        if (millis < 1 || millis > 120_000) {
+            sender.sendMessage("millis must be 1..120000.");
+            return true;
+        }
+
+        switch (mode) {
+            case "global" -> {
+                final ScheduledTask task = Bukkit.getGlobalRegionScheduler().run(this.plugin,
+                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis));
+                this.plugin.trackTask(task);
+            }
+            case "region" -> {
+                final Location anchor = this.anchorFor(sender, anchorOverride);
+                if (anchor == null) {
+                    return true;
+                }
+                final ScheduledTask task = Bukkit.getRegionScheduler().run(this.plugin, anchor,
+                    scheduledTask -> this.blockForWatchdog(scheduledTask, millis));
+                this.plugin.trackTask(task);
+            }
+            default -> {
+                sender.sendMessage("Unknown watchdogstall mode. Use global or region.");
+                return true;
+            }
+        }
+
+        sender.sendMessage("Queued watchdog stall: mode=" + mode + ", millis=" + millis);
+        return true;
+    }
+
+    private void blockForWatchdog(final ScheduledTask task, final int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        } finally {
+            this.plugin.untrackTask(task);
+        }
     }
 
     private boolean handleCrossRegionQueueProbe(final CommandSender sender, final Location base, final String[] args, final long commandBatch) {
@@ -1170,6 +1976,58 @@ public final class RegionLoadTestCommand implements TabExecutor {
         return true;
     }
 
+    private boolean handlePlayerCheck(final CommandSender sender, final String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage("Usage: /rlt playercheck <name> <present|absent> [world]");
+            return true;
+        }
+
+        final String playerName = args[1];
+        final String mode = args[2].toLowerCase(Locale.ROOT);
+        final String expectedWorld = args.length >= 4 ? args[3] : null;
+        if (!"present".equals(mode) && !"absent".equals(mode)) {
+            sender.sendMessage("Usage: /rlt playercheck <name> <present|absent> [world]");
+            return true;
+        }
+
+        final List<String> matches = new ArrayList<>();
+        final List<String> worldMatches = new ArrayList<>();
+        for (final Player player : Bukkit.getOnlinePlayers()) {
+            if (!player.getName().equalsIgnoreCase(playerName)) {
+                continue;
+            }
+            final String worldName = player.getWorld().getName();
+            final String worldKey = player.getWorld().getKey().asString();
+            final String descriptor = player.getName() + "@" + worldName + "(" + worldKey + ")";
+            matches.add(descriptor);
+            if (expectedWorld == null
+                || expectedWorld.equalsIgnoreCase(worldName)
+                || expectedWorld.equalsIgnoreCase(worldKey)) {
+                worldMatches.add(descriptor);
+            }
+        }
+
+        final boolean ok;
+        if ("present".equals(mode)) {
+            ok = expectedWorld == null ? matches.size() == 1 : matches.size() == 1 && worldMatches.size() == 1;
+        } else {
+            ok = expectedWorld == null ? matches.isEmpty() : worldMatches.isEmpty();
+        }
+
+        final String details = "name=" + playerName
+            + ", mode=" + mode
+            + ", expectedWorld=" + (expectedWorld == null ? "(any)" : expectedWorld)
+            + ", totalMatches=" + matches.size()
+            + ", worldMatches=" + worldMatches.size()
+            + ", matches=" + (matches.isEmpty() ? "(none)" : String.join(";", matches));
+        if (ok) {
+            sender.sendMessage("RLT playercheck ok: " + details);
+        } else {
+            sender.sendMessage("RLT playercheck failed: " + details);
+        }
+        return true;
+    }
+
     private void startChunkBatch(
         final CommandSender sender,
         final Location base,
@@ -1312,12 +2170,14 @@ public final class RegionLoadTestCommand implements TabExecutor {
                 }
                 Arrays.sort(measuredLags);
                 final int p95Index = Math.min(measuredSamples - 1, Math.max(0, (int)Math.ceil(measuredSamples * 0.95D) - 1));
+                final int p99Index = Math.min(measuredSamples - 1, Math.max(0, (int)Math.ceil(measuredSamples * 0.99D) - 1));
                 final double avgLagMs = totalLagNanos.get() / (double) measuredSamples / 1_000_000.0D;
                 final double maxLagMs = maxLagNanos.get() == Long.MIN_VALUE ? 0.0D : maxLagNanos.get() / 1_000_000.0D;
                 final double p95LagMs = measuredLags[p95Index] / 1_000_000.0D;
+                final double p99LagMs = measuredLags[p99Index] / 1_000_000.0D;
                 this.replyLater(sender, String.format(
                     Locale.ROOT,
-                    "%s finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f p95LagMs=%.3f maxLagMs=%.3f",
+                    "%s finished at chunk=%d,%d: samples=%d periodTicks=%d avgLagMs=%.3f p95LagMs=%.3f p99LagMs=%.3f maxLagMs=%.3f",
                     label,
                     probeLocation.getBlockX() >> 4,
                     probeLocation.getBlockZ() >> 4,
@@ -1325,6 +2185,7 @@ public final class RegionLoadTestCommand implements TabExecutor {
                     periodTicks,
                     avgLagMs,
                     p95LagMs,
+                    p99LagMs,
                     maxLagMs
                 ));
             }
@@ -1341,15 +2202,21 @@ public final class RegionLoadTestCommand implements TabExecutor {
         sender.sendMessage("/" + label + " tntspread <grids> <width> <depth> [spacing] [fuse] [regionChunks] [regionStride]");
         sender.sendMessage("/" + label + " villagers <count> [spread] [lifeTicks]");
         sender.sendMessage("/" + label + " path <count> [spread] [lifeTicks]");
+        sender.sendMessage("/" + label + " redstone <lanes> [ticks] [length] [periodTicks]");
+        sender.sendMessage("/" + label + " mobfarm <spawners> [mobsPerWave] [lifeTicks] [periodTicks] [spread]");
+        sender.sendMessage("/" + label + " pvp <launchers> [projectilesPerBurst] [lifeTicks] [periodTicks] [spread] [tntEvery]");
+        sender.sendMessage("/" + label + " vehicles <count> [lifeTicks] [spread]");
         sender.sendMessage("/" + label + " tracker <count> [ticks] [distance]");
         sender.sendMessage("/" + label + " broadcast <chunks> <blocksPerChunk> [ticks]");
         sender.sendMessage("/" + label + " scheduler <region|regionlocal|global|async> <tasks> [payloadIterations]");
+        sender.sendMessage("/" + label + " watchdogstall <global|region> <millis>");
         sender.sendMessage("/" + label + " crossqueue <chunkOffsetX> <tasks> [payloadIterations]");
         sender.sendMessage("/" + label + " syncload <chunkOffsetX> [attempts]");
         sender.sendMessage("/" + label + " chunkgen <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " chunkload <radiusChunks> [urgent]");
         sender.sendMessage("/" + label + " scenario <gen|load> <regions> <strideChunks> <radiusChunks> [urgent] [samples] [periodTicks]");
         sender.sendMessage("/" + label + " probe <samples> [periodTicks]");
+        sender.sendMessage("/" + label + " playercheck <name> <present|absent> [world]");
         sender.sendMessage("/" + label + " status");
         sender.sendMessage("/" + label + " at <world> <x> <y> <z> <subcommand> [args...]");
         sender.sendMessage("/" + label + " cleanup");
@@ -1364,6 +2231,10 @@ public final class RegionLoadTestCommand implements TabExecutor {
         }
         sender.sendMessage("This subcommand must be run by a player or with /rlt at <world> <x> <y> <z> <subcommand> [args...]");
         return null;
+    }
+
+    private boolean opensNewBatch(final String subcommand) {
+        return !equalsAny(subcommand, "cleanup", "status", "playercheck", "help", "?");
     }
 
     private void replyLater(final CommandSender sender, final String message) {

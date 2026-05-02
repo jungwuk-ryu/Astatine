@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "minecraftVersion": "1.21.11",
+  "java": "java",
+  "heap": "8G",
+  "rconPassword": "codex-benchmark",
+  "ports": {
+    "serverBase": 26000,
+    "rconBase": 36000
+  },
+  "server": {
+    "viewDistance": 12,
+    "simulationDistance": 7,
+    "seed": "shreddedpaper-benchmark-20260426",
+    "levelName": "world",
+    "maxPlayers": 400
+  },
+  "mcc": {
+    "enabled": false,
+    "cacheDir": "run/benchmarks/mcc-cache",
+    "botNamePrefix": "benchbot",
+    "joinTimeoutSec": 140,
+    "startDelayMs": 2000,
+    "platformRadius": 24,
+    "platformAirHeight": 8
+  },
+  "plugins": [
+    {
+      "name": "RegionLoadTest",
+      "path": "tools/region-load-test-plugin/build/libs/region-load-test-plugin-0.1.0-SNAPSHOT.jar",
+      "build": ["./gradlew", "-p", "tools/region-load-test-plugin", "build", "--no-configuration-cache"],
+      "required": true
+    }
+  ],
+  "engines": [
+    {
+      "name": "our-shreddedpaper",
+      "jar": "shreddedpaper-server/build/libs/shreddedpaper-paperclip-1.21.11-R0.1-SNAPSHOT-mojmap.jar",
+      "build": ["./gradlew", ":shreddedpaper-server:createMojmapPaperclipJar", "--no-configuration-cache"],
+      "regionCommand": true
+    },
+    {
+      "name": "paper",
+      "jar": "jars/paper-1.21.11-130.jar",
+      "downloadUrl": "https://fill-data.papermc.io/v1/objects/25eb85bd8415195ce4bc188e1939e0c7cef77fb51d26d4e766407ee922561097/paper-1.21.11-130.jar"
+    },
+    {
+      "name": "folia",
+      "jar": "jars/folia-1.21.11-14.jar",
+      "downloadUrl": "https://fill-data.papermc.io/v1/objects/f52c408490a0225611e67907a3ca19f7e6da2c6bc899e715d5f46844e7103c39/folia-1.21.11-14.jar"
+    },
+    {
+      "name": "purpur",
+      "jar": "jars/purpur-1.21.11-2568.jar",
+      "downloadUrl": "https://api.purpurmc.org/v2/purpur/1.21.11/2568/download"
+    },
+    {
+      "name": "divinemc",
+      "jar": "jars/divinemc-1.21.11-24.jar",
+      "downloadUrl": "https://files.bxteam.org/divinemc/versions/1.21.11/24/divinemc-1.21.11-24.jar"
+    }
+  ],
+  "suites": {
+    "smoke": {
+      "repeat": 1,
+      "variables": {
+        "probeSamples": 240,
+        "lifeTicks": 480,
+        "entityCount": 40,
+        "heavyEntityCount": 60,
+        "redstoneLanes": 4,
+        "redstoneLength": 48,
+        "mobSpawners": 8,
+        "pvpLaunchers": 8,
+        "vehicles": 12,
+        "trackerCount": 80,
+        "broadcastChunks": 4,
+        "broadcastBlocks": 32,
+        "schedulerTasks": 32,
+        "payloadIterations": 64,
+        "chunkRegions": 1,
+        "chunkStride": 96,
+        "chunkRadius": 2,
+        "durationShort": 45,
+        "durationMedium": 60,
+        "durationLong": 90,
+        "pollEverySec": 3
+      },
+      "scenarios": ["baseline", "one-hot-region", "chunk-generation", "boundary-torture"]
+    },
+    "stressed": {
+      "repeat": 3,
+      "variables": {
+        "probeSamples": 1200,
+        "lifeTicks": 1800,
+        "entityCount": 240,
+        "heavyEntityCount": 420,
+        "redstoneLanes": 24,
+        "redstoneLength": 192,
+        "mobSpawners": 48,
+        "pvpLaunchers": 48,
+        "vehicles": 64,
+        "trackerCount": 600,
+        "broadcastChunks": 16,
+        "broadcastBlocks": 128,
+        "schedulerTasks": 192,
+        "payloadIterations": 512,
+        "chunkRegions": 4,
+        "chunkStride": 128,
+        "chunkRadius": 6,
+        "durationShort": 120,
+        "durationMedium": 210,
+        "durationLong": 300,
+        "pollEverySec": 5
+      },
+      "scenarios": ["one-hot-region", "multi-hotspot", "chunk-generation", "boundary-torture"]
+    },
+    "standard": {
+      "repeat": 5,
+      "variables": {
+        "probeSamples": 600,
+        "lifeTicks": 1200,
+        "entityCount": 180,
+        "heavyEntityCount": 300,
+        "redstoneLanes": 16,
+        "redstoneLength": 128,
+        "mobSpawners": 32,
+        "pvpLaunchers": 32,
+        "vehicles": 48,
+        "trackerCount": 400,
+        "broadcastChunks": 12,
+        "broadcastBlocks": 96,
+        "schedulerTasks": 128,
+        "payloadIterations": 256,
+        "chunkRegions": 4,
+        "chunkStride": 128,
+        "chunkRadius": 6,
+        "durationShort": 90,
+        "durationMedium": 150,
+        "durationLong": 240,
+        "pollEverySec": 5
+      },
+      "scenarios": [
+        "baseline",
+        "spawn-pile",
+        "one-hot-region",
+        "multi-hotspot",
+        "chunk-load",
+        "chunk-generation",
+        "boundary-torture",
+        "tnt-isolation"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "name": "baseline",
+      "durationSec": "${durationShort}",
+      "mccAnchors": [
+        { "role": "baseline", "x": 0, "y": 96, "z": 0 }
+      ],
+      "commands": ["rlt at world 0 96 0 probe ${probeSamples} 1"]
+    },
+    {
+      "name": "spawn-pile",
+      "durationSec": "${durationMedium}",
+      "mccAnchors": [
+        { "role": "spawn", "x": 0, "y": 96, "z": 0 }
+      ],
+      "commands": [
+        "rlt at world 0 96 0 probe ${probeSamples} 1",
+        "rlt at world 0 96 0 villagers ${heavyEntityCount} 12 ${lifeTicks}",
+        "rlt at world 8 96 8 path ${entityCount} 12 ${lifeTicks}",
+        "rlt at world -8 96 -8 tracker ${trackerCount} ${lifeTicks} 8"
+      ]
+    },
+    {
+      "name": "one-hot-region",
+      "durationSec": "${durationMedium}",
+      "pollEverySec": "${pollEverySec}",
+      "mccAnchors": [
+        { "role": "hot", "x": 0, "y": 96, "z": 0 },
+        { "role": "control", "x": 8192, "y": 96, "z": 0 }
+      ],
+      "commands": [
+        "rlt at world 0 96 0 probe ${probeSamples} 1",
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 0 96 0 villagers ${entityCount} 32 ${lifeTicks}",
+        "rlt at world 64 96 0 path ${entityCount} 48 ${lifeTicks}",
+        "rlt at world -64 96 0 redstone ${redstoneLanes} ${lifeTicks} ${redstoneLength} 1",
+        "rlt at world 0 96 96 mobfarm ${mobSpawners} 3 ${lifeTicks} 20 72",
+        "rlt at world 0 96 -96 pvp ${pvpLaunchers} 4 ${lifeTicks} 8 96 4",
+        "rlt at world 96 96 96 broadcast ${broadcastChunks} ${broadcastBlocks} ${lifeTicks}",
+        "rlt at world 32 96 32 scheduler region ${schedulerTasks} ${payloadIterations}",
+        "rlt at world -32 96 32 scheduler regionlocal ${schedulerTasks} ${payloadIterations}",
+        "rlt at world 32 96 -32 crossqueue 16 ${schedulerTasks} ${payloadIterations}",
+        "rlt at world -96 96 -96 vehicles ${vehicles} ${lifeTicks} 96"
+      ]
+    },
+    {
+      "name": "multi-hotspot",
+      "durationSec": "${durationLong}",
+      "mccAnchors": [
+        { "role": "control", "x": 8192, "y": 96, "z": 0 },
+        { "role": "villagers", "x": 0, "y": 96, "z": 0 },
+        { "role": "path", "x": 1024, "y": 96, "z": 0 },
+        { "role": "redstone", "x": -1024, "y": 96, "z": 0 },
+        { "role": "mobfarm", "x": 0, "y": 96, "z": 1024 },
+        { "role": "pvp", "x": 0, "y": 96, "z": -1024 },
+        { "role": "vehicles", "x": 1024, "y": 96, "z": 1024 }
+      ],
+      "commands": [
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 0 96 0 villagers ${entityCount} 32 ${lifeTicks}",
+        "rlt at world 1024 96 0 path ${entityCount} 48 ${lifeTicks}",
+        "rlt at world -1024 96 0 redstone ${redstoneLanes} ${lifeTicks} ${redstoneLength} 1",
+        "rlt at world 0 96 1024 mobfarm ${mobSpawners} 3 ${lifeTicks} 20 72",
+        "rlt at world 0 96 -1024 pvp ${pvpLaunchers} 4 ${lifeTicks} 8 96 4",
+        "rlt at world 1024 96 1024 vehicles ${vehicles} ${lifeTicks} 96"
+      ]
+    },
+    {
+      "name": "chunk-load",
+      "durationSec": "${durationLong}",
+      "mccAnchors": [
+        { "role": "control", "x": 8192, "y": 96, "z": 0 }
+      ],
+      "commands": [
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 200000 96 0 scenario load ${chunkRegions} ${chunkStride} ${chunkRadius} false ${probeSamples} 1"
+      ]
+    },
+    {
+      "name": "chunk-generation",
+      "durationSec": "${durationLong}",
+      "mccAnchors": [
+        { "role": "control", "x": 8192, "y": 96, "z": 0 }
+      ],
+      "commands": [
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 300000 96 0 scenario gen ${chunkRegions} ${chunkStride} ${chunkRadius} false ${probeSamples} 1"
+      ]
+    },
+    {
+      "name": "boundary-torture",
+      "durationSec": "${durationMedium}",
+      "mccAnchors": [
+        { "role": "hot", "x": 0, "y": 96, "z": 0 },
+        { "role": "control", "x": 8192, "y": 96, "z": 0 },
+        { "role": "pvp", "x": 96, "y": 96, "z": 0 },
+        { "role": "vehicles", "x": -96, "y": 96, "z": 0 },
+        { "role": "crossq", "x": 0, "y": 96, "z": 96 },
+        { "role": "syncld", "x": 0, "y": 96, "z": -96 }
+      ],
+      "commands": [
+        "rlt at world 0 96 0 probe ${probeSamples} 1",
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 0 96 0 redstone ${redstoneLanes} ${lifeTicks} ${redstoneLength} 1",
+        "rlt at world 96 96 0 pvp ${pvpLaunchers} 4 ${lifeTicks} 6 96 3",
+        "rlt at world -96 96 0 vehicles ${vehicles} ${lifeTicks} 96",
+        "rlt at world 0 96 96 crossqueue 16 64 ${payloadIterations}",
+        "rlt at world 0 96 -96 syncload 64 4"
+      ]
+    },
+    {
+      "name": "tnt-isolation",
+      "durationSec": "${durationMedium}",
+      "mccAnchors": [
+        { "role": "hot", "x": 0, "y": 96, "z": 0 },
+        { "role": "control", "x": 8192, "y": 96, "z": 0 }
+      ],
+      "commands": [
+        "rlt at world 0 96 0 probe ${probeSamples} 1",
+        "rlt at world 8192 96 0 probe ${probeSamples} 1",
+        "rlt at world 0 96 0 tntsingle 18 18 2 40 8"
+      ]
+    }
+  ]
+}
