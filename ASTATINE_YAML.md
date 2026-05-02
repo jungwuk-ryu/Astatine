@@ -103,6 +103,10 @@ lag-compensation:
   ignore-moved-too-quickly-when-lagging: true
   ignore-moved-wrongly-when-lagging: true
 
+  # Use a separate moved-too-quickly multiplier for vertical movement.
+  moved-too-quickly-multiplier-y-override: true
+  moved-too-quickly-multiplier-y: 10.0
+
   # Disables moved-too-quickly and moved-wrongly enforcement entirely. Keep
   # false unless you are intentionally accepting the anticheat tradeoff.
   always-allow-weird-movement: false
@@ -240,6 +244,8 @@ async:
   use and the amount of delayed work that must eventually drain.
 - `always-allow-weird-movement` is intentionally disabled by default. Prefer
   the region-lag movement checks unless you are debugging movement only.
+- `moved-too-quickly-multiplier-y` only affects vertical movement while
+  `moved-too-quickly-multiplier-y-override` is enabled.
 - `async.pathfinding.enable` is synchronized with the DivineMC config layer, but
   async pathfinding is disabled by the DivineMC bridge while independent region
   ticking is active because ownership handoff is safer than detached path
