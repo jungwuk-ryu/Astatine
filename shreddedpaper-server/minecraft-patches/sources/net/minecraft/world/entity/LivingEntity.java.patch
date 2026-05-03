@@ -1,5 +1,21 @@
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -189,6 +_,7 @@
+     private static final double MAX_LINE_OF_SIGHT_TEST_RANGE = 128.0;
+     protected static final int LIVING_ENTITY_FLAG_IS_USING = 1;
+     protected static final int LIVING_ENTITY_FLAG_OFF_HAND = 2;
++    private static final int MACE_TOTEM_GRACE_TICKS = 10;
+     public static final int LIVING_ENTITY_FLAG_SPIN_ATTACK = 4;
+     protected static final EntityDataAccessor<Byte> DATA_LIVING_ENTITY_FLAGS = SynchedEntityData.defineId(LivingEntity.class, EntityDataSerializers.BYTE);
+     public static final EntityDataAccessor<Float> DATA_HEALTH_ID = SynchedEntityData.defineId(LivingEntity.class, EntityDataSerializers.FLOAT);
+@@ -266,6 +_,7 @@
+     private Optional<BlockPos> lastClimbablePos = Optional.empty();
+     private @Nullable DamageSource lastDamageSource;
+     private long lastDamageStamp;
++    private long maceTotemGraceUntilTick;
+     protected int autoSpinAttackTicks;
+     protected float autoSpinAttackDmg;
+     protected @Nullable ItemStack autoSpinAttackItemStack;
 @@ -454,7 +_,7 @@
                      if (damagePerBlock > 0.0) {
                          // Purpur start - Add option to teleport to spawn if outside world border
@@ -21,6 +37,39 @@
                  boolean flag1 = !this.canBreatheUnderwater()
                      && !MobEffectUtil.hasWaterBreathing(this)
                      && (!flag || !((Player)this).getAbilities().invulnerable);
+@@ -1448,12 +_,22 @@
+         return this.getHealth() <= 0.0F;
+     }
+ 
++    private boolean isProtectedFromMaceByTotemGrace(DamageSource damageSource) {
++        return damageSource.is(DamageTypeTags.IS_MACE_SMASH) && this.level().getGameTime() < this.maceTotemGraceUntilTick;
++    }
++
++    private void extendMaceTotemGrace() {
++        this.maceTotemGraceUntilTick = Math.max(this.maceTotemGraceUntilTick, this.level().getGameTime() + MACE_TOTEM_GRACE_TICKS);
++    }
++
+     @Override
+     public boolean hurtServer(ServerLevel level, DamageSource damageSource, float amount) {
+         if (this.isInvulnerableTo(level, damageSource)) {
+             return false;
+         } else if (this.isRemoved() || this.dead || this.getHealth() <= 0.0F) { // CraftBukkit - Don't allow entities that got set to dead/killed elsewhere to get damaged and die
+             return false;
++        } else if (this.isProtectedFromMaceByTotemGrace(damageSource)) {
++            return false;
+         } else if (damageSource.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+             return false;
+         } else {
+@@ -1845,6 +_,9 @@
+                 this.setHealth(1.0F);
+                 deathProtection.applyEffects(itemStack, this);
+                 this.level().broadcastEntityEvent(this, EntityEvent.PROTECTED_FROM_DEATH);
++                if (this instanceof ServerPlayer) {
++                    this.extendMaceTotemGrace();
++                }
+             }
+ 
+             return deathProtection != null;
 @@ -1979,7 +_,8 @@
                  if (serverLevel.getGameRules().get(GameRules.MOB_GRIEFING, serverLevel.purpurConfig.witherMobGriefingOverride)) { // Purpur - Add mobGriefing override to everything affected
                      BlockPos blockPos = this.blockPosition();
