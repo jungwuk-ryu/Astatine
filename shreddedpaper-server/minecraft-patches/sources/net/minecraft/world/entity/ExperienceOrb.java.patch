@@ -39,6 +39,67 @@
              }
  
              this.setDeltaMovement(this.getDeltaMovement().scale(f));
+@@ -242,7 +_,20 @@
+     private void scanForMerges() {
+-        if (this.level() instanceof ServerLevel) {
++        if (this.level() instanceof ServerLevel serverLevel) {
++            if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                    && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++                final net.minecraft.world.level.levelgen.structure.BoundingBox ownershipBox = shreddedpaper$mergeOwnershipBox(this.getBoundingBox().inflate(0.5));
++                if (!io.multipaper.shreddedpaper.ShreddedPaper.isSync(serverLevel, ownershipBox)) {
++                    io.multipaper.shreddedpaper.ShreddedPaper.runSync(serverLevel, ownershipBox, () -> {
++                        if (!this.isRemoved()) {
++                            this.scanForMerges();
++                        }
++                    });
++                    return;
++                }
++            }
+             for (ExperienceOrb experienceOrb : this.level()
+                 .getEntities(EntityTypeTest.forClass(ExperienceOrb.class), this.getBoundingBox().inflate(0.5), this::canMerge)) {
+                 this.merge(experienceOrb);
+@@ -259,6 +_,22 @@
+     }
+     public static void awardWithDirection(ServerLevel level, Vec3 pos, Vec3 direction, int amount, org.bukkit.entity.ExperienceOrb.@Nullable SpawnReason reason, @Nullable Entity triggerId, @Nullable Entity sourceId) {
+     // Paper end - add reason to orbs
++        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
++                && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
++            final net.minecraft.world.level.levelgen.structure.BoundingBox ownershipBox = shreddedpaper$awardOwnershipBox(pos);
++            if (!io.multipaper.shreddedpaper.ShreddedPaper.isSync(level, ownershipBox)) {
++                final int deferredAmount = amount;
++                io.multipaper.shreddedpaper.ShreddedPaper.runSync(
++                    level,
++                    ownershipBox,
++                    () -> awardWithDirection(level, pos, direction, deferredAmount, reason, triggerId, sourceId)
++                );
++                return;
++            }
++        }
++
+         while (amount > 0) {
+             int experienceValue = getExperienceValue(amount);
+             amount -= experienceValue;
+@@ -278,6 +_,20 @@
+             return false;
+         }
+     }
++
++    private static net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$awardOwnershipBox(Vec3 pos) {
++        return net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(
++            BlockPos.containing(pos.x - 1.0, pos.y - 1.0, pos.z - 1.0),
++            BlockPos.containing(pos.x + 1.0, pos.y + 1.0, pos.z + 1.0)
++        );
++    }
++
++    private static net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$mergeOwnershipBox(AABB box) {
++        return net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(
++            BlockPos.containing(box.minX, box.minY, box.minZ),
++            BlockPos.containing(box.maxX, box.maxY, box.maxZ)
++        );
++    }
++
+     private boolean canMerge(ExperienceOrb orb) {
+         return orb != this && canMerge(orb, this.getId(), this.getValue());
 @@ -354,6 +_,33 @@
      @Override
      public void playerTouch(Player entity) {
