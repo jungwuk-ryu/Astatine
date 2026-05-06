@@ -1,0 +1,12 @@
+--- a/net/minecraft/network/protocol/game/ServerPacketListener.java
++++ b/net/minecraft/network/protocol/game/ServerPacketListener.java
+@@ -11,6 +_,9 @@
+ 
+     @Override
+     default void onPacketError(Packet packet, Exception exception) throws ReportedException {
++        if (exception instanceof net.minecraft.server.RunningOnDifferentThreadException) {
++            return;
++        }
+         LOGGER.error("Failed to handle packet {}, suppressing error", packet, exception);
+     }
+ }

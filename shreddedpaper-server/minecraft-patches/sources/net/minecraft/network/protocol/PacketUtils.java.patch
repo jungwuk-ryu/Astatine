@@ -31,6 +31,9 @@
 +                    try {
 +                        packet.handle(packetListener);
 +                    } catch (Exception var3) {
++                        if (var3 instanceof RunningOnDifferentThreadException) {
++                            return;
++                        }
 +                        if (var3 instanceof ReportedException reportedException && reportedException.getCause() instanceof OutOfMemoryError) {
 +                            throw PacketUtils.makeReportedException(var3, packet, packetListener);
 +                        }
