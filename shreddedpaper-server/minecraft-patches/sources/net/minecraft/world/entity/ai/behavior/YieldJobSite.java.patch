@@ -9,10 +9,16 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.GlobalPos;
  import net.minecraft.core.Holder;
-@@ -33,6 +_,7 @@
+@@ -33,7 +_,12 @@
                              return false;
                          } else {
-                             BlockPos blockPos = instance.<GlobalPos>get(potentialJobSite).pos();
+-                            BlockPos blockPos = instance.<GlobalPos>get(potentialJobSite).pos();
++                            GlobalPos globalPos = instance.get(potentialJobSite);
++                            if (globalPos.dimension() != level.dimension()) {
++                                potentialJobSite.erase();
++                                return true;
++                            }
++                            BlockPos blockPos = globalPos.pos();
 +                            if (!TickThread.isTickThreadFor(level, blockPos)) return true; // ShreddedPaper - don't run outside poi region
                              Optional<Holder<PoiType>> type = level.getPoiManager().getType(blockPos);
                              if (type.isEmpty()) {

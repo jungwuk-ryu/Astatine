@@ -1,0 +1,24 @@
+--- a/net/minecraft/world/entity/ai/behavior/AssignProfessionFromJobSite.java
++++ b/net/minecraft/world/entity/ai/behavior/AssignProfessionFromJobSite.java
+@@ -1,6 +_,7 @@
+ package net.minecraft.world.entity.ai.behavior;
+ 
+ import java.util.Optional;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.GlobalPos;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.registries.BuiltInRegistries;
+@@ -21,6 +_,14 @@
+                     instance,
+                     (potentialJobSite, jobSite) -> (level, villager, gameTime) -> {
+                         GlobalPos globalPos = instance.get(potentialJobSite);
++                        if (globalPos.dimension() != level.dimension()) {
++                            potentialJobSite.erase();
++                            return false;
++                        }
++                        if (!TickThread.isTickThreadFor(level, globalPos.pos())) {
++                            return false;
++                        }
+                         if (!globalPos.pos().closerToCenterThan(villager.position(), 2.0) && !villager.assignProfessionWhenSpawned()) {
+                             return false;
+                         } else {

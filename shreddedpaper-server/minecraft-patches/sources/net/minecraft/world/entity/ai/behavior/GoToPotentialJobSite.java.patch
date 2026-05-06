@@ -9,17 +9,28 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.GlobalPos;
  import net.minecraft.server.level.ServerLevel;
+@@ -32,7 +_,10 @@
+     @Override
+     protected boolean canStillUse(ServerLevel level, Villager entity, long gameTime) {
+-        return entity.getBrain().hasMemoryValue(MemoryModuleType.POTENTIAL_JOB_SITE);
++        return entity.getBrain()
++            .getMemory(MemoryModuleType.POTENTIAL_JOB_SITE)
++            .filter(globalPos -> globalPos.dimension() == level.dimension())
++            .isPresent();
+     }
+     @Override
 @@ -45,12 +_,14 @@
              BlockPos blockPos = globalPos.pos();
              ServerLevel level1 = level.getServer().getLevel(globalPos.dimension());
              if (level1 != null) {
-+                ShreddedPaper.ensureSync(level, blockPos, () -> { // ShreddedPaper - run on poi's region
++                ShreddedPaper.ensureSync(level1, blockPos, () -> { // ShreddedPaper - run on poi's region
                  PoiManager poiManager = level1.getPoiManager();
                  if (poiManager.exists(blockPos, holder -> true)) {
                      poiManager.release(blockPos);
                  }
  
-                 level.debugSynchronizers().updatePoi(blockPos);
+-                level.debugSynchronizers().updatePoi(blockPos);
++                level1.debugSynchronizers().updatePoi(blockPos);
 +                }); // ShreddedPaper - run on poi's region
              }
          });

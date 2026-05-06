@@ -9,10 +9,14 @@
  import net.minecraft.core.GlobalPos;
  import net.minecraft.core.Holder;
  import net.minecraft.world.entity.LivingEntity;
-@@ -19,6 +_,7 @@
+@@ -19,6 +_,11 @@
                      instance,
                      (jobSite, nearestLivingEntities) -> (level, villager, gameTime) -> {
                          GlobalPos globalPos = instance.get(jobSite);
++                        if (globalPos.dimension() != level.dimension()) {
++                            jobSite.erase();
++                            return true;
++                        }
 +                        if (!TickThread.isTickThreadFor(level, globalPos.pos())) return true; // ShreddedPaper - don't run outside poi region
                          level.getPoiManager()
                              .getType(globalPos.pos())

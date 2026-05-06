@@ -16,6 +16,16 @@
                  if (level1 == null || !level1.getPoiManager().exists(blockPos, poiValidator)) {
                      poiPos.erase();
                  } else if (bedIsOccupied(level1, blockPos, entity)) {
+@@ -31,8 +_,8 @@
+                 } else if (bedIsOccupied(level1, blockPos, entity)) {
+                     poiPos.erase();
+                     if (!bedIsOccupiedByVillager(level1, blockPos)) {
+-                        level.getPoiManager().release(blockPos);
+-                        level.debugSynchronizers().updatePoi(blockPos);
++                        level1.getPoiManager().release(blockPos);
++                        level1.debugSynchronizers().updatePoi(blockPos);
+                     }
+                 }
 @@ -43,8 +_,8 @@
      }
  

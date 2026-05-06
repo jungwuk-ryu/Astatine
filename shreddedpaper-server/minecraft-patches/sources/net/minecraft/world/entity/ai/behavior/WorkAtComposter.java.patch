@@ -1,9 +1,20 @@
 --- a/net/minecraft/world/entity/ai/behavior/WorkAtComposter.java
 +++ b/net/minecraft/world/entity/ai/behavior/WorkAtComposter.java
-@@ -25,7 +_,10 @@
+@@ -2,6 +_,7 @@
+ import com.google.common.collect.ImmutableList;
+ import java.util.List;
+ import java.util.Optional;
++import ca.spottedleaf.moonrise.common.util.TickThread;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.GlobalPos;
+ import net.minecraft.server.level.ServerLevel;
+@@ -25,7 +_,13 @@
          Optional<GlobalPos> memory = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE);
          if (!memory.isEmpty()) {
              GlobalPos globalPos = memory.get();
++            if (globalPos.dimension() != level.dimension() || !TickThread.isTickThreadFor(level, globalPos.pos())) {
++                return;
++            }
 -            BlockState blockState = level.getBlockState(globalPos.pos());
 +            BlockState blockState = level.getBlockStateIfLoaded(globalPos.pos()); // ShreddedPaper - avoid sync chunk loads from villager workstation ticks
 +            if (blockState == null) {
