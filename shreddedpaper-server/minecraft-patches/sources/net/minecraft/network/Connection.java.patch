@@ -1,13 +1,14 @@
 --- a/net/minecraft/network/Connection.java
 +++ b/net/minecraft/network/Connection.java
-@@ -1,7 +_,10 @@
+@@ -1,7 +_,11 @@
  package net.minecraft.network;
- 
+
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.collect.Queues;
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.network.NetworkFlushDiagnostics;
++import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import io.netty.bootstrap.Bootstrap;
  import io.netty.channel.Channel;
  import io.netty.channel.ChannelException;
@@ -52,7 +53,7 @@
                      return;
                  }
 @@ -303,6 +_,7 @@
- 
+
      private static void syncAfterConfigurationChange(ChannelFuture future) {
          try {
 +            if (TickThread.isTickThread()) MinecraftServer.getServer().managedBlock(future::isDone); // ShreddedPaper - don't block main thread
@@ -60,7 +61,7 @@
          } catch (Exception var2) {
              if (var2 instanceof ClosedChannelException) {
 @@ -400,7 +_,7 @@
- 
+
      public void send(Packet<?> packet, @Nullable ChannelFutureListener sendListener, boolean flush) {
          // Paper start - Optimize network: Handle oversized packets better
 -        final boolean connected = this.isConnected();
@@ -95,7 +96,7 @@
              channelFuture.addListener(sendListener);
 @@ -500,18 +_,24 @@
      }
- 
+
      // Paper start - Optimize network: Rewrite this to be safer if ran off main thread
 -    private boolean flushQueue() {
 +    public boolean flushQueue() { // ShreddedPaper - make public
@@ -120,7 +121,7 @@
 +        NetworkFlushDiagnostics.recordRejectedOffThread(!this.pendingActions.isEmpty());
          return false;
      }
- 
+
 @@ -556,7 +_,8 @@
      private static int currTick; // Paper - Buffer joins to world
      private static int tickSecond; // Purpur - Max joins per second
@@ -131,3 +132,30 @@
          // Paper start - Buffer joins to world
          if (Connection.currTick != net.minecraft.server.MinecraftServer.currentTick) {
              Connection.currTick = net.minecraft.server.MinecraftServer.currentTick;
+@@ -618,7 +_,7 @@
+         if (this.address == null) {
+             return "local";
+         } else {
+-            return logIps ? this.address.toString() : "IP hidden";
++            return logIps && !AnonymousMode.enabled() ? this.address.toString() : "IP hidden";
+         }
+     }
+
+@@ -834,7 +_,7 @@
+                     /* Player was logged in, either game listener or configuration listener */
+                     final com.mojang.authlib.GameProfile profile = commonPacketListener.getOwner();
+                     new com.destroystokyo.paper.event.player.PlayerConnectionCloseEvent(profile.id(),
+-                        profile.name(), ((InetSocketAddress) this.address).getAddress(), false).callEvent();
++                        profile.name(), AnonymousMode.enabled() ? AnonymousMode.redactedInetAddress() : ((InetSocketAddress) this.address).getAddress(), false).callEvent();
+                 } else if (packetListener instanceof net.minecraft.server.network.ServerLoginPacketListenerImpl loginListener) {
+                     /* Player is login stage */
+                     switch (loginListener.state) {
+@@ -844,7 +_,7 @@
+                         case ACCEPTED:
+                             final com.mojang.authlib.GameProfile profile = loginListener.authenticatedProfile; /* Should be non-null at this stage */
+                             new com.destroystokyo.paper.event.player.PlayerConnectionCloseEvent(profile.id(), profile.name(),
+-                                ((InetSocketAddress) this.address).getAddress(), false).callEvent();
++                                AnonymousMode.enabled() ? AnonymousMode.redactedInetAddress() : ((InetSocketAddress) this.address).getAddress(), false).callEvent();
+                     }
+                 }
+                 // Paper end - Add PlayerConnectionCloseEvent

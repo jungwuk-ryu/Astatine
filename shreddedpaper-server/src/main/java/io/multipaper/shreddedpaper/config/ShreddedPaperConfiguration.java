@@ -208,6 +208,26 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
 
     }
 
+    public Privacy privacy = new Privacy();
+
+    public class Privacy extends ConfigurationPart {
+
+        @Setting("anonymous-mode")
+        public AnonymousMode anonymousMode = new AnonymousMode();
+
+        public class AnonymousMode extends ConfigurationPart {
+
+            @Comment("Masks player IP addresses exposed through normal Bukkit/Paper player and connection APIs as 0.0.0.0. Internal networking, proxy forwarding, authentication, and connection throttling keep using the real socket address.")
+            public boolean enabled = false;
+
+            @Setting("redact-login-event-addresses")
+            @Comment("Also masks AsyncPlayerPreLoginEvent, PlayerPreLoginEvent, PlayerLoginEvent, and PlayerHandshakeEvent addresses. Keep this disabled if a trusted pre-login plugin must derive non-IP state such as country tags before the address is discarded.")
+            public boolean redactLoginEventAddresses = false;
+
+        }
+
+    }
+
     @Setting("performance")
     public Performance performance = new Performance();
 

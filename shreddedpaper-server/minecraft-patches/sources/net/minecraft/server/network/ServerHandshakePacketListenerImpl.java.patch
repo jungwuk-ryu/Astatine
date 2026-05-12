@@ -1,0 +1,13 @@
+--- a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -121,7 +_,9 @@
+             // Try and handle the handshake through the event
+             if (com.destroystokyo.paper.event.player.PlayerHandshakeEvent.getHandlerList().getRegisteredListeners().length != 0) { // Hello? Can you hear me?
+                 java.net.SocketAddress socketAddress = this.connection.address;
+-                String hostnameOfRemote = socketAddress instanceof java.net.InetSocketAddress ? ((java.net.InetSocketAddress) socketAddress).getHostString() : java.net.InetAddress.getLoopbackAddress().getHostAddress();
++                String hostnameOfRemote = io.multipaper.shreddedpaper.privacy.AnonymousMode.redactLoginEventAddresses()
++                    ? io.multipaper.shreddedpaper.privacy.AnonymousMode.REDACTED_IP
++                    : socketAddress instanceof java.net.InetSocketAddress ? ((java.net.InetSocketAddress) socketAddress).getHostString() : java.net.InetAddress.getLoopbackAddress().getHostAddress();
+                 com.destroystokyo.paper.event.player.PlayerHandshakeEvent event = new com.destroystokyo.paper.event.player.PlayerHandshakeEvent(packet.hostName(), hostnameOfRemote, !proxyLogicEnabled);
+                 if (event.callEvent()) {
+                     // If we've failed somehow, let the client know so and go no further.

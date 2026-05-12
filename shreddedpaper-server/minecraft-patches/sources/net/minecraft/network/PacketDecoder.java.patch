@@ -1,0 +1,16 @@
+--- a/net/minecraft/network/PacketDecoder.java
++++ b/net/minecraft/network/PacketDecoder.java
+@@ -35,7 +_,12 @@
+         }
+
+         PacketType<? extends Packet<? super T>> packetType = packet.type();
+-        JvmProfiler.INSTANCE.onPacketReceived(this.protocolInfo.id(), packetType, ctx.channel().remoteAddress(), i);
++        JvmProfiler.INSTANCE.onPacketReceived(
++            this.protocolInfo.id(),
++            packetType,
++            io.multipaper.shreddedpaper.privacy.AnonymousMode.redactPublicSocketAddress(ctx.channel().remoteAddress()),
++            i
++        );
+         if (in.readableBytes() > 0) {
+             throw new IOException(
+                 "Packet "

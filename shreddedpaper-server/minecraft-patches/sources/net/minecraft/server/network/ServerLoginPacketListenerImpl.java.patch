@@ -47,7 +47,27 @@
 +            this.finishLoginAndWaitForClient(profile);
          }
      }
- 
+
+@@ -323,7 +_,9 @@
+         // Paper start - Add more fields to AsyncPlayerPreLoginEvent
+         final InetAddress rawAddress = ((InetSocketAddress) this.connection.channel.remoteAddress()).getAddress();
+         com.destroystokyo.paper.profile.PlayerProfile profile = com.destroystokyo.paper.profile.CraftPlayerProfile.asBukkitCopy(gameprofile); // Paper - setPlayerProfileAPI
+-        AsyncPlayerPreLoginEvent asyncEvent = new AsyncPlayerPreLoginEvent(playerName, address, rawAddress, uniqueId, this.transferred, profile, this.connection.hostname, this.paperLoginConnection); // Paper
++        final InetAddress eventAddress = io.multipaper.shreddedpaper.privacy.AnonymousMode.redactLoginEventAddress(address);
++        final InetAddress eventRawAddress = io.multipaper.shreddedpaper.privacy.AnonymousMode.redactLoginEventAddress(rawAddress);
++        AsyncPlayerPreLoginEvent asyncEvent = new AsyncPlayerPreLoginEvent(playerName, eventAddress, eventRawAddress, uniqueId, this.transferred, profile, this.connection.hostname, this.paperLoginConnection); // Paper
+         server.getPluginManager().callEvent(asyncEvent);
+         profile = asyncEvent.getPlayerProfile();
+         profile.complete(true); // Paper - setPlayerProfileAPI
+@@ -333,7 +_,7 @@
+         // Paper end - Add more fields to AsyncPlayerPreLoginEvent
+
+         if (PlayerPreLoginEvent.getHandlerList().getRegisteredListeners().length != 0) {
+-            final PlayerPreLoginEvent event = new PlayerPreLoginEvent(playerName, address, uniqueId);
++            final PlayerPreLoginEvent event = new PlayerPreLoginEvent(playerName, eventAddress, uniqueId);
+             if (asyncEvent.getResult() != PlayerPreLoginEvent.Result.ALLOWED) {
+                 event.disallow(asyncEvent.getResult(), asyncEvent.kickMessage()); // Paper - Adventure
+             }
 @@ -470,6 +_,7 @@
          AUTHENTICATING,
          NEGOTIATING,

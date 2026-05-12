@@ -2,7 +2,7 @@
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -1,5 +_,6 @@
  package net.minecraft.server.network;
- 
+
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.collect.Lists;
  import com.google.common.primitives.Floats;
@@ -51,7 +51,7 @@
      private int lastTick = MinecraftServer.currentTick;
 @@ -369,7 +_,7 @@
          }
- 
+
          if (this.server.isPaused() || !this.tickPlayer()) {
 -            this.keepConnectionAlive();
 +            // this.keepConnectionAlive(); // ShreddedPaper - called elsewhere
@@ -60,7 +60,7 @@
              this.tabSpamThrottler.tick(); // Paper - configurable tab spam limits
 @@ -390,6 +_,13 @@
      }
- 
+
      private boolean tickPlayer() {
 +        // ShreddedPaper start - defer player world ticking until the current chunk is full
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
@@ -131,7 +131,7 @@
 +                    return;
 +                }
                  Direction direction = blockState.getValue(CommandBlock.FACING);
- 
+
                  BlockState blockState1 = switch (packet.getMode()) {
 @@ -983,9 +_,9 @@
                  };
@@ -143,18 +143,18 @@
 -                    this.player.level().getChunkAt(pos).setBlockEntity(blockEntity);
 +                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(serverLevel, blockEntity, RegionTaskClass.OWNER_HANDOFF);
                  }
- 
+
                  baseCommandBlock.setCommand(command);
 @@ -999,17 +_,17 @@
                      commandBlockEntity.onModeSwitch();
                  }
- 
+
 -                if (this.player.level().isCommandBlockEnabled()) {
 -                    baseCommandBlock.onUpdated(this.player.level());
 +                if (serverLevel.isCommandBlockEnabled()) {
 +                    baseCommandBlock.onUpdated(serverLevel);
                  }
- 
+
                  if (!StringUtil.isNullOrEmpty(command)) {
                      this.player
                          .sendSystemMessage(
@@ -216,7 +216,7 @@
 @@ -1197,8 +_,8 @@
                      this.player.displayClientMessage(Component.translatable("structure_block.invalid_structure_name", packet.getName()), false);
                  }
- 
+
 -                structureBlockEntity.setChanged();
 -                this.player.level().sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
 +	                structureBlockEntity.setChanged();
@@ -266,7 +266,7 @@
 @@ -1236,8 +_,11 @@
                      testInstanceBlockEntity.runTest(this.player::sendSystemMessage);
                  }
- 
+
 -                BlockState blockState = this.player.level().getBlockState(blockPos);
 -                this.player.level().sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
 +                BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during test instance block edits
@@ -280,7 +280,7 @@
 @@ -1248,11 +_,11 @@
                      component = Component.translatable("test_instance.description.no_test").withStyle(ChatFormatting.RED);
                  }
- 
+
 -                Optional<Vec3i> optional1;
 +	                Optional<Vec3i> optional1;
                  if (packet.action() == ServerboundTestInstanceBlockActionPacket.Action.QUERY) {
@@ -347,7 +347,7 @@
 +            this.filterTextPacket(list).thenAcceptAsync(consumer, r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
          }
      }
- 
+
 @@ -1464,7 +_,16 @@
      public void handleBlockEntityTagQuery(ServerboundBlockEntityTagQueryPacket packet) {
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
@@ -440,7 +440,7 @@
 @@ -2202,8 +_,8 @@
                              this.player.sendSystemMessage(component1, true);
                          }
- 
+
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos));
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos.relative(direction)));
 +                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, blockPos); // ShreddedPaper - do not sync-load for interaction resync packets
@@ -451,7 +451,7 @@
 @@ -2212,6 +_,13 @@
          }
      }
- 
+
 +    private void shreddedpaper$sendBlockUpdateIfLoaded(ServerLevel serverLevel, BlockPos blockPos) { // ShreddedPaper - do not sync-load for interaction resync packets
 +        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos);
 +        if (blockState != null) {
@@ -472,7 +472,7 @@
 +                    return; // ShreddedPaper - run ray trace on all touched owner regions
 +                }
                  BlockHitResult hitResult = this.player.level().clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, this.player));
- 
+
                  boolean cancelled;
 @@ -2294,7 +_,9 @@
              for (ServerLevel serverLevel : this.server.getAllLevels()) {
@@ -525,7 +525,7 @@
 +        }; // ShreddedPaper - entity scheduler may retire after accepting the task
 +        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) runOnPlayersThread.accept(disconnectingPlayer); else if (!ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) retryDisconnectCleanupRef[0].run(); // ShreddedPaper - run on player's thread
      }
- 
+
      private void removePlayerFromWorld() {
 @@ -2585,7 +_,7 @@
              this.player.resetLastActionTime();
@@ -536,6 +536,22 @@
              } else {
                  handler.run();
              }
+@@ -2854,11 +_,14 @@
+     }
+
+     public SocketAddress getRemoteAddress() {
+-        return this.connection.getRemoteAddress();
++        return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactPublicSocketAddress(this.connection.getRemoteAddress());
+     }
+
+     // Spigot start
+     public SocketAddress getRawAddress() {
++        if (io.multipaper.shreddedpaper.privacy.AnonymousMode.enabled()) {
++            return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactedSocketAddress();
++        }
+         // Paper start - Unix domain socket support; this can be nullable in the case of a Unix domain socket, so if it is, fake something
+         if (this.connection.channel.remoteAddress() == null) {
+             return new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0);
 @@ -2896,6 +_,9 @@
              this.player.resetLastActionTime();
              this.player.setShiftKeyDown(packet.isUsingSecondaryAction());
@@ -586,7 +602,7 @@
                      if (this.player.getHealth() > 0.0F) {
                          return;
                      }
- 
+
 -                    this.player = this.server.getPlayerList().respawn(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit
 +                    this.shreddedpaper$respawnInProgress = true; // ShreddedPaper - async respawn
 +                    final ServerPlayer respawningPlayer = this.player; // ShreddedPaper - async respawn
@@ -627,7 +643,7 @@
 -        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), this.server);
 +        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
      }
- 
+
      private void updateSignText(ServerboundSignUpdatePacket packet, List<FilteredText> filteredText) {
 @@ -3595,7 +_,10 @@
          this.player.resetLastActionTime();
@@ -644,7 +660,7 @@
 @@ -3795,6 +_,56 @@
          return !this.waitingForRespawn && this.clientLoadedTimeoutTimer <= 0;
      }
- 
+
 +    private boolean shreddedpaper$rescheduleIfMissingOwnership(ServerLevel level, ChunkPos chunkPos, Runnable action) { // ShreddedPaper
 +        if (TickThread.isTickThreadFor(this.player) && TickThread.isTickThreadFor(level, chunkPos)) {
 +            return false;
@@ -699,7 +715,7 @@
          if (this.clientLoadedTimeoutTimer > 1) { // Paper - Add PlayerLoadedWorldEvent - only reduce till 1, let the below else-if call #markClientLoaded to trigger event and reduce to 0
              this.clientLoadedTimeoutTimer--;
 @@ -3850,19 +_,48 @@
- 
+
      @Override
      public void disconnectAsync(final net.minecraft.network.DisconnectionDetails disconnectionInfo) {
 -        if (this.cserver.isPrimaryThread()) {
@@ -753,5 +769,5 @@
 +            retryDisconnectTaskRef[0].run();
 +        }
      }
- 
+
      public final boolean isDisconnected() {

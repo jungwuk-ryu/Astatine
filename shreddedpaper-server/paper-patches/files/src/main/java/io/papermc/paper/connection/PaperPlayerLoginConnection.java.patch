@@ -1,0 +1,36 @@
+--- a/src/main/java/io/papermc/paper/connection/PaperPlayerLoginConnection.java
++++ b/src/main/java/io/papermc/paper/connection/PaperPlayerLoginConnection.java
+@@ -2,6 +_,7 @@
+
+ import com.destroystokyo.paper.profile.CraftPlayerProfile;
+ import com.destroystokyo.paper.profile.PlayerProfile;
++import io.multipaper.shreddedpaper.privacy.AnonymousMode;
+ import io.papermc.paper.adventure.PaperAdventure;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
+@@ -34,12 +_,12 @@
+
+     @Override
+     public SocketAddress getAddress() {
+-        return this.packetListener.connection.channel.remoteAddress();
++        return AnonymousMode.redactPublicSocketAddress(this.packetListener.connection.channel.remoteAddress());
+     }
+
+     @Override
+     public InetSocketAddress getClientAddress() {
+-        return (InetSocketAddress) this.packetListener.connection.getRemoteAddress();
++        return AnonymousMode.redactPublicSocketAddress((InetSocketAddress) this.packetListener.connection.getRemoteAddress());
+     }
+
+     @Override
+@@ -49,7 +_,9 @@
+
+     @Override
+     public @org.jspecify.annotations.Nullable InetSocketAddress getHAProxyAddress() {
+-        return this.packetListener.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress ? inetSocketAddress : null;
++        return this.packetListener.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress
++            ? AnonymousMode.redactPublicSocketAddress(inetSocketAddress)
++            : null;
+     }
+
+     @Override

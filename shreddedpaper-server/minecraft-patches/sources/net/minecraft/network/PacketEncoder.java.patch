@@ -1,0 +1,16 @@
+--- a/net/minecraft/network/PacketEncoder.java
++++ b/net/minecraft/network/PacketEncoder.java
+@@ -32,7 +_,12 @@
+                 );
+             }
+
+-            JvmProfiler.INSTANCE.onPacketSent(this.protocolInfo.id(), packetType, channelHandlerContext.channel().remoteAddress(), i);
++            JvmProfiler.INSTANCE.onPacketSent(
++                this.protocolInfo.id(),
++                packetType,
++                io.multipaper.shreddedpaper.privacy.AnonymousMode.redactPublicSocketAddress(channelHandlerContext.channel().remoteAddress()),
++                i
++            );
+         } catch (Throwable var9) {
+             LOGGER.error("Error sending packet {}", packetType, var9);
+             if (packet.isSkippable()) {

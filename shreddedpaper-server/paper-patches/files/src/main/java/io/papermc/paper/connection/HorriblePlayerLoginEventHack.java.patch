@@ -1,0 +1,23 @@
+--- a/src/main/java/io/papermc/paper/connection/HorriblePlayerLoginEventHack.java
++++ b/src/main/java/io/papermc/paper/connection/HorriblePlayerLoginEventHack.java
+@@ -2,6 +_,7 @@
+
+ import com.mojang.authlib.GameProfile;
+ import com.mojang.logging.LogUtils;
++import io.multipaper.shreddedpaper.privacy.AnonymousMode;
+ import io.papermc.paper.adventure.PaperAdventure;
+ import java.util.HashSet;
+ import java.util.Optional;
+@@ -84,7 +_,12 @@
+         connection.handledLegacyLoginEvent = true;
+
+         CraftPlayer horribleBukkitPlayer = player.getBukkitEntity();
+-        PlayerLoginEvent event = new PlayerLoginEvent(horribleBukkitPlayer, connection.hostname, ((java.net.InetSocketAddress) connection.getRemoteAddress()).getAddress(), ((java.net.InetSocketAddress) connection.channel.remoteAddress()).getAddress());
++        PlayerLoginEvent event = new PlayerLoginEvent(
++            horribleBukkitPlayer,
++            connection.hostname,
++            AnonymousMode.redactLoginEventAddress(((java.net.InetSocketAddress) connection.getRemoteAddress()).getAddress()),
++            AnonymousMode.redactLoginEventAddress(((java.net.InetSocketAddress) connection.channel.remoteAddress()).getAddress())
++        );
+         event.disallow(result.result(), PaperAdventure.asAdventure(result.message()));
+        event.callEvent();
