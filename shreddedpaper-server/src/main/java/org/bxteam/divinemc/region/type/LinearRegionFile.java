@@ -27,6 +27,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -42,7 +43,12 @@ public class LinearRegionFile implements IRegionFile {
     private static final Logger LOGGER = LogManager.getLogger(LinearRegionFile.class.getSimpleName());
     private static final Object saveLock = new Object();
 
-    public static final int MAX_CHUNK_SIZE = 500 * 1024 * 1024;
+    public static final int MAX_CHUNK_SIZE = 32 * 1024 * 1024;
+    private static final int MAX_REGION_FILE_SIZE = 512 * 1024 * 1024;
+    private static final int MAX_BUCKET_SIZE = 64 * 1024 * 1024;
+    private static final int MAX_BUCKET_DECOMPRESSED_SIZE = 128 * 1024 * 1024;
+    private static final int MAX_LINEAR_V1_DECOMPRESSED_SIZE = 256 * 1024 * 1024;
+    private static final int MAX_FEATURE_NAME_SIZE = 128;
     public static int SAVE_THREAD_MAX_COUNT = 6;
     public static int SAVE_DELAY_MS = 100;
     public static boolean USE_VIRTUAL_THREAD = true;
@@ -147,7 +153,7 @@ public class LinearRegionFile implements IRegionFile {
             try {
                 ByteArrayInputStream bucketByteStream = new ByteArrayInputStream(bucketBuffers[idx]);
                 ZstdInputStream zstdStream = new ZstdInputStream(bucketByteStream);
-                ByteBuffer bucketBuffer = ByteBuffer.wrap(zstdStream.readAllBytes());
+                ByteBuffer bucketBuffer = ByteBuffer.wrap(readAllBytesBounded(zstdStream, MAX_BUCKET_DECOMPRESSED_SIZE, "bucket " + idx + " in " + this.regionFile));
 
                 int bx = chunkX / bucketSize, bz = chunkZ / bucketSize;
 
@@ -155,12 +161,19 @@ public class LinearRegionFile implements IRegionFile {
                     for (int cz = 0; cz < 32 / gridSize; cz++) {
                         int chunkIndex = (bx * (32 / gridSize) + cx) + (bz * (32 / gridSize) + cz) * 32;
 
+                        requireRemaining(bucketBuffer, Integer.BYTES + Long.BYTES, "bucket entry header");
                         int chunkSize = bucketBuffer.getInt();
                         long timestamp = bucketBuffer.getLong();
                         this.chunkTimestamps[chunkIndex] = timestamp;
 
                         if (chunkSize > 0) {
-                            byte[] chunkData = new byte[chunkSize - 8];
+                            if (chunkSize < Long.BYTES) {
+                                throw new IOException("Invalid chunk size " + chunkSize + " in " + this.regionFile);
+                            }
+                            final int chunkDataSize = chunkSize - Long.BYTES;
+                            validateChunkSize(chunkDataSize, "bucket chunk");
+                            requireRemaining(bucketBuffer, chunkDataSize, "bucket chunk data");
+                            byte[] chunkData = new byte[chunkDataSize];
                             bucketBuffer.get(chunkData);
 
                             int maxCompressedLength = this.compressor.maxCompressedLength(chunkData.length);
@@ -199,9 +212,14 @@ public class LinearRegionFile implements IRegionFile {
         }
 
         try {
+            final long fileSize = Files.size(this.regionFile);
+            if (fileSize < HEADER_SIZE + FOOTER_SIZE || fileSize > MAX_REGION_FILE_SIZE) {
+                throw new IOException("Invalid region file size " + fileSize + " for " + this.regionFile);
+            }
             byte[] fileContent = Files.readAllBytes(this.regionFile);
             ByteBuffer buffer = ByteBuffer.wrap(fileContent);
 
+            requireRemaining(buffer, Long.BYTES + Byte.BYTES, "linear region header");
             long superBlock = buffer.getLong();
             if (superBlock != SUPERBLOCK)
                 throw new RuntimeException("Invalid superblock: " + superBlock + " file " + this.regionFile);
@@ -226,14 +244,21 @@ public class LinearRegionFile implements IRegionFile {
         final int FOOTER_SIZE = 8;
 
         // Skip newestTimestamp (Long) + Compression level (Byte) + Chunk count (Short): Unused.
+        requireRemaining(buffer, Long.BYTES + Byte.BYTES + Short.BYTES, "linear v1 fixed header");
         buffer.position(buffer.position() + 11);
 
+        requireRemaining(buffer, Integer.BYTES, "linear v1 data count");
         int dataCount = buffer.getInt();
+        if (dataCount <= 0 || dataCount > MAX_REGION_FILE_SIZE) {
+            throw new IOException("Invalid v1 data length " + dataCount + " in " + this.regionFile);
+        }
         long fileLength = this.regionFile.toFile().length();
-        if (fileLength != HEADER_SIZE + dataCount + FOOTER_SIZE) {
-            throw new IOException("Invalid file length: " + this.regionFile + " " + fileLength + " " + (HEADER_SIZE + dataCount + FOOTER_SIZE));
+        final long expectedLength = HEADER_SIZE + (long) dataCount + FOOTER_SIZE;
+        if (fileLength != expectedLength) {
+            throw new IOException("Invalid file length: " + this.regionFile + " " + fileLength + " " + expectedLength);
         }
 
+        requireRemaining(buffer, Long.BYTES + dataCount + FOOTER_SIZE, "linear v1 payload");
         buffer.position(buffer.position() + 8); // Skip data hash (Long): Unused.
 
         byte[] rawCompressed = new byte[dataCount];
@@ -241,9 +266,10 @@ public class LinearRegionFile implements IRegionFile {
 
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(rawCompressed);
         ZstdInputStream zstdInputStream = new ZstdInputStream(byteArrayInputStream);
-        ByteBuffer decompressedBuffer = ByteBuffer.wrap(zstdInputStream.readAllBytes());
+        ByteBuffer decompressedBuffer = ByteBuffer.wrap(readAllBytesBounded(zstdInputStream, MAX_LINEAR_V1_DECOMPRESSED_SIZE, "linear v1 payload in " + this.regionFile));
 
         int[] starts = new int[1024];
+        requireRemaining(decompressedBuffer, 1024 * (Integer.BYTES + Integer.BYTES), "linear v1 chunk table");
         for (int i = 0; i < 1024; i++) {
             starts[i] = decompressedBuffer.getInt();
             decompressedBuffer.getInt(); // Skip timestamps (Int): Unused.
@@ -252,6 +278,8 @@ public class LinearRegionFile implements IRegionFile {
         for (int i = 0; i < 1024; i++) {
             if (starts[i] > 0) {
                 int size = starts[i];
+                validateChunkSize(size, "linear v1 chunk");
+                requireRemaining(decompressedBuffer, size, "linear v1 chunk data");
                 byte[] chunkData = new byte[size];
                 decompressedBuffer.get(chunkData);
 
@@ -269,23 +297,30 @@ public class LinearRegionFile implements IRegionFile {
     }
 
     private void parseLinearV2(ByteBuffer buffer) throws IOException {
+        requireRemaining(buffer, Long.BYTES + Byte.BYTES, "linear v2 fixed header");
         buffer.getLong(); // Skip newestTimestamp (Long)
         gridSize = buffer.get();
         if (gridSize != 1 && gridSize != 2 && gridSize != 4 && gridSize != 8 && gridSize != 16 && gridSize != 32)
             throw new RuntimeException("Invalid grid size: " + gridSize + " file " + this.regionFile);
         bucketSize = 32 / gridSize;
 
+        requireRemaining(buffer, Integer.BYTES + Integer.BYTES + 128, "linear v2 region header");
         buffer.getInt(); // Skip region_x (Int)
         buffer.getInt(); // Skip region_z (Int)
 
         boolean[] chunkExistenceBitmap = deserializeExistenceBitmap(buffer);
 
         while (true) {
-            byte featureNameLength = buffer.get();
+            requireRemaining(buffer, Byte.BYTES, "linear v2 feature length");
+            int featureNameLength = Byte.toUnsignedInt(buffer.get());
             if (featureNameLength == 0) break;
+            if (featureNameLength > MAX_FEATURE_NAME_SIZE) {
+                throw new IOException("Invalid feature name length " + featureNameLength + " in " + this.regionFile);
+            }
+            requireRemaining(buffer, featureNameLength + Integer.BYTES, "linear v2 feature entry");
             byte[] featureNameBytes = new byte[featureNameLength];
             buffer.get(featureNameBytes);
-            String featureName = new String(featureNameBytes);
+            String featureName = new String(featureNameBytes, StandardCharsets.UTF_8);
             int featureValue = buffer.getInt();
             // System.out.println("NBT Feature: " + featureName + " = " + featureValue);
         }
@@ -294,7 +329,11 @@ public class LinearRegionFile implements IRegionFile {
         byte[] bucketCompressionLevels = new byte[gridSize * gridSize];
         long[] bucketHashes = new long[gridSize * gridSize];
         for (int i = 0; i < gridSize * gridSize; i++) {
+            requireRemaining(buffer, Integer.BYTES + Byte.BYTES + Long.BYTES, "linear v2 bucket header");
             bucketSizes[i] = buffer.getInt();
+            if (bucketSizes[i] < 0 || bucketSizes[i] > MAX_BUCKET_SIZE) {
+                throw new IOException("Invalid bucket size " + bucketSizes[i] + " in " + this.regionFile);
+            }
             bucketCompressionLevels[i] = buffer.get();
             bucketHashes[i] = buffer.getLong();
         }
@@ -302,6 +341,7 @@ public class LinearRegionFile implements IRegionFile {
         bucketBuffers = new byte[gridSize * gridSize][];
         for (int i = 0; i < gridSize * gridSize; i++) {
             if (bucketSizes[i] > 0) {
+                requireRemaining(buffer, bucketSizes[i], "linear v2 bucket payload");
                 bucketBuffers[i] = new byte[bucketSizes[i]];
                 buffer.get(bucketBuffers[i]);
                 long rawHash = LongHashFunction.xx().hashBytes(bucketBuffers[i]);
@@ -309,6 +349,7 @@ public class LinearRegionFile implements IRegionFile {
             }
         }
 
+        requireRemaining(buffer, Long.BYTES, "linear v2 footer");
         long footerSuperBlock = buffer.getLong();
         if (footerSuperBlock != SUPERBLOCK)
             throw new IOException("Footer superblock invalid " + this.regionFile);
@@ -362,26 +403,29 @@ public class LinearRegionFile implements IRegionFile {
         openRegionFile();
         openBucket(pos.x, pos.z);
         try {
-            byte[] b = toByteArray(new ByteArrayInputStream(buffer.array()));
-            int uncompressedSize = b.length;
-
+            ByteBuffer source = buffer.slice();
+            int uncompressedSize = source.remaining();
             if (uncompressedSize > MAX_CHUNK_SIZE) {
-                LOGGER.error("Chunk dupe attempt {}", this.regionFile);
+                LOGGER.error("Chunk exceeds maximum size {} {}", uncompressedSize, this.regionFile);
                 clear(pos);
-            } else {
-                int maxCompressedLength = this.compressor.maxCompressedLength(b.length);
-                byte[] compressed = new byte[maxCompressedLength];
-                int compressedLength = this.compressor.compress(b, 0, b.length, compressed, 0, maxCompressedLength);
-                b = new byte[compressedLength];
-                System.arraycopy(compressed, 0, b, 0, compressedLength);
-
-                int index = getChunkIndex(pos.x, pos.z);
-                this.buffer[index] = b;
-                this.chunkTimestamps[index] = getTimestamp();
-                this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] = uncompressedSize;
+                return;
             }
-        } catch (IOException e) {
-            LOGGER.error("Chunk write IOException {} {}", e, this.regionFile);
+
+            byte[] b = new byte[uncompressedSize];
+            source.get(b);
+
+            int maxCompressedLength = this.compressor.maxCompressedLength(b.length);
+            byte[] compressed = new byte[maxCompressedLength];
+            int compressedLength = this.compressor.compress(b, 0, b.length, compressed, 0, maxCompressedLength);
+            b = new byte[compressedLength];
+            System.arraycopy(compressed, 0, b, 0, compressedLength);
+
+            int index = getChunkIndex(pos.x, pos.z);
+            this.buffer[index] = b;
+            this.chunkTimestamps[index] = getTimestamp();
+            this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] = uncompressedSize;
+        } catch (RuntimeException e) {
+            LOGGER.error("Chunk write failure {} {}", e, this.regionFile);
         }
         markToSave();
     }
@@ -397,9 +441,15 @@ public class LinearRegionFile implements IRegionFile {
         openRegionFile();
         openBucket(pos.x, pos.z);
 
-        if(this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] != 0) {
-            byte[] content = new byte[bufferUncompressedSize[getChunkIndex(pos.x, pos.z)]];
-            this.decompressor.decompress(this.buffer[getChunkIndex(pos.x, pos.z)], 0, content, 0, bufferUncompressedSize[getChunkIndex(pos.x, pos.z)]);
+        final int chunkIndex = getChunkIndex(pos.x, pos.z);
+        if(this.bufferUncompressedSize[chunkIndex] != 0) {
+            final int uncompressedSize = this.bufferUncompressedSize[chunkIndex];
+            if (this.buffer[chunkIndex] == null || uncompressedSize <= 0 || uncompressedSize > MAX_CHUNK_SIZE) {
+                LOGGER.error("Invalid chunk buffer metadata for {} chunk {}", this.regionFile, pos);
+                return null;
+            }
+            byte[] content = new byte[uncompressedSize];
+            this.decompressor.decompress(this.buffer[chunkIndex], 0, content, 0, uncompressedSize);
             return new DataInputStream(new ByteArrayInputStream(content));
         }
         return null;
@@ -569,6 +619,31 @@ public class LinearRegionFile implements IRegionFile {
             }
             out.writeByte(b);
         }
+    }
+
+    private static void requireRemaining(ByteBuffer buffer, int bytes, String context) throws IOException {
+        if (bytes < 0 || buffer.remaining() < bytes) {
+            throw new IOException("Truncated " + context + ": need " + bytes + " bytes, have " + buffer.remaining());
+        }
+    }
+
+    private static void validateChunkSize(int size, String context) throws IOException {
+        if (size <= 0 || size > MAX_CHUNK_SIZE) {
+            throw new IOException("Invalid " + context + " size " + size + " (max " + MAX_CHUNK_SIZE + ")");
+        }
+    }
+
+    private static byte[] readAllBytesBounded(InputStream in, int maxBytes, String context) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(8192, maxBytes));
+        byte[] tempBuffer = new byte[8192];
+        int length;
+        while ((length = in.read(tempBuffer)) >= 0) {
+            if (out.size() > maxBytes - length) {
+                throw new IOException("Decompressed " + context + " exceeds " + maxBytes + " bytes");
+            }
+            out.write(tempBuffer, 0, length);
+        }
+        return out.toByteArray();
     }
 
     private byte[] toByteArray(InputStream in) throws IOException {

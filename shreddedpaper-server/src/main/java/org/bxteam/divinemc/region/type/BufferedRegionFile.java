@@ -44,6 +44,8 @@ public class BufferedRegionFile implements IRegionFile {
     private static final long SUPER_BLOCK = 0x1145141919810L;
     private static final int HASH_SEED = 0x0721;
     private static final byte VERSION = 0x01; // Version 1
+    private static final int MAX_UNCOMPRESSED_CHUNK_SIZE = 32 * 1024 * 1024;
+    private static final int MAX_STORED_CHUNK_SECTION_SIZE = 64 * 1024 * 1024;
 
     private final Path filePath;
     private final ReadWriteLock fileAccessLock = new ReentrantReadWriteLock();
@@ -261,7 +263,8 @@ public class BufferedRegionFile implements IRegionFile {
     }
 
     private void readHeaders() throws IOException {
-        if (this.channel.size() < this.headerSize()) {
+        final long fileSize = this.channel.size();
+        if (fileSize < this.headerSize()) {
             return;
         }
 
@@ -276,9 +279,13 @@ public class BufferedRegionFile implements IRegionFile {
         this.compressionLevel = buffer.get(); // Compression level
         this.xxHash32Seed = buffer.getInt(); // XXHash32 seed
         this.currentAcquiredIndex = buffer.getLong(); // Acquired index
+        if (this.currentAcquiredIndex < this.headerSize() || this.currentAcquiredIndex > fileSize) {
+            throw new IOException("Invalid acquired index " + this.currentAcquiredIndex + " in " + this.filePath);
+        }
 
         for (Sector sector : this.sectors) {
             sector.restoreFrom(buffer);
+            sector.validateFromHeader(fileSize);
             if (sector.hasData()) {
                 this.currentAcquiredIndex = Math.max(this.currentAcquiredIndex, sector.offset + sector.length);
             }
@@ -499,12 +506,18 @@ public class BufferedRegionFile implements IRegionFile {
 
     private void writeChunk(int x, int z, @NotNull ByteBuffer data) throws IOException {
         final int chunkIndex = getChunkIndex(x, z);
+        if (data.remaining() > MAX_UNCOMPRESSED_CHUNK_SIZE) {
+            throw new IOException("Chunk data exceeds maximum size " + data.remaining() + " in " + this.filePath);
+        }
 
         final int oldPositionOfData = data.position();
         final int xxHash32OfData = this.xxHash32.hash(data, this.xxHash32Seed);
         data.position(oldPositionOfData);
 
         final ByteBuffer compressedData = this.compress(this.ensureDirectBuffer(data));
+        if (compressedData.remaining() > MAX_STORED_CHUNK_SECTION_SIZE - Integer.BYTES - Long.BYTES - Integer.BYTES) {
+            throw new IOException("Compressed chunk section exceeds maximum size " + compressedData.remaining() + " in " + this.filePath);
+        }
         final ByteBuffer chunkSectionBuilder = ByteBuffer.allocateDirect(compressedData.remaining() + 4 + 8 + 4);
 
         chunkSectionBuilder.putInt(data.remaining()); // Uncompressed length
@@ -523,9 +536,15 @@ public class BufferedRegionFile implements IRegionFile {
             return null;
         }
 
+        if (compressed.remaining() < Integer.BYTES + Long.BYTES + Integer.BYTES) {
+            throw new IOException("Truncated chunk section in " + this.filePath);
+        }
         final int uncompressedLength = compressed.getInt();
         final long timestamp = compressed.getLong(); // TODO use this timestamp for something?
         final int dataXXHash32 = compressed.getInt();
+        if (uncompressedLength <= 0 || uncompressedLength > MAX_UNCOMPRESSED_CHUNK_SIZE) {
+            throw new IOException("Invalid uncompressed chunk length " + uncompressedLength + " in " + this.filePath);
+        }
 
         final ByteBuffer decompressed = this.decompress(this.ensureDirectBuffer(compressed), uncompressedLength);
 
@@ -591,10 +610,16 @@ public class BufferedRegionFile implements IRegionFile {
     private @NotNull ByteBuffer decompress(@NotNull ByteBuffer input, int originalSize) throws IOException {
         final int originalPosition = input.position();
         final int originalLimit = input.limit();
+        if (originalSize <= 0 || originalSize > MAX_UNCOMPRESSED_CHUNK_SIZE) {
+            throw new IOException("Invalid decompression size: " + originalSize);
+        }
 
         try {
             byte[] inputArray;
             int inputLength = input.remaining();
+            if (inputLength <= 0 || inputLength > MAX_STORED_CHUNK_SECTION_SIZE) {
+                throw new IOException("Invalid compressed input size: " + inputLength);
+            }
 
             if (input.hasArray()) {
                 inputArray = input.array();
@@ -797,19 +822,35 @@ public class BufferedRegionFile implements IRegionFile {
         }
 
         public @NotNull ByteBuffer read(@NotNull FileChannel channel) throws IOException {
+            if (!this.validLength()) {
+                throw new IOException("Invalid stored sector length " + this.length + " in " + BufferedRegionFile.this.filePath);
+            }
             final ByteBuffer result = ByteBuffer.allocateDirect((int) this.length);
 
-            channel.read(result, this.offset);
+            long readOffset = this.offset;
+            while (result.hasRemaining()) {
+                final int read = channel.read(result, readOffset);
+                if (read < 0) {
+                    throw new EOFException("Truncated sector " + this + " in " + BufferedRegionFile.this.filePath);
+                }
+                readOffset += read;
+            }
             result.flip();
 
             return result;
         }
 
         public void store(@NotNull ByteBuffer newData, @NotNull FileChannel channel) throws IOException {
+            if (newData.remaining() <= 0 || newData.remaining() > MAX_STORED_CHUNK_SECTION_SIZE) {
+                throw new IOException("Invalid stored sector size " + newData.remaining() + " in " + BufferedRegionFile.this.filePath);
+            }
             this.hasData = true;
             this.length = newData.remaining();
             this.offset = currentAcquiredIndex;
 
+            if (Long.MAX_VALUE - BufferedRegionFile.this.currentAcquiredIndex < this.length) {
+                throw new IOException("Region file offset overflow in " + BufferedRegionFile.this.filePath);
+            }
             BufferedRegionFile.this.currentAcquiredIndex += this.length;
 
             long offset = this.offset;
@@ -834,9 +875,25 @@ public class BufferedRegionFile implements IRegionFile {
             this.length = buffer.getLong();
             this.hasData = buffer.get() == 1;
 
-            if (this.length < 0 || this.offset < 0) {
+            if (this.length < 0 || this.offset < 0 || (!this.hasData && this.length != 0)) {
                 throw new IllegalStateException("Invalid sector data: " + this);
             }
+        }
+
+        public void validateFromHeader(final long fileSize) throws IOException {
+            if (!this.hasData) {
+                return;
+            }
+            if (!this.validLength()
+                    || this.offset < BufferedRegionFile.this.headerSize()
+                    || this.offset > fileSize
+                    || this.length > fileSize - this.offset) {
+                throw new IOException("Invalid sector bounds " + this + " in " + BufferedRegionFile.this.filePath);
+            }
+        }
+
+        private boolean validLength() {
+            return this.length > 0 && this.length <= MAX_STORED_CHUNK_SECTION_SIZE && this.length <= Integer.MAX_VALUE;
         }
 
         public void clear() {
