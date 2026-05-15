@@ -1,8 +1,8 @@
 --- a/net/minecraft/network/Connection.java
 +++ b/net/minecraft/network/Connection.java
-@@ -1,7 +_,11 @@
+@@ -1,7 +1,11 @@
  package net.minecraft.network;
-
+ 
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.collect.Queues;
  import com.mojang.logging.LogUtils;
@@ -12,15 +12,15 @@
  import io.netty.bootstrap.Bootstrap;
  import io.netty.channel.Channel;
  import io.netty.channel.ChannelException;
-@@ -30,12 +_,16 @@
- import java.util.concurrent.RejectedExecutionException;
- import java.util.function.Consumer;
- import javax.crypto.Cipher;
-+
+@@ -22,6 +26,7 @@
+ import io.netty.handler.flow.FlowControlHandler;
+ import io.netty.handler.timeout.ReadTimeoutHandler;
+ import io.netty.handler.timeout.TimeoutException;
 +import io.netty.util.concurrent.AbstractEventExecutor;
- import net.minecraft.SharedConstants;
- import net.minecraft.network.chat.Component;
- import net.minecraft.network.protocol.BundlerInfo;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
+ import java.nio.channels.ClosedChannelException;
+@@ -36,6 +41,8 @@
  import net.minecraft.network.protocol.Packet;
  import net.minecraft.network.protocol.PacketFlow;
  import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
@@ -29,7 +29,7 @@
  import net.minecraft.network.protocol.handshake.ClientIntent;
  import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
  import net.minecraft.network.protocol.handshake.HandshakeProtocols;
-@@ -45,8 +_,11 @@
+@@ -45,8 +52,11 @@
  import net.minecraft.network.protocol.login.LoginProtocols;
  import net.minecraft.network.protocol.status.ClientStatusPacketListener;
  import net.minecraft.network.protocol.status.StatusProtocols;
@@ -41,7 +41,7 @@
  import net.minecraft.util.Mth;
  import net.minecraft.util.Util;
  import net.minecraft.util.debugchart.LocalSampleLogger;
-@@ -218,6 +_,10 @@
+@@ -218,6 +228,10 @@
                  throw new IllegalStateException("Received a packet before the packet listener was initialized");
              } else {
                  // Paper start - packet limiter
@@ -52,39 +52,39 @@
                  if (this.stopReadingPackets) {
                      return;
                  }
-@@ -303,6 +_,7 @@
-
+@@ -303,6 +317,7 @@
+ 
      private static void syncAfterConfigurationChange(ChannelFuture future) {
          try {
-+            if (TickThread.isTickThread()) MinecraftServer.getServer().managedBlock(future::isDone); // ShreddedPaper - don't block main thread
++            if (TickThread.isTickThread()) MinecraftServer.getServer().managedBlock(future::isDone); // ShreddedPaper - do not spin-block tick threads
              future.syncUninterruptibly();
          } catch (Exception var2) {
              if (var2 instanceof ClosedChannelException) {
-@@ -400,7 +_,7 @@
-
+@@ -400,7 +415,7 @@
+ 
      public void send(Packet<?> packet, @Nullable ChannelFutureListener sendListener, boolean flush) {
          // Paper start - Optimize network: Handle oversized packets better
 -        final boolean connected = this.isConnected();
-+        final boolean connected = true || this.isConnected(); // ShreddedPaper - Checking if the player is connected is expensive
++        final boolean connected = this.isConnected(); // ShreddedPaper - keep closed connections from retaining queued sends
          if (!connected && !this.preparing) {
              return;
          }
-@@ -448,6 +_,14 @@
+@@ -448,6 +463,14 @@
          if (this.channel.eventLoop().inEventLoop()) {
              this.doSendPacket(packet, sendListener, flush);
          } else {
-+            // ShreddedPaper start - Use lazyExecute if we aren't flushing
++            // ShreddedPaper start - Use lazyExecute if we are not flushing
 +            if (ShreddedPaperConfiguration.get().optimizations.useLazyExecuteWhenNotFlushing && !flush) {
 +                ((AbstractEventExecutor) this.channel.eventLoop()).lazyExecute(() -> {
 +                    this.doSendPacket(packet, sendListener, flush);
 +                });
 +                return;
 +            }
-+            // ShreddedPaper end - Use lazyExecute if we aren't flushing
++            // ShreddedPaper end - Use lazyExecute if we are not flushing
              this.channel.eventLoop().execute(() -> this.doSendPacket(packet, sendListener, flush));
          }
      }
-@@ -462,6 +_,9 @@
+@@ -462,6 +485,9 @@
          try {
          final ChannelFuture channelFuture;
          // Paper end - Optimize network
@@ -94,9 +94,9 @@
          if (sendListener != null) {
              channelFuture = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet); // Paper - Optimize network
              channelFuture.addListener(sendListener);
-@@ -500,18 +_,24 @@
+@@ -500,18 +526,24 @@
      }
-
+ 
      // Paper start - Optimize network: Rewrite this to be safer if ran off main thread
 -    private boolean flushQueue() {
 +    public boolean flushQueue() { // ShreddedPaper - make public
@@ -121,8 +121,8 @@
 +        NetworkFlushDiagnostics.recordRejectedOffThread(!this.pendingActions.isEmpty());
          return false;
      }
-
-@@ -556,7 +_,8 @@
+ 
+@@ -556,7 +588,8 @@
      private static int currTick; // Paper - Buffer joins to world
      private static int tickSecond; // Purpur - Max joins per second
      public void tick() {
@@ -132,7 +132,7 @@
          // Paper start - Buffer joins to world
          if (Connection.currTick != net.minecraft.server.MinecraftServer.currentTick) {
              Connection.currTick = net.minecraft.server.MinecraftServer.currentTick;
-@@ -618,7 +_,7 @@
+@@ -618,7 +651,7 @@
          if (this.address == null) {
              return "local";
          } else {
@@ -140,8 +140,8 @@
 +            return logIps && !AnonymousMode.enabled() ? this.address.toString() : "IP hidden";
          }
      }
-
-@@ -834,7 +_,7 @@
+ 
+@@ -834,7 +867,7 @@
                      /* Player was logged in, either game listener or configuration listener */
                      final com.mojang.authlib.GameProfile profile = commonPacketListener.getOwner();
                      new com.destroystokyo.paper.event.player.PlayerConnectionCloseEvent(profile.id(),
@@ -150,7 +150,7 @@
                  } else if (packetListener instanceof net.minecraft.server.network.ServerLoginPacketListenerImpl loginListener) {
                      /* Player is login stage */
                      switch (loginListener.state) {
-@@ -844,7 +_,7 @@
+@@ -844,7 +877,7 @@
                          case ACCEPTED:
                              final com.mojang.authlib.GameProfile profile = loginListener.authenticatedProfile; /* Should be non-null at this stage */
                              new com.destroystokyo.paper.event.player.PlayerConnectionCloseEvent(profile.id(), profile.name(),

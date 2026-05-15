@@ -1,18 +1,11 @@
 --- a/src/main/java/com/destroystokyo/paper/network/PaperNetworkClient.java
 +++ b/src/main/java/com/destroystokyo/paper/network/PaperNetworkClient.java
-@@ -1,5 +_,6 @@
- package com.destroystokyo.paper.network;
-
+@@ -2,2 +2,3 @@
+ 
 +import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import java.net.InetSocketAddress;
-
- import javax.annotation.Nullable;
-@@ -15,7 +_,7 @@
-
-     @Override
+@@ -17,3 +18,3 @@
      public InetSocketAddress getAddress() {
 -        return (InetSocketAddress) this.networkManager.getRemoteAddress();
 +        return AnonymousMode.redactPublicSocketAddress((InetSocketAddress) this.networkManager.getRemoteAddress());
      }
-
-     @Override

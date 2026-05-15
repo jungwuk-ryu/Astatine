@@ -1,19 +1,11 @@
 --- a/src/main/java/com/destroystokyo/paper/network/PaperLegacyStatusClient.java
 +++ b/src/main/java/com/destroystokyo/paper/network/PaperLegacyStatusClient.java
-@@ -1,6 +_,7 @@
- package com.destroystokyo.paper.network;
-
+@@ -3,2 +3,3 @@
  import com.destroystokyo.paper.event.server.PaperServerListPingEvent;
 +import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
- import net.minecraft.ChatFormatting;
- import net.minecraft.server.MinecraftServer;
-@@ -24,7 +_,7 @@
-
-     @Override
+@@ -26,3 +27,3 @@
      public InetSocketAddress getAddress() {
 -        return this.address;
 +        return AnonymousMode.redactPublicSocketAddress(this.address);
      }
-
-     @Override

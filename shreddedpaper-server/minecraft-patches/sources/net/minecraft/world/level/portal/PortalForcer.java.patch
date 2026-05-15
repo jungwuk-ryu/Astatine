@@ -1,24 +1,14 @@
 --- a/net/minecraft/world/level/portal/PortalForcer.java
 +++ b/net/minecraft/world/level/portal/PortalForcer.java
-@@ -4,8 +_,10 @@
- import java.util.Optional;
- import net.minecraft.core.BlockPos;
+@@ -6,2 +6,3 @@
  import net.minecraft.core.Direction;
 +import net.minecraft.core.SectionPos;
  import net.minecraft.core.Vec3i;
- import net.minecraft.server.level.ServerLevel;
- import net.minecraft.util.BlockUtil;
-@@ -20,6 +_,7 @@
- import net.minecraft.world.level.block.state.BlockState;
- import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+@@ -19,2 +20,3 @@
  import net.minecraft.world.level.border.WorldBorder;
 +import net.minecraft.world.level.chunk.ChunkAccess;
  import net.minecraft.world.level.levelgen.Heightmap;
- 
- public class PortalForcer {
-@@ -55,7 +_,10 @@
-             poiManager,
-             type -> type.is(PoiTypes.NETHER_PORTAL),
+@@ -57,3 +59,6 @@
              (BlockPos pos) -> {
 -                net.minecraft.world.level.chunk.ChunkAccess lowest = this.level.getChunk(pos.getX() >> 4, pos.getZ() >> 4, net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY);
 +                net.minecraft.world.level.chunk.ChunkAccess lowest = this.level.getChunk(pos.getX() >> 4, pos.getZ() >> 4, net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY, false); // ShreddedPaper - avoid sync chunk loads while validating async portal POI candidates
@@ -26,63 +16,38 @@
 +                    return false;
 +                }
                  if (!lowest.getPersistedStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.FULL)
-                     && (lowest.getBelowZeroRetrogen() == null || !lowest.getBelowZeroRetrogen().targetStatus().isOrAfter(net.minecraft.world.level.chunk.status.ChunkStatus.SPAWN))) {
-                     // why would we generate the chunk?
-@@ -111,7 +_,7 @@
-         BlockPos.MutableBlockPos mutableBlockPos = pos.mutable();
- 
+@@ -108,3 +113,3 @@
          for (BlockPos.MutableBlockPos mutableBlockPos1 : BlockPos.spiralAround(pos, createRadius, Direction.EAST, Direction.SOUTH)) { // CraftBukkit
 -            int min1 = Math.min(min, this.level.getHeight(Heightmap.Types.MOTION_BLOCKING, mutableBlockPos1.getX(), mutableBlockPos1.getZ()));
 +            int min1 = Math.min(min, this.getLoadedHeight(Heightmap.Types.MOTION_BLOCKING, mutableBlockPos1.getX(), mutableBlockPos1.getZ())); // ShreddedPaper - avoid sync chunk loads while creating async portals
              if (worldBorder.isWithinBounds(mutableBlockPos1) && worldBorder.isWithinBounds(mutableBlockPos1.move(direction, 1))) {
-                 mutableBlockPos1.move(direction.getOpposite(), 1);
- 
-@@ -166,6 +_,9 @@
-                         mutableBlockPos.setWithOffset(
-                             blockPos, i2 * direction.getStepX() + i1x * clockWise.getStepX(), i3, i2 * direction.getStepZ() + i1x * clockWise.getStepZ()
+@@ -170,2 +175,5 @@
                          );
 +                        if (!this.isLoadedForPortalCreation(mutableBlockPos)) { // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                            return Optional.empty(); // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                        } // ShreddedPaper - avoid sync chunk loads while creating async portals
                          blockList.setBlock(mutableBlockPos, blockState, Block.UPDATE_ALL); // CraftBukkit
-                     }
-                 }
-@@ -177,6 +_,9 @@
-             for (int i4 = -1; i4 < 4; i4++) {
-                 if (max == -1 || max == 2 || i4 == -1 || i4 == 3) {
+@@ -180,2 +188,5 @@
                      mutableBlockPos.setWithOffset(blockPos, max * direction.getStepX(), i4, max * direction.getStepZ());
 +                    if (!this.isLoadedForPortalCreation(mutableBlockPos)) { // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                        return Optional.empty(); // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                    } // ShreddedPaper - avoid sync chunk loads while creating async portals
                      blockList.setBlock(mutableBlockPos, Blocks.OBSIDIAN.defaultBlockState(), Block.UPDATE_ALL); // CraftBukkit
-                 }
-             }
-@@ -188,6 +_,9 @@
-         for (int i4x = 0; i4x < 2; i4x++) {
-             for (int min1 = 0; min1 < 3; min1++) {
+@@ -190,2 +201,5 @@
                  mutableBlockPos.setWithOffset(blockPos, i4x * direction.getStepX(), min1, i4x * direction.getStepZ());
 +                if (!this.isLoadedForPortalCreation(mutableBlockPos)) { // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                    return Optional.empty(); // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                } // ShreddedPaper - avoid sync chunk loads while creating async portals
                  blockList.setBlock(mutableBlockPos, blockState1, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE); // CraftBukkit
-             }
-         }
-@@ -208,7 +_,11 @@
-     }
- 
+@@ -208,3 +222,6 @@
      private boolean canPortalReplaceBlock(BlockPos.MutableBlockPos pos) {
--        return this.level.getBlockState(pos).canBeReplaced() && this.level.getFluidState(pos).isEmpty();
+-        BlockState blockState = this.level.getBlockState(pos);
 +        BlockState blockState = this.level.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads while creating async portals
 +        if (blockState == null) { // ShreddedPaper - avoid sync chunk loads while creating async portals
 +            return false; // ShreddedPaper - avoid sync chunk loads while creating async portals
 +        } // ShreddedPaper - avoid sync chunk loads while creating async portals
-+        return blockState.canBeReplaced() && blockState.getFluidState().isEmpty();
-     }
- 
-     private boolean canHostFrame(BlockPos originalPos, BlockPos.MutableBlockPos offsetPos, Direction direction, int offsetScale) {
-@@ -223,18 +_,22 @@
-                     direction.getStepZ() * i + clockWise.getStepZ() * offsetScale
-                 );
+         return blockState.canBeReplaced() && blockState.getFluidState().isEmpty();
+@@ -224,4 +241,8 @@
                  // Paper start - Protect Bedrock and End Portal/Frames from being destroyed
 +                BlockState blockState = this.level.getBlockStateIfLoaded(offsetPos); // ShreddedPaper - avoid sync chunk loads while creating async portals
 +                if (blockState == null) { // ShreddedPaper - avoid sync chunk loads while creating async portals
@@ -92,19 +57,12 @@
 -                    if (!this.level.getBlockState(offsetPos).isDestroyable()) {
 +                    if (!blockState.isDestroyable()) { // ShreddedPaper - avoid sync chunk loads while creating async portals
                          return false;
-                     }
-                 }
+@@ -230,3 +251,3 @@
                  // Paper end - Protect Bedrock and End Portal/Frames from being destroyed
 -                if (i1 < 0 && !this.level.getBlockState(offsetPos).isSolid()) {
 +                if (i1 < 0 && !blockState.isSolid()) { // ShreddedPaper - avoid sync chunk loads while creating async portals
                      return false;
-                 }
- 
-                 if (i1 >= 0 && !this.canPortalReplaceBlock(offsetPos)) {
-                     return false;
-@@ -244,4 +_,17 @@
- 
-         return true;
+@@ -242,2 +263,14 @@
      }
 +
 +    private int getLoadedHeight(Heightmap.Types heightmapType, int x, int z) { // ShreddedPaper - avoid sync chunk loads while creating async portals

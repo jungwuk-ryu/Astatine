@@ -4,46 +4,10 @@ Date: Mon, 27 Apr 2026 12:00:00 +0900
 Subject: [PATCH] Add region-aware lag compensation
 
 
-diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 50d06c8..6f13b4d 100644
---- a/net/minecraft/server/MinecraftServer.java
-+++ b/net/minecraft/server/MinecraftServer.java
-@@ -313,6 +313,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
-     private final Set<String> pluginsBlockingSleep = new java.util.HashSet<>(); // Paper - API to allow/disallow tick sleeping
-     public static final long SERVER_INIT = System.nanoTime(); // Paper - Lag compensation
-     public boolean lagging = false; // Purpur - Lagging threshold
-+    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // DivineMC - Lag compensation
-     protected boolean upnp = false; // Purpur - UPnP Port Forwarding
-     public static boolean isBukkitSchedulerHearbeat = false;
-     // Paper start - improve tick loop
-@@ -1371,6 +1372,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
-
-                 this.currentTickStart = tickStart;
-                 ++MinecraftServer.currentTick;
-+                this.tpsCalculator.doTick(); // DivineMC - Lag compensation
-                 // Paper end - improve tick loop
-
-                 boolean flag = l == 0L;
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
 index 602dcfc..29207db 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -239,6 +239,7 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
-     public final ShreddedPaperRegionScheduler chunkScheduler = new ShreddedPaperRegionScheduler(); // ShreddedPaper
-     public final Executor levelThread; // ShreddedPaper
-     public final java.util.concurrent.atomic.AtomicLong shreddedpaper$projectileChunkLoadCounter = new java.util.concurrent.atomic.AtomicLong(); // ShreddedPaper - Pufferfish: reduce projectile chunk loading
-+    public final org.bxteam.divinemc.util.tps.TPSCalculator tpsCalculator = new org.bxteam.divinemc.util.tps.TPSCalculator(); // DivineMC - Lag compensation
-     final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
-
-     // CraftBukkit start
-@@ -792,6 +793,7 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
-
-     public CompletableFuture<Void> tickAsync(BooleanSupplier hasTimeLeft) { // ShreddedPaper - run async
-         ProfilerFiller profilerFiller = Profiler.get();
-+        this.tpsCalculator.doTick(); // DivineMC - Lag compensation
-         this.handlingTickThreadLocal.set(true); // ShreddedPaper
-         TickRateManager tickRateManager = this.tickRateManager();
-         boolean runsNormally = tickRateManager.runsNormally();
 @@ -944,12 +946,13 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
              if (this.getGameRules().get(GameRules.ADVANCE_TIME)) {
                  // Purpur start - Configurable daylight cycle

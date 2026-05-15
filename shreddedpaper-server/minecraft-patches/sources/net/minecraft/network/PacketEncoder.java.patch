@@ -1,9 +1,9 @@
 --- a/net/minecraft/network/PacketEncoder.java
 +++ b/net/minecraft/network/PacketEncoder.java
-@@ -32,7 +_,12 @@
+@@ -32,7 +32,12 @@
                  );
              }
-
+ 
 -            JvmProfiler.INSTANCE.onPacketSent(this.protocolInfo.id(), packetType, channelHandlerContext.channel().remoteAddress(), i);
 +            JvmProfiler.INSTANCE.onPacketSent(
 +                this.protocolInfo.id(),

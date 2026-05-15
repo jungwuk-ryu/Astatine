@@ -1,13 +1,13 @@
 --- a/io/papermc/paper/entity/activation/ActivationRange.java
 +++ b/io/papermc/paper/entity/activation/ActivationRange.java
-@@ -1,5 +_,7 @@
+@@ -1,5 +_,6 @@
  package io.papermc.paper.entity.activation;
  
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
  import net.minecraft.core.BlockPos;
  import net.minecraft.server.MinecraftServer;
  import net.minecraft.world.entity.Entity;
-@@ -17,14 +_,18 @@
+@@ -18,11 +_,13 @@
  import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
  import net.minecraft.world.entity.boss.enderdragon.EnderDragonPart;
  import net.minecraft.world.entity.boss.wither.WitherBoss;
@@ -21,8 +21,7 @@
  import net.minecraft.world.entity.npc.villager.Villager;
  import net.minecraft.world.entity.player.Player;
  import net.minecraft.world.entity.projectile.EyeOfEnder;
- import net.minecraft.world.entity.projectile.FireworkRocketEntity;
- import net.minecraft.world.entity.projectile.ThrowableProjectile;
+@@ -31,6 +_,7 @@
  import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
  import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
  import net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile;
@@ -30,17 +29,15 @@
  import net.minecraft.world.entity.schedule.Activity;
  import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
  import net.minecraft.world.entity.vehicle.minecart.AbstractMinecart;
-@@ -40,8 +_,24 @@
+@@ -41,10 +_,23 @@
  import java.util.Set;
--
-+
+ 
  public final class ActivationRange {
 +    private static final double RAIDER_VILLAGER_WAKEUP_MAX_RANGE = 48.0D;
--
-+
+ 
      private ActivationRange() {
      }
-+
+ 
 +    private static boolean hasNearbyAdultVillagerTarget(final Mob mob) {
 +        final double followRange = mob.getAttributeValue(Attributes.FOLLOW_RANGE);
 +        final double range = Math.min(RAIDER_VILLAGER_WAKEUP_MAX_RANGE, Math.max(8.0D, followRange));
@@ -52,10 +49,10 @@
 +            )
 +            .isEmpty();
 +    }
--
 +
      static Activity[] VILLAGER_PANIC_IMMUNITIES = {
          Activity.HIDE,
+         Activity.PRE_RAID,
 @@ -142,7 +_,8 @@
          maxRange = Math.min((world.spigotConfig.simulationDistance << 4) - 8, maxRange);
  
@@ -83,13 +80,13 @@
              }
          }
      }
-@@ -225,6 +_,9 @@
-             if (entity instanceof final Mob mob && mob.getTarget() != null) {
-                 return 20;
+@@ -227,6 +_,9 @@
+                 return 1;
              }
-+            if (entity instanceof final Raider raider && hasNearbyAdultVillagerTarget(raider)) {
+             if (entity instanceof final Mob mob && mob.getTarget() != null) {
 +                return 20;
 +            }
++            if (entity instanceof final Raider raider && hasNearbyAdultVillagerTarget(raider)) {
+                 return 20;
+             }
              if (entity instanceof final Bee bee) {
-                 final BlockPos movingTarget = bee.getMovingTarget();
-                 if (bee.isAngry() ||

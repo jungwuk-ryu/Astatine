@@ -1,66 +1,37 @@
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1,5 +_,6 @@
- package net.minecraft.server.network;
-
+@@ -2,2 +2,3 @@
+ 
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.google.common.collect.Lists;
- import com.google.common.primitives.Floats;
- import com.mojang.authlib.GameProfile;
-@@ -8,6 +_,9 @@
- import com.mojang.brigadier.StringReader;
- import com.mojang.brigadier.suggestion.Suggestions;
+@@ -10,2 +11,5 @@
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 +import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
- import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
- import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-@@ -187,6 +_,7 @@
- import net.minecraft.world.item.crafting.RecipeManager;
- import net.minecraft.world.level.BaseCommandBlock;
+@@ -189,2 +193,3 @@
  import net.minecraft.world.level.GameType;
 +import net.minecraft.world.level.ChunkPos;
  import net.minecraft.world.level.Level;
- import net.minecraft.world.level.LevelReader;
- import net.minecraft.world.level.block.Block;
-@@ -203,6 +_,7 @@
- import net.minecraft.world.level.block.state.BlockBehaviour;
- import net.minecraft.world.level.block.state.BlockState;
+@@ -205,2 +210,3 @@
  import net.minecraft.world.level.gamerules.GameRules;
 +import net.minecraft.world.level.levelgen.structure.BoundingBox;
  import net.minecraft.world.level.material.Fluids;
- import net.minecraft.world.level.storage.TagValueOutput;
- import net.minecraft.world.phys.AABB;
-@@ -263,6 +_,7 @@
-     private static final int MAX_COMMAND_SUGGESTIONS = 1000;
-     public ServerPlayer player;
+@@ -265,2 +271,3 @@
      public final PlayerChunkSender chunkSender;
 +    private boolean shreddedpaper$respawnInProgress; // ShreddedPaper - async respawn
      private int tickCount;
-     private int ackBlockChangesUpTo = -1;
-     private final TickThrottler chatSpamThrottler = new TickThrottler(20, 200);
-@@ -291,6 +_,7 @@
-     private int aboveGroundVehicleTickCount;
-     private int receivedMovePacketCount;
+@@ -293,2 +300,3 @@
      private int knownMovePacketCount;
 +    private long shreddedpaper$moveHandoffSequence; // ShreddedPaper - discard stale cross-region movement handoffs
      private boolean receivedMovementThisTick;
-     // CraftBukkit start - add fields
-     private int lastTick = MinecraftServer.currentTick;
-@@ -369,7 +_,7 @@
-         }
-
+@@ -371,3 +379,3 @@
          if (this.server.isPaused() || !this.tickPlayer()) {
 -            this.keepConnectionAlive();
 +            // this.keepConnectionAlive(); // ShreddedPaper - called elsewhere
              this.chatSpamThrottler.tick();
-             this.dropSpamThrottler.tick();
-             this.tabSpamThrottler.tick(); // Paper - configurable tab spam limits
-@@ -390,6 +_,13 @@
-     }
-
+@@ -392,2 +400,9 @@
      private boolean tickPlayer() {
 +        // ShreddedPaper start - defer player world ticking until the current chunk is full
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
@@ -70,11 +41,7 @@
 +        }
 +        // ShreddedPaper end - defer player world ticking until the current chunk is full
          this.resetPosition();
-         this.player.xo = this.player.getX();
-         this.player.yo = this.player.getY();
-@@ -576,6 +_,35 @@
-                 double d = clampHorizontal(packet.position().x()); final double toX = d; // Paper - OBFHELPER
-                 double d1 = clampVertical(packet.position().y()); final double toY = d1; // Paper - OBFHELPER
+@@ -578,2 +593,31 @@
                  double d2 = clampHorizontal(packet.position().z()); final double toZ = d2; // Paper - OBFHELPER
 +                // ShreddedPaper start - process cross-region movement on every touched owner
 +                final Vec3 vehicleMovement = new Vec3(toX, toY, toZ).subtract(rootVehicle.position());
@@ -106,11 +73,7 @@
 +                }
 +                // ShreddedPaper end - process cross-region movement on every touched owner
                  float f = Mth.wrapDegrees(packet.yRot());
-                 float f1 = Mth.wrapDegrees(packet.xRot());
-                 double d3 = d - this.vehicleFirstGoodX;
-@@ -963,7 +_,11 @@
-             BaseCommandBlock baseCommandBlock = null;
-             CommandBlockEntity commandBlockEntity = null;
+@@ -965,3 +1009,7 @@
              BlockPos pos = packet.getPos();
 -            BlockEntity blockEntity = this.player.level().getBlockEntity(pos);
 +            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware command block edits
@@ -119,11 +82,7 @@
 +            }
 +            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
              if (blockEntity instanceof CommandBlockEntity commandBlockEntity1) {
-                 commandBlockEntity = commandBlockEntity1;
-                 baseCommandBlock = commandBlockEntity1.getCommandBlock();
-@@ -973,7 +_,10 @@
-             boolean isTrackOutput = packet.isTrackOutput();
-             if (baseCommandBlock != null) {
+@@ -975,3 +1023,6 @@
                  CommandBlockEntity.Mode mode = commandBlockEntity.getMode();
 -                BlockState blockState = this.player.level().getBlockState(pos);
 +                BlockState blockState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during command block edits
@@ -131,11 +90,7 @@
 +                    return;
 +                }
                  Direction direction = blockState.getValue(CommandBlock.FACING);
-
-                 BlockState blockState1 = switch (packet.getMode()) {
-@@ -983,9 +_,9 @@
-                 };
-                 BlockState blockState2 = blockState1.setValue(CommandBlock.FACING, direction).setValue(CommandBlock.CONDITIONAL, packet.isConditional());
+@@ -985,5 +1036,5 @@
                  if (blockState2 != blockState) {
 -                    this.player.level().setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
 +                    serverLevel.setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
@@ -143,20 +98,14 @@
 -                    this.player.level().getChunkAt(pos).setBlockEntity(blockEntity);
 +                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(serverLevel, blockEntity, RegionTaskClass.OWNER_HANDOFF);
                  }
-
-                 baseCommandBlock.setCommand(command);
-@@ -999,17 +_,17 @@
-                     commandBlockEntity.onModeSwitch();
-                 }
-
+@@ -1001,4 +1052,4 @@
+ 
 -                if (this.player.level().isCommandBlockEnabled()) {
 -                    baseCommandBlock.onUpdated(this.player.level());
 +                if (serverLevel.isCommandBlockEnabled()) {
 +                    baseCommandBlock.onUpdated(serverLevel);
                  }
-
-                 if (!StringUtil.isNullOrEmpty(command)) {
-                     this.player
+@@ -1008,6 +1059,6 @@
                          .sendSystemMessage(
 -                            Component.translatable(
 -                                this.player.level().isCommandBlockEnabled() ? "advMode.setCommand.success" : "advMode.setCommand.disabled", command
@@ -167,11 +116,7 @@
 +	                            )
 +	                        );
                  }
-             }
-         }
-@@ -1051,8 +_,14 @@
-         PacketUtils.ensureRunningOnSameThread(packet, this, serverLevel);
-         BlockPos blockPos = packet.pos();
+@@ -1053,4 +1104,10 @@
          if (this.player.isWithinBlockInteractionRange(blockPos, 1.0)) {
 -            if (serverLevel.isLoaded(blockPos)) {
 -                BlockState blockState = serverLevel.getBlockState(blockPos);
@@ -184,11 +129,7 @@
 +                    return;
 +                }
                  boolean flag = this.player.hasInfiniteMaterials() && packet.includeData();
-                 ItemStack cloneItemStack = blockState.getCloneItemStack(serverLevel, blockPos, flag);
-                 if (!cloneItemStack.isEmpty()) {
-@@ -1155,8 +_,15 @@
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
-         if (this.player.canUseGameMasterBlocks()) {
+@@ -1157,4 +1214,11 @@
              BlockPos pos = packet.getPos();
 -            BlockState blockState = this.player.level().getBlockState(pos);
 -            if (this.player.level().getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
@@ -202,31 +143,19 @@
 +            }
 +            if (serverLevel.getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
                  structureBlockEntity.setMode(packet.getMode());
-                 structureBlockEntity.setStructureName(packet.getName());
-                 structureBlockEntity.setStructurePos(packet.getOffset());
-@@ -1181,7 +_,7 @@
-                     } else if (packet.getUpdateType() == StructureBlockEntity.UpdateType.LOAD_AREA) {
-                         if (!structureBlockEntity.isStructureLoadable()) {
+@@ -1183,3 +1247,3 @@
                              this.player.displayClientMessage(Component.translatable("structure_block.load_not_found", structureName), false);
 -                        } else if (structureBlockEntity.placeStructureIfSameSize(this.player.level())) {
 +	                        } else if (structureBlockEntity.placeStructureIfSameSize(serverLevel)) {
                              this.player.displayClientMessage(Component.translatable("structure_block.load_success", structureName), false);
-                         } else {
-                             this.player.displayClientMessage(Component.translatable("structure_block.load_prepare", structureName), false);
-@@ -1197,8 +_,8 @@
-                     this.player.displayClientMessage(Component.translatable("structure_block.invalid_structure_name", packet.getName()), false);
-                 }
-
+@@ -1199,4 +1263,4 @@
+ 
 -                structureBlockEntity.setChanged();
 -                this.player.level().sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
 +	                structureBlockEntity.setChanged();
 +                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
              }
-         }
-     }
-@@ -1208,12 +_,19 @@
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
-         if (this.player.canUseGameMasterBlocks()) {
+@@ -1210,4 +1274,11 @@
              BlockPos blockPos = packet.position();
 -            BlockState blockState = this.player.level().getBlockState(blockPos);
 -            if (this.player.level().getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
@@ -240,16 +169,12 @@
 +            }
 +            if (serverLevel.getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
                  testBlockEntity.setMode(packet.mode());
-                 testBlockEntity.setMessage(packet.message());
+@@ -1215,3 +1286,3 @@
                  testBlockEntity.setChanged();
 -                this.player.level().sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
 +                serverLevel.sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
              }
-         }
-     }
-@@ -1222,7 +_,14 @@
-     public void handleTestInstanceBlockAction(ServerboundTestInstanceBlockActionPacket packet) {
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+@@ -1224,3 +1295,10 @@
          BlockPos blockPos = packet.pos();
 -        if (this.player.canUseGameMasterBlocks() && this.player.level().getBlockEntity(blockPos) instanceof TestInstanceBlockEntity testInstanceBlockEntity) {
 +        if (this.player.canUseGameMasterBlocks()) {
@@ -261,12 +186,8 @@
 +                return;
 +            }
              if (packet.action() != ServerboundTestInstanceBlockActionPacket.Action.QUERY
-                 && packet.action() != ServerboundTestInstanceBlockActionPacket.Action.INIT) {
-                 testInstanceBlockEntity.set(packet.data());
-@@ -1236,8 +_,11 @@
-                     testInstanceBlockEntity.runTest(this.player::sendSystemMessage);
-                 }
-
+@@ -1238,4 +1316,7 @@
+ 
 -                BlockState blockState = this.player.level().getBlockState(blockPos);
 -                this.player.level().sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
 +                BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos); // ShreddedPaper - avoid sync chunk loads during test instance block edits
@@ -275,25 +196,17 @@
 +                }
 +                serverLevel.sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
              } else {
-                 Registry<GameTestInstance> registry = this.player.registryAccess().lookupOrThrow(Registries.TEST_INSTANCE);
-                 Optional<Holder.Reference<GameTestInstance>> optional = packet.data().test().flatMap(registry::get);
-@@ -1248,11 +_,11 @@
-                     component = Component.translatable("test_instance.description.no_test").withStyle(ChatFormatting.RED);
-                 }
-
+@@ -1250,3 +1331,3 @@
+ 
 -                Optional<Vec3i> optional1;
 +	                Optional<Vec3i> optional1;
                  if (packet.action() == ServerboundTestInstanceBlockActionPacket.Action.QUERY) {
-                     optional1 = packet.data()
+@@ -1254,3 +1335,3 @@
                          .test()
 -                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(this.player.level(), (ResourceKey<GameTestInstance>)resourceKey));
 +                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(serverLevel, (ResourceKey<GameTestInstance>)resourceKey));
                  } else {
-                     optional1 = Optional.empty();
-                 }
-@@ -1267,17 +_,24 @@
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
-         if (this.player.canUseGameMasterBlocks()) {
+@@ -1269,4 +1350,11 @@
              BlockPos pos = packet.getPos();
 -            BlockState blockState = this.player.level().getBlockState(pos);
 -            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
@@ -307,10 +220,7 @@
 +            }
 +            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
                  jigsawBlockEntity.setName(packet.getName());
-                 jigsawBlockEntity.setTarget(packet.getTarget());
-                 jigsawBlockEntity.setPool(ResourceKey.create(Registries.TEMPLATE_POOL, packet.getPool()));
-                 jigsawBlockEntity.setFinalState(packet.getFinalState());
-                 jigsawBlockEntity.setJoint(packet.getJoint());
+@@ -1277,5 +1365,5 @@
                  jigsawBlockEntity.setPlacementPriority(packet.getPlacementPriority());
 -                jigsawBlockEntity.setSelectionPriority(packet.getSelectionPriority());
 -                jigsawBlockEntity.setChanged();
@@ -319,11 +229,7 @@
 +	                jigsawBlockEntity.setChanged();
 +                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
              }
-         }
-     }
-@@ -1287,8 +_,15 @@
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
-         if (this.player.canUseGameMasterBlocks()) {
+@@ -1289,4 +1377,11 @@
              BlockPos pos = packet.getPos();
 -            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
 -                jigsawBlockEntity.generate(this.player.level(), packet.levels(), packet.keepJigsaws());
@@ -337,20 +243,12 @@
 +            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
 +                jigsawBlockEntity.generate(serverLevel, packet.levels(), packet.keepJigsaws());
              }
-         }
-     }
-@@ -1380,7 +_,7 @@
-             Consumer<List<FilteredText>> consumer = optional.isPresent()
-                 ? texts -> this.signBook(texts.get(0), texts.subList(1, texts.size()), slot, hasSignPerm) // Purpur - Allow color codes in books
+@@ -1382,3 +1477,3 @@
                  : list1 -> this.updateBookContents(list1, slot, hasEditPerm); // Purpur - Allow color codes in books
 -            this.filterTextPacket(list).thenAcceptAsync(consumer, this.server);
 +            this.filterTextPacket(list).thenAcceptAsync(consumer, r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
          }
-     }
-
-@@ -1464,7 +_,16 @@
-     public void handleBlockEntityTagQuery(ServerboundBlockEntityTagQueryPacket packet) {
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+@@ -1466,3 +1561,12 @@
          if (this.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) {
 -            BlockEntity blockEntity = this.player.level().getBlockEntity(packet.getPos());
 +            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware block entity query
@@ -364,11 +262,7 @@
 +            }
 +            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
              CompoundTag compoundTag = blockEntity != null ? blockEntity.saveWithoutMetadata(this.player.registryAccess()) : null;
-             this.send(new ClientboundTagQueryPacket(packet.getTransactionId(), compoundTag));
-         }
-@@ -1504,6 +_,29 @@
-                             this.player.level().getChunkSource().move(this.player);
-                             this.allowedPlayerTicks = 20; // CraftBukkit
+@@ -1506,2 +1610,25 @@
                          } else {
 +                            // ShreddedPaper start - process cross-region movement on every touched owner
 +                            final Vec3 playerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position());
@@ -394,21 +288,13 @@
 +                            }
 +                            // ShreddedPaper end - process cross-region movement on every touched owner
                              // CraftBukkit - Make sure the move is valid but then reset it for plugins to modify
-                             double prevX = this.player.getX();
-                             double prevY = this.player.getY();
-@@ -2072,6 +_,9 @@
-                 case START_DESTROY_BLOCK:
-                 case ABORT_DESTROY_BLOCK:
+@@ -2074,2 +2201,5 @@
                  case STOP_DESTROY_BLOCK:
 +                    if (this.shreddedpaper$rescheduleIfMissingOwnership(this.player.level(), ChunkPos.of(pos), () -> this.handlePlayerAction(packet))) {
 +                        return;
 +                    }
                      // Paper start - Don't allow digging into unloaded chunks
-                     if (this.player.level().getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4) == null || !this.player.isWithinBlockInteractionRange(pos, 1.0)) {
-                         this.player.connection.ackBlockChangesUpTo(packet.getSequence());
-@@ -2167,10 +_,20 @@
-                     double d = 1.0000001;
-                     if (Math.abs(vec3.x()) < 1.0000001 && Math.abs(vec3.y()) < 1.0000001 && Math.abs(vec3.z()) < 1.0000001) {
+@@ -2169,2 +2299,12 @@
                          Direction direction = hitResult.getDirection();
 +                        BlockPos relativeBlockPos = blockPos.relative(direction); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
 +                        BoundingBox interactionBox = BoundingBox.fromCorners(blockPos, relativeBlockPos); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
@@ -421,37 +307,25 @@
 +                            return; // ShreddedPaper - do not sync-load the clicked block
 +                        }
                          this.player.resetLastActionTime();
-                         int maxY = this.player.level().getMaxY();
+@@ -2172,3 +2312,3 @@
                          if (blockPos.getY() <= maxY) {
 -                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && serverLevel.getBlockState(blockPos).getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection
 +                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && blockState.getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection // ShreddedPaper - do not sync-load the clicked block
                                  this.player.stopUsingItem(); // CraftBukkit - SPIGOT-4706
-                                 InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, serverLevel, itemInHand, hand, hitResult);
-                                 if (interactionResult.consumesAction()) {
-@@ -2190,7 +_,7 @@
-                             // Paper start - Fix inventory desync; MC-99075
-                             // From serverLevel.mayInteract(this.player, blockPos)
+@@ -2192,3 +2332,3 @@
                              } else if (this.server.isUnderSpawnProtection(serverLevel, blockPos, player)) {
 -                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, serverLevel.getBlockState(blockPos), itemInHand)) {
 +                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, blockState, itemInHand)) { // ShreddedPaper - do not sync-load the clicked block
                                      this.player.containerMenu.sendAllDataToRemote();
-                                 } else {
-                                     this.player.containerMenu.forceHeldSlot(hand);
-@@ -2202,8 +_,8 @@
-                             this.player.sendSystemMessage(component1, true);
-                         }
-
+@@ -2204,4 +2344,4 @@
+ 
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos));
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos.relative(direction)));
 +                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, blockPos); // ShreddedPaper - do not sync-load for interaction resync packets
 +                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, relativeBlockPos); // ShreddedPaper - do not sync-load for interaction resync packets
                          if (io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.updateEquipmentOnPlayerActions) this.player.detectEquipmentUpdates(); // Paper - Force update attributes.
-                         // Paper - Remove unused warning
-                     }
-@@ -2212,6 +_,13 @@
-         }
-     }
-
+@@ -2214,2 +2354,9 @@
+ 
 +    private void shreddedpaper$sendBlockUpdateIfLoaded(ServerLevel serverLevel, BlockPos blockPos) { // ShreddedPaper - do not sync-load for interaction resync packets
 +        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos);
 +        if (blockState != null) {
@@ -460,11 +334,7 @@
 +    }
 +
      @Override
-     public void handleUseItem(ServerboundUseItemPacket packet) {
-         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
-@@ -2245,6 +_,11 @@
-                 float f8 = f3 * f5;
-                 double d3 = this.player.blockInteractionRange();
+@@ -2247,2 +2394,7 @@
                  Vec3 to = from.add((double) f7 * d3, (double) f6 * d3, (double) f8 * d3);
 +                BoundingBox interactionBox = BoundingBox.fromCorners(BlockPos.containing(from), BlockPos.containing(to)); // ShreddedPaper - avoid sync ray-trace loads across region boundaries
 +                if (!TickThread.isTickThreadFor(this.player) || !ShreddedPaper.isSync(serverLevel, interactionBox)) { // ShreddedPaper - run ray trace on all touched owner regions
@@ -472,21 +342,13 @@
 +                    return; // ShreddedPaper - run ray trace on all touched owner regions
 +                }
                  BlockHitResult hitResult = this.player.level().clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, this.player));
-
-                 boolean cancelled;
-@@ -2294,7 +_,9 @@
-             for (ServerLevel serverLevel : this.server.getAllLevels()) {
-                 Entity entity = packet.getEntity(serverLevel);
+@@ -2296,3 +2448,5 @@
                  if (entity != null) {
 +                    ShreddedPaper.ensureSync(this.player, entity, () -> { // ShreddedPaper - ensure on entity's thread
                      this.player.teleportTo(serverLevel, entity.getX(), entity.getY(), entity.getZ(), Set.of(), entity.getYRot(), entity.getXRot(), true, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.SPECTATE); // CraftBukkit
 +                    }); // ShreddedPaper - ensure on entity's thread
                      return;
-                 }
-             }
-@@ -2318,12 +_,42 @@
-             this.processedDisconnect = true;
-         }
+@@ -2320,2 +2474,9 @@
          // CraftBukkit end
 +        final ServerPlayer disconnectingPlayer = this.player; // ShreddedPaper - stable scheduler target
 +        final ServerLevel disconnectingLevel = (ServerLevel) disconnectingPlayer.level(); // ShreddedPaper - fallback target captured before retirement
@@ -496,10 +358,7 @@
 +        final Runnable disconnectCleanup = () -> { // ShreddedPaper - run disconnect cleanup only after ownership handoff
 +        this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
-         // Paper start - Fix kick event leave message not being sent
-         final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-         this.removePlayerFromWorld(quitMessage);
-         // Paper end - Fix kick event leave message not being sent
+@@ -2326,2 +2487,25 @@
          super.onDisconnect(details);
 +        }; // ShreddedPaper - run disconnect cleanup only after ownership handoff
 +        final Runnable fallbackToDisconnectingChunk = () -> ShreddedPaper.runSync(disconnectingLevel, disconnectingChunk, disconnectCleanup); // ShreddedPaper - entity scheduler retired after accepting task
@@ -525,46 +384,29 @@
 +        }; // ShreddedPaper - entity scheduler may retire after accepting the task
 +        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) runOnPlayersThread.accept(disconnectingPlayer); else if (!ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) retryDisconnectCleanupRef[0].run(); // ShreddedPaper - run on player's thread
      }
-
-     private void removePlayerFromWorld() {
-@@ -2585,7 +_,7 @@
-             this.player.resetLastActionTime();
-             // CraftBukkit start
+@@ -2587,3 +2771,3 @@
              if (sync) {
 -                this.server.execute(handler);
 +                ShreddedPaper.runSync(player, handler); // ShreddedPaper - run on player's thread
              } else {
-                 handler.run();
-             }
-@@ -2854,11 +_,14 @@
-     }
-
+@@ -2856,3 +3040,3 @@
      public SocketAddress getRemoteAddress() {
 -        return this.connection.getRemoteAddress();
 +        return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactPublicSocketAddress(this.connection.getRemoteAddress());
      }
-
-     // Spigot start
+@@ -2861,2 +3045,5 @@
      public SocketAddress getRawAddress() {
 +        if (io.multipaper.shreddedpaper.privacy.AnonymousMode.enabled()) {
 +            return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactedSocketAddress();
 +        }
          // Paper start - Unix domain socket support; this can be nullable in the case of a Unix domain socket, so if it is, fake something
-         if (this.connection.channel.remoteAddress() == null) {
-             return new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0);
-@@ -2896,6 +_,9 @@
-             this.player.resetLastActionTime();
-             this.player.setShiftKeyDown(packet.isUsingSecondaryAction());
+@@ -2898,2 +3085,5 @@
              if (target != null) {
 +                if (this.shreddedpaper$rescheduleIfMissingOwnership(target, () -> this.handleInteract(packet))) {
 +                    return;
 +                }
                  if (!serverLevel.getWorldBorder().isWithinBounds(target.blockPosition())) {
-                     return;
-                 }
-@@ -3041,24 +_,71 @@
-         ServerboundClientCommandPacket.Action action = packet.getAction();
-         switch (action) {
+@@ -3043,5 +3233,20 @@
              case PERFORM_RESPAWN:
 +                if (this.shreddedpaper$respawnInProgress) { // ShreddedPaper - async respawn
 +                    return; // ShreddedPaper - async respawn
@@ -586,7 +428,7 @@
                      this.player.wonGame = false;
 -                    this.player = this.server.getPlayerList().respawn(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL); // CraftBukkit
                      this.resetPosition();
-                     this.restartClientLoadTimerAfterRespawn();
+@@ -3049,2 +3254,12 @@
                      CriteriaTriggers.CHANGED_DIMENSION.trigger(this.player, Level.END, Level.OVERWORLD);
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
@@ -599,10 +441,8 @@
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  } else {
-                     if (this.player.getHealth() > 0.0F) {
-                         return;
-                     }
-
+@@ -3054,3 +3269,15 @@
+ 
 -                    this.player = this.server.getPlayerList().respawn(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit
 +                    this.shreddedpaper$respawnInProgress = true; // ShreddedPaper - async respawn
 +                    final ServerPlayer respawningPlayer = this.player; // ShreddedPaper - async respawn
@@ -618,10 +458,7 @@
 +                    this.player = player; // ShreddedPaper - async respawn
 +                    this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends after respawn handoff
                      this.resetPosition();
-                     this.restartClientLoadTimerAfterRespawn();
-                     if (this.server.isHardcore()) {
-                         this.player.setGameMode(GameType.SPECTATOR, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.HARDCORE_DEATH, null); // Paper - Expand PlayerGameModeChangeEvent
-                         this.player.level().getGameRules().set(GameRules.SPECTATORS_GENERATE_CHUNKS, false, this.player.level()); // CraftBukkit - per-world
+@@ -3061,2 +3288,12 @@
                      }
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
@@ -634,20 +471,12 @@
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  }
-                 break;
-             case REQUEST_STATS:
-@@ -3587,7 +_,7 @@
-         }
-         List<String> list = Stream.of(lines).map(ChatFormatting::stripFormatting).collect(Collectors.toList());
+@@ -3589,3 +3826,3 @@
          // Paper end - Limit client sign length
 -        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), this.server);
 +        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
      }
-
-     private void updateSignText(ServerboundSignUpdatePacket packet, List<FilteredText> filteredText) {
-@@ -3595,7 +_,10 @@
-         this.player.resetLastActionTime();
-         ServerLevel serverLevel = this.player.level();
+@@ -3597,3 +3834,6 @@
          BlockPos pos = packet.getPos();
 -        if (serverLevel.hasChunkAt(pos)) {
 +        if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.updateSignText(packet, filteredText))) { // ShreddedPaper - owner-aware sign updates
@@ -655,12 +484,8 @@
 +        }
 +        if (serverLevel.getBlockStateIfLoaded(pos) != null) { // ShreddedPaper - avoid sync chunk loads from sign updates
              // Paper start - Add API for client-side signs
-             if (!new io.papermc.paper.event.packet.UncheckedSignChangeEvent(
-                 this.player.getBukkitEntity(),
-@@ -3795,6 +_,56 @@
-         return !this.waitingForRespawn && this.clientLoadedTimeoutTimer <= 0;
-     }
-
+@@ -3797,2 +4037,52 @@
+ 
 +    private boolean shreddedpaper$rescheduleIfMissingOwnership(ServerLevel level, ChunkPos chunkPos, Runnable action) { // ShreddedPaper
 +        if (TickThread.isTickThreadFor(this.player) && TickThread.isTickThreadFor(level, chunkPos)) {
 +            return false;
@@ -712,11 +537,7 @@
 +    }
 +
      public void tickClientLoadTimeout() {
-         if (this.clientLoadedTimeoutTimer > 1) { // Paper - Add PlayerLoadedWorldEvent - only reduce till 1, let the below else-if call #markClientLoaded to trigger event and reduce to 0
-             this.clientLoadedTimeoutTimer--;
-@@ -3850,19 +_,48 @@
-
-     @Override
+@@ -3852,9 +4142,8 @@
      public void disconnectAsync(final net.minecraft.network.DisconnectionDetails disconnectionInfo) {
 -        if (this.cserver.isPrimaryThread()) {
 -            this.disconnect(disconnectionInfo);
@@ -732,9 +553,7 @@
 +        final Consumer<Entity>[] disconnectTaskRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
 +        final Runnable asyncDisconnectCleanup = () -> {
              this.disconnect(disconnectionInfo);
-             if (this.player.quitReason == null) {
-                 // cancelled
-                 this.connection.enableAutoRead();
+@@ -3864,3 +4153,33 @@
              }
 -        });
 +        };
@@ -769,5 +588,3 @@
 +            retryDisconnectTaskRef[0].run();
 +        }
      }
-
-     public final boolean isDisconnected() {

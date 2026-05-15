@@ -1,24 +1,14 @@
 --- a/net/minecraft/world/entity/npc/villager/Villager.java
 +++ b/net/minecraft/world/entity/npc/villager/Villager.java
-@@ -7,6 +_,7 @@
- import com.mojang.datafixers.util.Pair;
- import com.mojang.logging.LogUtils;
+@@ -9,2 +9,3 @@
  import com.mojang.serialization.Dynamic;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
- import java.util.List;
- import java.util.Map;
-@@ -13,6 +_,7 @@
- import java.util.Map;
- import java.util.Optional;
+@@ -14,2 +15,3 @@
  import java.util.function.BiPredicate;
 +import java.util.function.Predicate;
  import net.minecraft.SharedConstants;
- import net.minecraft.core.BlockPos;
- import net.minecraft.core.GlobalPos;
-@@ -798,13 +_,15 @@
-             this.brain.getMemory(moduleType).ifPresent(pos -> {
-                 ServerLevel level = server.getLevel(pos.dimension());
+@@ -800,6 +802,7 @@
                  if (level != null) {
 +                    Predicate<Holder<PoiType>> poiPredicate = this.poiReleasePredicate(moduleType); // ShreddedPaper - snapshot before POI-owner handoff
 +                    ShreddedPaper.ensureSync(level, pos.pos(), () -> { // ShreddedPaper - run on poi's region
@@ -28,14 +18,11 @@
 -                    if (type.isPresent() && biPredicate.test(this, type.get())) {
 +                    if (type.isPresent() && poiPredicate.test(type.get())) {
                          poiManager.release(pos.pos());
-                         level.debugSynchronizers().updatePoi(pos.pos());
+@@ -807,2 +810,3 @@
                      }
 +                    }); // ShreddedPaper - run on poi's region
                  }
-             });
-         }
-@@ -812,6 +_,23 @@
-         }
+@@ -811,2 +815,19 @@
      }
 +
 +    private Predicate<Holder<PoiType>> poiReleasePredicate(MemoryModuleType<GlobalPos> moduleType) {
@@ -54,5 +41,4 @@
 +        }
 +        return poiType -> false;
 +    }
-     @Override
-     public boolean canBreed() {
+ 

@@ -1,44 +1,27 @@
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
-@@ -1,5 +_,6 @@
- package org.bukkit.craftbukkit.entity;
-
+@@ -2,2 +2,3 @@
+ 
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import com.destroystokyo.paper.event.player.PlayerSetSpawnEvent;
- import com.google.common.base.Preconditions;
- import com.google.common.collect.ImmutableList;
-@@ -8,6 +_,8 @@
- import com.mojang.authlib.GameProfile;
- import com.mojang.datafixers.util.Pair;
+@@ -10,2 +11,4 @@
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 +import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import io.papermc.paper.FeatureHooks;
- import io.papermc.paper.connection.PlayerGameConnection;
- import io.papermc.paper.connection.PluginMessageBridgeImpl;
-@@ -320,6 +_,7 @@
-     @Override
-     public InetSocketAddress getAddress() {
+@@ -322,2 +325,3 @@
          if (this.getHandle().connection == null) return null;
 +        if (AnonymousMode.enabled()) return AnonymousMode.redactedSocketAddress();
-
-         SocketAddress addr = this.getHandle().connection.getRemoteAddress();
-         if (addr instanceof InetSocketAddress) {
-@@ -334,7 +_,9 @@
-     public @Nullable InetSocketAddress getHAProxyAddress() {
-         if (this.getHandle().connection == null) return null;
-
+ 
+@@ -336,3 +340,5 @@
+ 
 -        return this.getHandle().connection.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress ? inetSocketAddress : null;
 +        return this.getHandle().connection.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress
 +            ? AnonymousMode.redactPublicSocketAddress(inetSocketAddress)
 +            : null;
      }
-     // Paper end - Add API to get player's proxy address
-     @Override
-@@ -1457,9 +_,12 @@
-             return CraftLocation.toBukkit(respawnData.pos(), world, respawnData.yaw(), respawnData.pitch());
-         }
-
+@@ -1459,5 +1465,8 @@
+ 
 -        return ServerPlayer.findRespawnAndUseSpawnBlock(world, respawnConfig, false)
 -            .map(pos -> CraftLocation.toBukkit(pos.position(), world, pos.yaw(), pos.pitch()))
 -            .orElse(null);
@@ -49,49 +32,30 @@
 +        //     .orElse(null);
 +        // ShreddedPaper end - can't get respawn location sync
      }
-
-     @Override
-@@ -1957,7 +_,7 @@
-     private void unregisterEntity(Entity other) {
-         // Paper end
+@@ -1959,3 +1968,3 @@
          ChunkMap tracker = ((ServerLevel) this.getHandle().level()).getChunkSource().chunkMap;
 -        ChunkMap.TrackedEntity entry = tracker.entityMap.get(other.getId());
 +        ChunkMap.TrackedEntity entry = other.moonrise$getTrackedEntity(); // tracker.entityMap.get(other.getId()); // ShreddedPaper - don't use map
          if (entry != null) {
-             entry.removePlayer(this.getHandle());
-         }
-@@ -2046,7 +_,7 @@
-             if (original != null) otherPlayer.setUUID(original); // Paper - uuid override
-         }
-
+@@ -2048,3 +2057,3 @@
+ 
 -        ChunkMap.TrackedEntity entry = tracker.entityMap.get(other.getId());
 +        ChunkMap.TrackedEntity entry = other.moonrise$getTrackedEntity(); // tracker.entityMap.get(other.getId()); // ShreddedPaper - don't use map
          if (entry != null && !entry.seenBy.contains(this.getHandle().connection)) {
-             entry.updatePlayer(this.getHandle());
-         }
-@@ -2131,15 +_,18 @@
-
-     @Override
+@@ -2133,2 +2142,3 @@
      public boolean canSee(Player player) {
 +        if (ShreddedPaperConfiguration.get().optimizations.disableVanishApi) return true; // ShreddedPaper - optimize canSee
          return this.canSee((org.bukkit.entity.Entity) player);
-     }
-
-     @Override
+@@ -2138,2 +2148,3 @@
      public boolean canSee(org.bukkit.entity.Entity entity) {
 +        if (ShreddedPaperConfiguration.get().optimizations.disableVanishApi) return true; // ShreddedPaper - optimize canSee
          return this.equals(entity) || entity.isVisibleByDefault() ^ this.invertedVisibilityEntities.containsKey(entity.getUniqueId()); // SPIGOT-7312: Can always see self
-     }
-
+@@ -2142,2 +2153,3 @@
      public boolean canSeePlayer(UUID uuid) {
 +        if (ShreddedPaperConfiguration.get().optimizations.disableVanishApi) return true; // ShreddedPaper - optimize canSee
          org.bukkit.entity.Entity entity = this.getServer().getPlayer(uuid);
-
-         return (entity != null) ? this.canSee(entity) : false; // If we can't find it, we can't see it
-@@ -2806,6 +_,14 @@
-         return this.getHandle().connection.latency();
-     }
-
+@@ -2808,2 +2820,10 @@
+ 
 +    // ShreddedPaper start - add network ping API
 +    @Override
 +    public int getNetworkPing() {
@@ -101,46 +65,29 @@
 +    // ShreddedPaper end - add network ping API
 +
      @Override
-     public String getLocale() {
-         // Paper start - Locale change event
-@@ -3124,14 +_,16 @@
-
-         @Override
+@@ -3126,2 +3146,3 @@
          public InetSocketAddress getRawAddress() {
 +            if (AnonymousMode.enabled()) return AnonymousMode.redactedSocketAddress();
              return (InetSocketAddress) CraftPlayer.this.getHandle().connection.getRawAddress();
-         }
-
-         @Override
-         public void respawn() {
+@@ -3132,4 +3153,5 @@
              if (CraftPlayer.this.getHealth() <= 0 && CraftPlayer.this.isOnline()) {
 -                CraftPlayer.this.server.getServer().getPlayerList().respawn(CraftPlayer.this.getHandle(), false, Entity.RemovalReason.KILLED, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.PLUGIN);
 +                CraftPlayer.this.server.getServer().getPlayerList().respawnAsync(CraftPlayer.this.getHandle(), false, Entity.RemovalReason.KILLED, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.PLUGIN).thenRun(() -> { // ShreddedPaper - async respawn
                  CraftPlayer.this.getHandle().connection.restartClientLoadTimerAfterRespawn();
 +                }); // ShreddedPaper - async respawn
              }
-         }
-
-@@ -3261,19 +_,19 @@
-     // Paper start - Add chunk view API
-     @Override
+@@ -3263,3 +3285,3 @@
      public Set<java.lang.Long> getSentChunkKeys() {
 -        org.spigotmc.AsyncCatcher.catchOp("accessing sent chunks");
 +        TickThread.ensureTickThread(this.getHandle(), "accessing sent chunks"); // ShreddedPaper
          return FeatureHooks.getSentChunkKeys(this.getHandle());
-     }
-
-     @Override
+@@ -3269,3 +3291,3 @@
      public Set<org.bukkit.Chunk> getSentChunks() {
 -        org.spigotmc.AsyncCatcher.catchOp("accessing sent chunks");
 +        TickThread.ensureTickThread(this.getHandle(), "accessing sent chunks"); // ShreddedPaper
          return FeatureHooks.getSentChunks(this.getHandle());
-     }
-
-     @Override
+@@ -3275,3 +3297,3 @@
      public boolean isChunkSent(final long chunkKey) {
 -        org.spigotmc.AsyncCatcher.catchOp("accessing sent chunks");
 +        TickThread.ensureTickThread(this.getHandle(), "accessing sent chunks"); // ShreddedPaper
          return FeatureHooks.isChunkSent(this.getHandle(), chunkKey);
-     }
-     // Paper end

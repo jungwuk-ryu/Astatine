@@ -1,16 +1,11 @@
 --- a/net/minecraft/world/entity/ai/behavior/YieldJobSite.java
 +++ b/net/minecraft/world/entity/ai/behavior/YieldJobSite.java
-@@ -2,6 +_,8 @@
- 
- import java.util.List;
+@@ -4,2 +4,4 @@
  import java.util.Optional;
 +
 +import ca.spottedleaf.moonrise.common.util.TickThread;
  import net.minecraft.core.BlockPos;
- import net.minecraft.core.GlobalPos;
- import net.minecraft.core.Holder;
-@@ -33,7 +_,12 @@
-                             return false;
+@@ -34,3 +36,9 @@
                          } else {
 -                            BlockPos blockPos = instance.<GlobalPos>get(potentialJobSite).pos();
 +                            GlobalPos globalPos = instance.get(potentialJobSite);
@@ -21,5 +16,3 @@
 +                            BlockPos blockPos = globalPos.pos();
 +                            if (!TickThread.isTickThreadFor(level, blockPos)) return true; // ShreddedPaper - don't run outside poi region
                              Optional<Holder<PoiType>> type = level.getPoiManager().getType(blockPos);
-                             if (type.isEmpty()) {
-                                 return true;

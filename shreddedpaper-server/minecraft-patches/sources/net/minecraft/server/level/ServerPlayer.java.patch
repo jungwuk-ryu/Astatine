@@ -1,79 +1,46 @@
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -22,6 +_,9 @@
- import java.util.UUID;
- import java.util.concurrent.CompletableFuture;
+@@ -24,2 +24,5 @@
  import java.util.stream.Collectors;
 +
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.util.ObjectHolder;
  import net.minecraft.ChatFormatting;
- import net.minecraft.CrashReport;
- import net.minecraft.CrashReportCategory;
-@@ -64,7 +_,6 @@
- import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket;
- import net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket;
+@@ -66,3 +69,2 @@
  import net.minecraft.network.protocol.game.ClientboundOpenBookPacket;
 -import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
  import net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket;
- import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
- import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
-@@ -182,6 +_,7 @@
- import net.minecraft.world.level.block.state.BlockState;
- import net.minecraft.world.level.gameevent.GameEvent;
+@@ -184,2 +186,3 @@
  import net.minecraft.world.level.gamerules.GameRules;
 +import net.minecraft.world.level.levelgen.structure.BoundingBox;
  import net.minecraft.world.level.portal.TeleportTransition;
- import net.minecraft.world.level.saveddata.maps.MapId;
- import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-@@ -247,6 +_,7 @@
-     private @Nullable Entity camera;
-     public boolean isChangingDimension;
+@@ -249,2 +252,3 @@
      public boolean seenCredits = false;
 +    public boolean hasMaximumTrackerBypassPermission; // ShreddedPaper
      private final ServerRecipeBook recipeBook;
-     private @Nullable Vec3 levitationStartPos;
-     private int levitationStartTime;
-@@ -259,6 +_,9 @@
-     private @Nullable Vec3 enteredLavaOnVehiclePosition;
-     private SectionPos lastSectionPos = SectionPos.of(0, 0, 0);
+@@ -261,2 +265,5 @@
      private ChunkTrackingView chunkTrackingView = ChunkTrackingView.EMPTY;
 +    public ChunkPos previousChunkPosRegion; // ShreddedPaper
 +    public volatile io.multipaper.shreddedpaper.region.LevelChunkRegion currentRegion; // ShreddedPaper
 +    public volatile int shreddedpaper$degradedRegionBossBarState; // ShreddedPaper
      private ServerPlayer.@Nullable RespawnConfig respawnConfig;
-     private final TextFilter textFilter;
-     private boolean textFilteringEnabled;
-@@ -488,9 +_,7 @@
-
-     @Override
+@@ -490,5 +497,3 @@
      public BlockPos adjustSpawnLocation(ServerLevel level, BlockPos pos) {
 -        CompletableFuture<Vec3> completableFuture = PlayerSpawnFinder.findSpawn(level, pos);
 -        level.chunkSource.mainThreadProcessor.managedBlock(completableFuture::isDone); // Paper - rewrite chunk system
 -        return BlockPos.containing(completableFuture.join());
 +        return super.adjustSpawnLocation(level, pos); // ShreddedPaper - avoid blocking independent region threads during default respawn
      }
-
-     @Override
-@@ -637,12 +_,15 @@
-         if (!optional.isEmpty()) {
-             ServerLevel level = this.level().getServer().getLevel(optional.get());
+@@ -639,2 +644,4 @@
              if (level != null) {
 +                BlockPos enderpearlPos = BlockPos.containing(input.read("Pos", Vec3.CODEC).orElse(Vec3.ZERO)); // ShreddedPaper - spawn ender pearl on ender pearl thread
 +                ShreddedPaper.ensureSync(level, enderpearlPos, () -> { // ShreddedPaper - spawn ender pearl on ender pearl thread
                  Entity entity = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, entity1 -> !level.addWithUUID(entity1) ? null : entity1);
-                 if (entity != null) {
-                     placeEnderPearlTicket(level, entity.chunkPosition());
-                 } else {
-                     LOGGER.warn("Failed to spawn player ender pearl in level ({}), skipping", optional.get());
+@@ -645,2 +652,3 @@
                  }
 +                }); // ShreddedPaper - spawn ender pearl on ender pearl thread
              } else {
-                 LOGGER.warn("Trying to load ender pearl without level ({}) being loaded, skipping", optional.get());
-             }
-@@ -752,9 +_,11 @@
-
-         Entity camera = this.getCamera();
+@@ -754,5 +762,7 @@
          if (camera != this) {
 -            if (camera.isAlive()) {
 +            if (camera.isAlive() && camera.level() == this.level()) { // ShreddedPaper - ensure telelport to camera sync
@@ -82,12 +49,8 @@
                  this.level().getChunkSource().move(this);
 +                }); // ShreddedPaper - ensure telelport to camera sync
                  if (this.wantsToStopRiding()) {
-                     this.setCamera(this);
-                 }
-@@ -1352,39 +_,43 @@
-     public record RespawnResult(TeleportTransition transition, boolean isBedSpawn, boolean isAnchorSpawn) {
-     }
-
+@@ -1354,12 +1364,13 @@
+ 
 -    public @Nullable TeleportTransition findRespawnPositionAndUseSpawnBlock(boolean useCharge, TeleportTransition.PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason) {
 -        RespawnResult result = this.findRespawnPositionAndUseSpawnBlock0(useCharge, postTeleportTransition, respawnReason);
 +    public CompletableFuture<TeleportTransition> findRespawnPositionAndUseSpawnBlockAsync(boolean useCharge, TeleportTransition.PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason) { // ShreddedPaper - respawn async
@@ -95,7 +58,7 @@
          return result == null ? null : result.transition();
 +        }); // ShreddedPaper - respawn async
      }
-
+ 
 -    public @Nullable RespawnResult findRespawnPositionAndUseSpawnBlock0(boolean useCharge, TeleportTransition.PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason) {
 -        TeleportTransition teleportTransition;
 -        boolean isBedSpawn = false;
@@ -107,14 +70,14 @@
 +        ObjectHolder<Boolean> isAnchorSpawn = new ObjectHolder<>(false); // ShreddedPaper - respawn async
 +        ObjectHolder<Runnable> consumeAnchorCharge = new ObjectHolder<>(null); // ShreddedPaper - respawn async
          // Paper end
-         ServerPlayer.RespawnConfig respawnConfig = this.getRespawnConfig();
+@@ -1367,4 +1378,5 @@
          ServerLevel level = this.server.getLevel(ServerPlayer.RespawnConfig.getDimensionOrDefault(respawnConfig));
 +        CompletableFuture<TeleportTransition> future; // ShreddedPaper - respawn async
          if (level != null && respawnConfig != null) {
 -            Optional<ServerPlayer.RespawnPosAngle> optional = findRespawnAndUseSpawnBlock(level, respawnConfig, useCharge);
 +            future = findRespawnAndUseSpawnBlockAsync(level, respawnConfig, useCharge).thenCompose(optional -> { // ShreddedPaper - respawn async
              if (optional.isPresent()) {
-                 ServerPlayer.RespawnPosAngle respawnPosAngle = optional.get();
+@@ -1372,17 +1384,19 @@
                  // CraftBukkit start
 -                isBedSpawn = respawnPosAngle.isBedSpawn();
 -                isAnchorSpawn = respawnPosAngle.isAnchorSpawn();
@@ -138,36 +101,24 @@
 -            teleportTransition = TeleportTransition.createDefault(this, postTeleportTransition);
 +            future = TeleportTransition.createDefaultAsync(this, postTeleportTransition); // ShreddedPaper - respawn async
          }
-
+ 
 +        return future.thenCompose(teleportTransition -> CompletableFuture.supplyAsync(() -> { // ShreddedPaper - respawn async
          org.bukkit.entity.Player respawnPlayer = this.getBukkitEntity();
-         org.bukkit.Location location = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(
-             teleportTransition.position(),
-@@ -1397,8 +_,8 @@
-         org.bukkit.event.player.PlayerRespawnEvent respawnEvent = new org.bukkit.event.player.PlayerRespawnEvent(
-             respawnPlayer,
+@@ -1399,4 +1413,4 @@
              location,
 -            isBedSpawn,
 -            isAnchorSpawn,
 +            isBedSpawn.get(), // ShreddedPaper - respawn async
 +            isAnchorSpawn.get(), // ShreddedPaper - respawn async
              teleportTransition.missingRespawnBlock(),
-             respawnReason
-         );
-@@ -1411,8 +_,8 @@
-         // Spigot end
-
+@@ -1413,4 +1427,4 @@
          // Paper start - consume anchor charge if location hasn't changed
 -        if (location.equals(respawnEvent.getRespawnLocation()) && consumeAnchorCharge != null) {
 -            consumeAnchorCharge.run();
 +        if (location.equals(respawnEvent.getRespawnLocation()) && consumeAnchorCharge.get() != null) {
 +            consumeAnchorCharge.get().run(); // ShreddedPaper - respawn async
          }
-         // Paper end - consume anchor charge if location hasn't changed
-         location = respawnEvent.getRespawnLocation();
-@@ -1430,10 +_,11 @@
-                 teleportTransition.postTeleportTransition(),
-                 teleportTransition.cause()
+@@ -1432,6 +1446,7 @@
              ),
 -            isBedSpawn,
 -            isAnchorSpawn
@@ -177,20 +128,12 @@
          // CraftBukkit end
 +        }, r -> ShreddedPaper.ensureSync(this, teleportTransition.newLevel(), new ChunkPos(BlockPos.containing(teleportTransition.position())), r))); // ShreddedPaper - respawn async
      }
-
-     public boolean isReceivingWaypoints() {
-@@ -1454,7 +_,7 @@
-         super.onAttributeUpdated(attribute);
-     }
-
+@@ -1456,3 +1471,3 @@
+ 
 -    public static Optional<ServerPlayer.RespawnPosAngle> findRespawnAndUseSpawnBlock(
 +    public static CompletableFuture<Optional<ServerPlayer.RespawnPosAngle>> findRespawnAndUseSpawnBlockAsync( // ShreddedPaper - respawn async
          ServerLevel level, ServerPlayer.RespawnConfig respawnConfig, boolean useCharge
-     ) {
-         LevelData.RespawnData respawnData = respawnConfig.respawnData;
-@@ -1462,32 +_,50 @@
-         float yaw = respawnData.yaw();
-         float pitch = respawnData.pitch();
+@@ -1464,7 +1479,12 @@
          boolean flag = respawnConfig.forced;
 -        BlockState blockState = level.getBlockState(blockPos);
 +        BoundingBox respawnSearchBox = BoundingBox.fromCorners(blockPos.offset(-3, -2, -3), blockPos.offset(3, 3, 3)); // ShreddedPaper - stand-up search probes neighboring blocks
@@ -206,7 +149,7 @@
 +                && (flag || blockState.getValue(RespawnAnchorBlock.CHARGE) > 0)
 +                && RespawnAnchorBlock.canSetSpawn(level, blockPos)) {
              Optional<Vec3> optional = RespawnAnchorBlock.findStandUpPosition(EntityType.PLAYER, level, blockPos);
-             Runnable consumeAnchorCharge = null; // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+@@ -1472,3 +1492,12 @@
              if (!flag && useCharge && optional.isPresent()) {
 -                consumeAnchorCharge = () -> level.setBlock(blockPos, blockState.setValue(RespawnAnchorBlock.CHARGE, blockState.getValue(RespawnAnchorBlock.CHARGE) - 1), Block.UPDATE_ALL); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
 +                // ShreddedPaper start - respawn anchor block update async
@@ -220,16 +163,12 @@
 +                };
 +                // ShreddedPaper end - respawn anchor block update async
              }
-             final Runnable finalConsumeAnchorCharge = consumeAnchorCharge; // Paper - Fix SPIGOT-5989
-
-             return optional.map(pos -> ServerPlayer.RespawnPosAngle.of(pos, blockPos, 0.0F, false, true, finalConsumeAnchorCharge)); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
-         } else if (block instanceof BedBlock && level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, blockPos).canSetSpawn(level)) {
+@@ -1479,3 +1508,3 @@
              return BedBlock.findStandUpPosition(EntityType.PLAYER, level, blockPos, blockState.getValue(BedBlock.FACING), yaw)
 -                .map(pos -> ServerPlayer.RespawnPosAngle.of(pos, blockPos, 0.0F, true, false, null)); // Paper - Fix SPIGOT-5989
 +                    .map(pos -> ServerPlayer.RespawnPosAngle.of(pos, blockPos, 0.0F, true, false, null)); // Paper - Fix SPIGOT-5989
          } else if (!flag) {
-             return Optional.empty();
-         } else {
+@@ -1484,8 +1513,12 @@
              boolean isPossibleToRespawnInThis = block.isPossibleToRespawnInThis(blockState);
 -            BlockState blockState1 = level.getBlockState(blockPos.above());
 +            BlockState blockState1 = level.getBlockStateIfLoaded(blockPos.above()); // ShreddedPaper - avoid sync-loading forced respawn clearance checks
@@ -245,11 +184,7 @@
          }
 +        }, r -> ShreddedPaper.ensureSync(level, respawnSearchBox, r));
      }
-
-     public void showEndCredits() {
-@@ -1700,7 +_,11 @@
-
-     @Override
+@@ -1702,3 +1735,7 @@
      public Either<net.minecraft.world.entity.player.Player.BedSleepingProblem, Unit> startSleepInBed(BlockPos bedPos, boolean force) {
 -        Direction direction = this.level().getBlockState(bedPos).getValue(HorizontalDirectionalBlock.FACING);
 +        BlockState bedState = this.level().getBlockStateIfLoaded(bedPos); // ShreddedPaper - avoid sync chunk loads during bed enter
@@ -258,40 +193,22 @@
 +        }
 +        Direction direction = bedState.getValue(HorizontalDirectionalBlock.FACING);
          Either<net.minecraft.world.entity.player.Player.BedSleepingProblem, Unit> bedResult = this.getBedResult(bedPos, direction);
-
-         if (bedResult.left().orElse(null) == net.minecraft.world.entity.player.Player.BedSleepingProblem.OTHER_PROBLEM) {
-@@ -2472,6 +_,9 @@
-     }
-
+@@ -2474,2 +2511,5 @@
      public String getIpAddress() {
 +        if (io.multipaper.shreddedpaper.privacy.AnonymousMode.enabled()) {
 +            return io.multipaper.shreddedpaper.privacy.AnonymousMode.REDACTED_IP;
 +        }
          return this.connection.getRemoteAddress() instanceof InetSocketAddress inetSocketAddress
-             ? InetAddresses.toAddrString(inetSocketAddress.getAddress())
-             : "<unknown>";
-@@ -2655,6 +_,7 @@
-     }
-
+@@ -2657,2 +2697,3 @@
      public void setCamera(@Nullable Entity entityToSpectate) {
 +        ShreddedPaper.ensureSync(this, entityToSpectate == null ? this : entityToSpectate, () -> { // ShreddedPaper - run on entity's thread
          Entity camera = this.getCamera();
-         this.camera = (Entity)(entityToSpectate == null ? this : entityToSpectate);
-         if (camera != this.camera) {
-@@ -2684,6 +_,7 @@
-             this.connection.send(new ClientboundSetCameraPacket(this.camera));
-             this.connection.resetPosition();
+@@ -2686,2 +2727,3 @@
          }
 +        });  // ShreddedPaper - run on entity's thread
      }
-
-     @Override
-@@ -2962,6 +_,8 @@
-             for (MobEffectInstance mobEffectInstance : livingEntity.getActiveEffects()) {
-                 this.connection.send(new ClientboundRemoveMobEffectPacket(vehicle.getId(), mobEffectInstance.getEffect()));
+@@ -2964,2 +3006,4 @@
              }
 +
 +            if (vehicle.moonrise$getTrackedEntity() != null) vehicle.moonrise$getTrackedEntity().serverEntity.sendChanges(); // ShreddedPaper - send changes now
          }
-
-         if (vehicle != null) {

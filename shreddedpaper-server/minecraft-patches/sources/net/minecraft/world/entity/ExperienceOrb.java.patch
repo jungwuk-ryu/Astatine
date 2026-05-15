@@ -1,35 +1,21 @@
 --- a/net/minecraft/world/entity/ExperienceOrb.java
 +++ b/net/minecraft/world/entity/ExperienceOrb.java
-@@ -19,6 +_,8 @@
- import net.minecraft.world.item.enchantment.EnchantmentHelper;
- import net.minecraft.world.level.Level;
+@@ -21,2 +21,4 @@
  import net.minecraft.world.level.entity.EntityTypeTest;
 +import net.minecraft.world.level.block.state.BlockState;
 +import net.minecraft.world.level.material.FluidState;
  import net.minecraft.world.level.storage.ValueInput;
- import net.minecraft.world.level.storage.ValueOutput;
- import net.minecraft.world.phys.AABB;
-@@ -42,6 +_,7 @@
-     private int health = 5;
-     public int count = 1;
+@@ -44,2 +46,3 @@
      private @Nullable Player followingPlayer;
 +    private boolean shreddedpaper$pickupScheduled; // ShreddedPaper - defer cross-owner pickup once
      private final InterpolationHandler interpolation = new InterpolationHandler(this);
-     // Paper start
-     public java.util.@Nullable UUID sourceEntityId;
-@@ -156,7 +_,8 @@
-                 this.applyGravity();
-             }
+@@ -158,3 +161,4 @@
  
 -            if (this.level().getFluidState(this.blockPosition()).is(FluidTags.LAVA)) {
 +            FluidState currentFluid = this.level().getFluidIfLoaded(this.blockPosition()); // ShreddedPaper - avoid sync chunk loads from orb lava checks
 +            if (currentFluid != null && currentFluid.is(FluidTags.LAVA)) {
                  this.setDeltaMovement(
-                     (this.random.nextFloat() - this.random.nextFloat()) * 0.2F, 0.2F, (this.random.nextFloat() - this.random.nextFloat()) * 0.2F
-                 );
-@@ -180,7 +_,10 @@
-             this.applyEffectsFromBlocks();
-             float f = 0.98F;
+@@ -182,3 +186,6 @@
              if (this.onGround()) {
 -                f = this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getFriction() * 0.98F;
 +                BlockState movementBlockState = this.level().getBlockStateIfLoaded(this.getBlockPosBelowThatAffectsMyMovement()); // ShreddedPaper - avoid sync chunk loads from orb friction checks
@@ -37,9 +23,7 @@
 +                    f = movementBlockState.getBlock().getFriction() * 0.98F;
 +                }
              }
- 
-             this.setDeltaMovement(this.getDeltaMovement().scale(f));
-@@ -242,7 +_,20 @@
+@@ -243,3 +250,15 @@
      private void scanForMerges() {
 -        if (this.level() instanceof ServerLevel) {
 +        if (this.level() instanceof ServerLevel serverLevel) {
@@ -56,11 +40,7 @@
 +                }
 +            }
              for (ExperienceOrb experienceOrb : this.level()
-                 .getEntities(EntityTypeTest.forClass(ExperienceOrb.class), this.getBoundingBox().inflate(0.5), this::canMerge)) {
-                 this.merge(experienceOrb);
-@@ -259,6 +_,22 @@
-     }
-     public static void awardWithDirection(ServerLevel level, Vec3 pos, Vec3 direction, int amount, org.bukkit.entity.ExperienceOrb.@Nullable SpawnReason reason, @Nullable Entity triggerId, @Nullable Entity sourceId) {
+@@ -261,2 +280,16 @@
      // Paper end - add reason to orbs
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
 +                && io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread.isShreddedPaperTickThread()) {
@@ -77,13 +57,8 @@
 +        }
 +
          while (amount > 0) {
-             int experienceValue = getExperienceValue(amount);
-             amount -= experienceValue;
-@@ -278,6 +_,20 @@
-             return false;
-         }
-     }
-+
+@@ -287,2 +320,16 @@
+ 
 +    private static net.minecraft.world.level.levelgen.structure.BoundingBox shreddedpaper$awardOwnershipBox(Vec3 pos) {
 +        return net.minecraft.world.level.levelgen.structure.BoundingBox.fromCorners(
 +            BlockPos.containing(pos.x - 1.0, pos.y - 1.0, pos.z - 1.0),
@@ -99,10 +74,7 @@
 +    }
 +
      private boolean canMerge(ExperienceOrb orb) {
-         return orb != this && canMerge(orb, this.getId(), this.getValue());
-@@ -354,6 +_,33 @@
-     @Override
-     public void playerTouch(Player entity) {
+@@ -356,2 +403,29 @@
          if (entity instanceof ServerPlayer serverPlayer) {
 +            // ShreddedPaper start - XP pickup mutates both player and orb ownership
 +            if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
@@ -132,5 +104,3 @@
 +            // ShreddedPaper end - XP pickup mutates both player and orb ownership
 +
              if (entity.takeXpDelay == 0 && new com.destroystokyo.paper.event.player.PlayerPickupExperienceEvent(serverPlayer.getBukkitEntity(), (org.bukkit.entity.ExperienceOrb) this.getBukkitEntity()).callEvent()) { // Paper - PlayerPickupExperienceEvent
-                 entity.takeXpDelay = org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerXpCooldownEvent(entity, this.level().purpurConfig.playerExpPickupDelay, org.bukkit.event.player.PlayerExpCooldownChangeEvent.ChangeReason.PICKUP_ORB).getNewCooldown(); // CraftBukkit - entity.takeXpDelay = 2; // Purpur - Configurable player pickup exp delay
-                 entity.take(this, 1);

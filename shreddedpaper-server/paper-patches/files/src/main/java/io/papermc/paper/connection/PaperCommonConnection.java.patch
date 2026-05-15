@@ -1,36 +1,23 @@
 --- a/src/main/java/io/papermc/paper/connection/PaperCommonConnection.java
 +++ b/src/main/java/io/papermc/paper/connection/PaperCommonConnection.java
-@@ -3,6 +_,7 @@
- import com.destroystokyo.paper.ClientOption;
- import com.destroystokyo.paper.PaperSkinParts;
+@@ -5,2 +5,3 @@
  import com.google.common.base.Preconditions;
 +import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import io.papermc.paper.adventure.PaperAdventure;
- import java.net.InetSocketAddress;
- import java.net.SocketAddress;
-@@ -82,12 +_,12 @@
-
-     @Override
+@@ -84,3 +85,3 @@
      public SocketAddress getAddress() {
 -        return this.handle.connection.channel.remoteAddress();
 +        return AnonymousMode.redactPublicSocketAddress(this.handle.connection.channel.remoteAddress());
      }
-
-     @Override
+@@ -89,3 +90,3 @@
      public InetSocketAddress getClientAddress() {
 -        return (InetSocketAddress) this.handle.connection.getRemoteAddress();
 +        return AnonymousMode.redactPublicSocketAddress((InetSocketAddress) this.handle.connection.getRemoteAddress());
      }
-
-     @Override
-@@ -97,7 +_,9 @@
-
-     @Override
+@@ -99,3 +100,5 @@
      public @Nullable InetSocketAddress getHAProxyAddress() {
 -        return this.handle.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress ? inetSocketAddress : null;
 +        return this.handle.connection.haProxyAddress instanceof final InetSocketAddress inetSocketAddress
 +            ? AnonymousMode.redactPublicSocketAddress(inetSocketAddress)
 +            : null;
      }
-
-     @Override
