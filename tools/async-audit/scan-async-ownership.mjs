@@ -37,6 +37,10 @@ const GUARDED_SYNC_ROOTS = [
     sinks: new Set(['bukkit-chunk-load', 'getchunk-load-true', 'set-block-entity']),
   },
   {
+    pathIncludes: 'shreddedpaper-server/src/main/java/io/multipaper/shreddedpaper/threading/ownership/ShreddedPaperAccess.java',
+    sinks: new Set(['set-block-entity']),
+  },
+  {
     pathIncludes: 'shreddedpaper-server/src/minecraft/java/net/minecraft/world/level/LevelReader.java',
     sinks: new Set(['sync-load-call', 'getchunk-load-true']),
   },

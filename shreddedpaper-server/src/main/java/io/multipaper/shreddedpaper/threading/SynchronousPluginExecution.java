@@ -2,6 +2,7 @@ package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
 import com.mojang.logging.LogUtils;
+import net.minecraft.server.MinecraftServer;
 import org.bukkit.plugin.Plugin;
 import org.slf4j.Logger;
 import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
@@ -66,8 +67,8 @@ public class SynchronousPluginExecution {
             currentPlugin.set(new WeakReference<>(plugin));
         }
         try {
-            if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || isFoliaSupported(plugin) || TickThread.isShutdownThread()) {
-                // Multi-thread safe plugin, run it straight away
+            if (plugin == null || config == null || !config.multithreading.runUnsupportedPluginsInSync || MinecraftServer.getServer() == null || TickThread.isShutdownThread()) {
+                // Synchronous compatibility locking is disabled for this execution path.
                 runnable.run();
                 return;
             }
@@ -112,14 +113,6 @@ public class SynchronousPluginExecution {
         }
 
         return lock;
-    }
-
-    private static boolean isFoliaSupported(Plugin plugin) {
-        try {
-            return plugin.getDescription().isFoliaSupported();
-        } catch (UnsupportedOperationException ignored) {
-            return true;
-        }
     }
 
     private static void lock(List<String> pluginsToLock) {
@@ -202,11 +195,6 @@ public class SynchronousPluginExecution {
     }
 
     private static boolean fillPluginsToLock(Plugin plugin, TreeSet<String> pluginsToLock, List<String> parentList) {
-        if (plugin.getDescription().isFoliaSupported()) {
-            // Multi-thread safe plugin, we don't need to lock it
-            return false;
-        }
-
         if (pluginsToLock.contains(plugin.getName())) {
             // Already visited
             return true;
@@ -224,7 +212,7 @@ public class SynchronousPluginExecution {
 
         boolean hasDependency = false;
 
-        for (String depend : plugin.getDescription().getDepend()) {
+        for (String depend : plugin.getPluginMeta().getPluginDependencies()) {
             Plugin dependPlugin = plugin.getServer().getPluginManager().getPlugin(depend);
             if (dependPlugin != null) {
                 hasDependency |= fillPluginsToLock(dependPlugin, pluginsToLock, parentList);
@@ -233,7 +221,7 @@ public class SynchronousPluginExecution {
             }
         }
 
-        for (String softDepend : plugin.getDescription().getSoftDepend()) {
+        for (String softDepend : plugin.getPluginMeta().getPluginSoftDependencies()) {
             Plugin softDependPlugin = plugin.getServer().getPluginManager().getPlugin(softDepend);
             if (softDependPlugin != null) {
                 hasDependency |= fillPluginsToLock(softDependPlugin, pluginsToLock, parentList);

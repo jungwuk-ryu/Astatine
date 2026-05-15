@@ -12,7 +12,7 @@ public class ShreddedPaperCommandPermissions {
     public static void registerPermissions(@NotNull Permission parent) {
         Permission commands = DefaultPermissions.registerPermission(ROOT, "Gives the user the ability to use all ShreddedPaper commands", parent);
 
-        DefaultPermissions.registerPermission(PREFIX + "mpmap", "MPMap command", PermissionDefault.TRUE, commands);
+        DefaultPermissions.registerPermission(PREFIX + "mpmap", "MPMap command", PermissionDefault.OP, commands);
         DefaultPermissions.registerPermission(PREFIX + "region", "Region diagnostics command", PermissionDefault.OP, commands);
 
         commands.recalculatePermissibles();

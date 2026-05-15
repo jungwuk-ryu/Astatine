@@ -374,9 +374,16 @@ public final class ShreddedPaperAccess {
     }
 
     private static OwnerTaskResult writeLoadedBlockEntity(final ServerLevel level, final BlockEntity blockEntity) {
-        final LevelChunk chunk = level.getChunkIfLoaded(blockEntity.getBlockPos());
+        final BlockPos pos = blockEntity.getBlockPos();
+        if (!isOwned(level, pos)) {
+            OWNER_HANDOFF_REJECTIONS.increment();
+            recordLoadedReadFallback("block-entity-write-unowned", level, pos);
+            return OwnerTaskResult.REJECTED;
+        }
+
+        final LevelChunk chunk = level.getChunkIfLoaded(pos);
         if (chunk == null) {
-            recordLoadedReadFallback("block-entity-write-unloaded", level, blockEntity.getBlockPos());
+            recordLoadedReadFallback("block-entity-write-unloaded", level, pos);
             return OwnerTaskResult.CHUNK_UNAVAILABLE;
         }
         chunk.setBlockEntity(blockEntity);
