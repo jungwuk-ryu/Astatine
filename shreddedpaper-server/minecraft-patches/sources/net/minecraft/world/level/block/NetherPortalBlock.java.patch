@@ -26,6 +26,17 @@
  import net.minecraft.world.level.gamerules.GameRules;
  import net.minecraft.world.level.portal.PortalShape;
  import net.minecraft.world.level.portal.TeleportTransition;
+@@ -48,6 +_,9 @@
+     public static final MapCodec<NetherPortalBlock> CODEC = simpleCodec(NetherPortalBlock::new);
+     public static final EnumProperty<Direction.Axis> AXIS = BlockStateProperties.HORIZONTAL_AXIS;
+     private static final Map<Direction.Axis, VoxelShape> SHAPES = Shapes.rotateHorizontalAxis(Block.column(4.0, 16.0, 0.0, 16.0));
+-
++    private static final java.util.concurrent.Executor PORTAL_CHUNK_LOAD_EXECUTOR = Util.backgroundExecutor().forName("netherPortalChunkLoad"); // ShreddedPaper - async teleportation
++    private static final int PORTAL_CHUNK_LOAD_BATCH_SIZE = 16; // ShreddedPaper - async teleportation
++    private static final int PORTAL_CHUNK_LOAD_NULL_RETRIES = 5; // ShreddedPaper - async teleportation
++
+     @Override
+     public MapCodec<NetherPortalBlock> codec() {
 @@ -135,7 +_,7 @@
      }
  
@@ -50,7 +61,7 @@
          } else {
              boolean flag = level1.getTypeKey() == net.minecraft.world.level.dimension.LevelStem.NETHER; // CraftBukkit
              WorldBorder worldBorder = level1.getWorldBorder();
-@@ -163,53 +_,113 @@
+@@ -163,53 +_,169 @@
              // CraftBukkit start
              org.bukkit.craftbukkit.event.PortalEventResult result = org.bukkit.craftbukkit.event.CraftEventFactory.handlePortalEvents(entity, org.bukkit.craftbukkit.util.CraftLocation.toBukkit(blockPos, level1), org.bukkit.PortalType.NETHER, portalSearchRadius, level1.paperConfig().environment.portalCreateRadius); // Paper - use custom portal search radius
              if (result == null) {
@@ -77,12 +88,12 @@
 +                BlockUtil.FoundRectangle sourceRectangle = BlockUtil.getLargestRectangleAround(pos, sourceAxis, 21, Direction.Axis.Y, 21, blockPos1 -> level.getBlockStateIfLoaded(blockPos1) == sourcePortalState); // ShreddedPaper - async teleportation
 +                relativePortalPosition = entity.getRelativePortalPosition(sourceAxis, sourceRectangle); // ShreddedPaper - async teleportation
 +                return new java.util.AbstractMap.SimpleImmutableEntry<Direction.Axis, Vec3>(sourceAxis, relativePortalPosition); // ShreddedPaper - async teleportation
-+            }, r -> ShreddedPaper.ensureSync(entity, level, sourceBox, r)).thenCompose(sourcePortal -> { // ShreddedPaper - async teleportation
++            }, r -> ShreddedPaper.ensureSync(entity, level, sourceBox, r)).thenComposeAsync(sourcePortal -> { // ShreddedPaper - async teleportation
 +                if (sourcePortal == null) { // ShreddedPaper - async teleportation
 +                    return CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
 +                } // ShreddedPaper - async teleportation
 +                return this.getExitPortalAsync(targetLevel, entity, sourcePortal.getKey(), sourcePortal.getValue(), targetPos, targetWorldBorder, portalResult); // ShreddedPaper - async teleportation
-+            }); // ShreddedPaper - async teleportation
++            }, PORTAL_CHUNK_LOAD_EXECUTOR); // ShreddedPaper - async teleportation
              // CraftBukkit end
          }
      }
@@ -127,9 +138,9 @@
 -        return getDimensionTransitionFromExit(entity, pos, largestRectangleAround, level, postTeleportTransition);
 -    }
 +        final BoundingBox searchBox = this.portalOwnershipBox(exitPos, result.searchRadius()); // ShreddedPaper - async teleportation
-+        return this.loadPortalChunksAsync(level, exitPos, result.searchRadius(), net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY).thenCompose(ignored -> // ShreddedPaper - async teleportation
++        return this.loadPortalChunksAsync(level, exitPos, result.searchRadius(), net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY).thenComposeAsync(ignored -> // ShreddedPaper - async teleportation
 +            CompletableFuture.supplyAsync(() -> level.getPortalForcer().findClosestPortalPosition(exitPos, worldBorder, result.searchRadius()), r -> ShreddedPaper.ensureSync(level, searchBox, r)) // CraftBukkit // ShreddedPaper - async teleportation
-+        ).thenCompose(optional -> { // ShreddedPaper - async teleportation
++        , PORTAL_CHUNK_LOAD_EXECUTOR).thenComposeAsync(optional -> { // ShreddedPaper - async teleportation
 +            if (optional.isPresent()) { // ShreddedPaper - async teleportation
 +                BlockPos blockPos = optional.get(); // ShreddedPaper - async teleportation
 +                final BoundingBox foundBox = this.portalOwnershipBox(blockPos, 21); // ShreddedPaper - async teleportation
@@ -166,7 +177,7 @@
 +            // CraftBukkit start
 +            return CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
 +            // CraftBukkit end
-+        }); // ShreddedPaper - async teleportation
++        }, PORTAL_CHUNK_LOAD_EXECUTOR); // ShreddedPaper - async teleportation
 +    }
 +    private BoundingBox portalOwnershipBox(BlockPos center, int radius) { // ShreddedPaper - async teleportation
 +        final int safeRadius = Math.max(0, radius); // ShreddedPaper - async teleportation
@@ -187,21 +198,72 @@
 +            final int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() - safeRadius); // ShreddedPaper - async teleportation
 +            final int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(center.getX() + safeRadius); // ShreddedPaper - async teleportation
 +            final int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(center.getZ() + safeRadius); // ShreddedPaper - async teleportation
-+            final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
++            final java.util.List<net.minecraft.world.level.ChunkPos> chunkPositions = new java.util.ArrayList<>(); // ShreddedPaper - async teleportation
 +            for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) { // ShreddedPaper - async teleportation
 +                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) { // ShreddedPaper - async teleportation
-+                    chunkFutures.add(level.getChunkSource().getChunkFuture(chunkX, chunkZ, status, true)); // ShreddedPaper - async teleportation
++                    chunkPositions.add(new net.minecraft.world.level.ChunkPos(chunkX, chunkZ)); // ShreddedPaper - async teleportation
 +                } // ShreddedPaper - async teleportation
 +            } // ShreddedPaper - async teleportation
 +
-+            return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenRun(() -> { // ShreddedPaper - async teleportation
-+                for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
-+                    if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
-+                        throw new IllegalStateException("Could not load Nether portal chunk for " + center + " at status " + status); // ShreddedPaper - async teleportation
++            return chunkPositions; // ShreddedPaper - async teleportation
++        }, PORTAL_CHUNK_LOAD_EXECUTOR).thenComposeAsync(chunkPositions -> { // ShreddedPaper - async teleportation
++            CompletableFuture<Void> chain = CompletableFuture.completedFuture(null); // ShreddedPaper - async teleportation
++            for (int index = 0; index < chunkPositions.size(); index += PORTAL_CHUNK_LOAD_BATCH_SIZE) { // ShreddedPaper - async teleportation
++                final java.util.List<net.minecraft.world.level.ChunkPos> batch = chunkPositions.subList(index, Math.min(index + PORTAL_CHUNK_LOAD_BATCH_SIZE, chunkPositions.size())); // ShreddedPaper - async teleportation
++                chain = chain.thenComposeAsync(ignored -> this.loadPortalChunkBatchAsync(level, center, status, batch), PORTAL_CHUNK_LOAD_EXECUTOR); // ShreddedPaper - async teleportation
++            } // ShreddedPaper - async teleportation
++            return chain; // ShreddedPaper - async teleportation
++        }, PORTAL_CHUNK_LOAD_EXECUTOR); // ShreddedPaper - async teleportation
++    }
++
++    private CompletableFuture<Void> loadPortalChunkBatchAsync(ServerLevel level, BlockPos center, net.minecraft.world.level.chunk.status.ChunkStatus status, java.util.List<net.minecraft.world.level.ChunkPos> chunkPositions) { // ShreddedPaper - async teleportation
++        final java.util.List<CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>> chunkFutures = new java.util.ArrayList<>(chunkPositions.size()); // ShreddedPaper - async teleportation
++        for (net.minecraft.world.level.ChunkPos chunkPos : chunkPositions) { // ShreddedPaper - async teleportation
++            chunkFutures.add(this.loadPortalChunkAsync(level, chunkPos.x, chunkPos.z, status, 0)); // ShreddedPaper - async teleportation
++        } // ShreddedPaper - async teleportation
++
++        return CompletableFuture.allOf(chunkFutures.toArray(CompletableFuture[]::new)).thenRunAsync(() -> { // ShreddedPaper - async teleportation
++            for (CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> chunkFuture : chunkFutures) { // ShreddedPaper - async teleportation
++                if (!chunkFuture.join().isSuccess()) { // ShreddedPaper - async teleportation
++                    throw new IllegalStateException("Could not load Nether portal chunk for " + center + " at status " + status); // ShreddedPaper - async teleportation
++                } // ShreddedPaper - async teleportation
++            } // ShreddedPaper - async teleportation
++        }, PORTAL_CHUNK_LOAD_EXECUTOR); // ShreddedPaper - async teleportation
++    }
++
++    private CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> loadPortalChunkAsync(ServerLevel level, int chunkX, int chunkZ, net.minecraft.world.level.chunk.status.ChunkStatus status, int retryCount) { // ShreddedPaper - async teleportation
++        final CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> future = new CompletableFuture<>(); // ShreddedPaper - async teleportation
++        try { // ShreddedPaper - async teleportation
++            final ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler chunkTaskScheduler = ((ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemServerLevel)level).moonrise$getChunkTaskScheduler(); // ShreddedPaper - async teleportation
++            final ca.spottedleaf.concurrentutil.util.Priority priority = retryCount == 0 ? ca.spottedleaf.concurrentutil.util.Priority.HIGHER : ca.spottedleaf.concurrentutil.util.Priority.NORMAL; // ShreddedPaper - async teleportation
++            chunkTaskScheduler.scheduleChunkLoad( // ShreddedPaper - async teleportation
++                chunkX, chunkZ, status, true, priority, chunk -> { // ShreddedPaper - async teleportation
++                    try { // ShreddedPaper - async teleportation
++                        PORTAL_CHUNK_LOAD_EXECUTOR.execute(() -> { // ShreddedPaper - async teleportation
++                            if (chunk == null && !chunkTaskScheduler.hasShutdown() && retryCount < PORTAL_CHUNK_LOAD_NULL_RETRIES) { // ShreddedPaper - async teleportation
++                                final long retryDelaySeconds = Math.min(5L, 1L + retryCount); // ShreddedPaper - async teleportation
++                                CompletableFuture.delayedExecutor(retryDelaySeconds, java.util.concurrent.TimeUnit.SECONDS, PORTAL_CHUNK_LOAD_EXECUTOR).execute(() -> this.loadPortalChunkAsync(level, chunkX, chunkZ, status, retryCount + 1).whenComplete((result, throwable) -> { // ShreddedPaper - async teleportation
++                                    if (throwable != null) { // ShreddedPaper - async teleportation
++                                        future.completeExceptionally(throwable); // ShreddedPaper - async teleportation
++                                    } else { // ShreddedPaper - async teleportation
++                                        future.complete(result); // ShreddedPaper - async teleportation
++                                    } // ShreddedPaper - async teleportation
++                                })); // ShreddedPaper - async teleportation
++                            } else if (chunk == null) { // ShreddedPaper - async teleportation
++                                future.complete(net.minecraft.server.level.ChunkHolder.UNLOADED_CHUNK); // ShreddedPaper - async teleportation
++                            } else { // ShreddedPaper - async teleportation
++                                future.complete(net.minecraft.server.level.ChunkResult.of(chunk)); // ShreddedPaper - async teleportation
++                            } // ShreddedPaper - async teleportation
++                        }); // ShreddedPaper - async teleportation
++                    } catch (Throwable throwable) { // ShreddedPaper - async teleportation
++                        future.completeExceptionally(throwable); // ShreddedPaper - async teleportation
 +                    } // ShreddedPaper - async teleportation
 +                } // ShreddedPaper - async teleportation
-+            }); // ShreddedPaper - async teleportation
-+        }, Util.backgroundExecutor().forName("netherPortalChunkLoad")).thenCompose(future -> future); // ShreddedPaper - async teleportation
++            ); // ShreddedPaper - async teleportation
++        } catch (Throwable throwable) { // ShreddedPaper - async teleportation
++            future.completeExceptionally(throwable); // ShreddedPaper - async teleportation
++        } // ShreddedPaper - async teleportation
++        return future; // ShreddedPaper - async teleportation
 +    }
 +
  
