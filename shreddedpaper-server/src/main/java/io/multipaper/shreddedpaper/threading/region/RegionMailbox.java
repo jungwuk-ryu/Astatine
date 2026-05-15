@@ -101,9 +101,7 @@ public final class RegionMailbox {
             this.queuedByClass[index] = new AtomicInteger();
             this.rejectedByClass[index] = new AtomicLong();
             this.failedByClass[index] = new AtomicLong();
-            this.ingress[index] = taskClass == RegionTaskClass.CRITICAL_SYSTEM
-                    ? new ConcurrentLinkedQueue<>()
-                    : new MpscArrayQueue<>(capacity);
+            this.ingress[index] = new MpscArrayQueue<>(capacity);
         }
     }
 
@@ -162,6 +160,10 @@ public final class RegionMailbox {
     public boolean offerTransferred(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final int queuedAfter = this.reserveTransferSlot(taskClass);
+        if (queuedAfter < 0) {
+            this.reject(taskClass, "the transferred mailbox capacity is full");
+            return false;
+        }
         final int transferredQueued = this.transferredDepth.incrementAndGet();
         this.recordQueuePressurePeak(this.transferredPressure, transferredQueued, taskClass, affinityRegionPos);
         final int capacity = this.capacityByClass[index(taskClass)];
@@ -335,14 +337,6 @@ public final class RegionMailbox {
     private int reserveSlot(final RegionTaskClass taskClass) {
         final AtomicInteger queued = this.queuedByClass[index(taskClass)];
         final int capacity = this.capacityByClass[index(taskClass)];
-        if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
-            final int current = queued.incrementAndGet();
-            if (current > capacity) {
-                this.recordCriticalOverReserve(current, capacity);
-            }
-            return current;
-        }
-
         int current;
         do {
             current = queued.get();
@@ -369,21 +363,14 @@ public final class RegionMailbox {
     private int reserveTransferSlot(final RegionTaskClass taskClass) {
         final AtomicInteger queued = this.queuedByClass[index(taskClass)];
         final int capacity = this.capacityByClass[index(taskClass)];
-        final int current = queued.incrementAndGet();
-        if (current > capacity) {
-            if (current == capacity + 1 || ((current - capacity) & 255) == 0) {
-                this.commitQueueEvent("transfer-over-reserve", taskClass);
-                LOGGER.warn(
-                        "Transferred {} region task exceeded mailbox reserve for {} {} (queued={} reserve={}); admitted tasks are non-dropping",
-                        taskClass,
-                        this.worldName,
-                        this.regionPos,
-                        current,
-                        capacity
-                );
+        int current;
+        do {
+            current = queued.get();
+            if (current >= capacity) {
+                return -1;
             }
-        }
-        return current;
+        } while (!queued.compareAndSet(current, current + 1));
+        return current + 1;
     }
 
     private void releaseSlot(final RegionTaskClass taskClass) {
@@ -409,20 +396,6 @@ public final class RegionMailbox {
                     this.capacityByClass[index(taskClass)],
                     rejectedForClass,
                     rejectedTotal
-            );
-        }
-    }
-
-    private void recordCriticalOverReserve(final int queued, final int capacity) {
-        final int overReserve = queued - capacity;
-        if (overReserve == 1 || (overReserve & 255) == 0) {
-            this.commitQueueEvent("critical-over-reserve", RegionTaskClass.CRITICAL_SYSTEM);
-            LOGGER.warn(
-                    "Critical region mailbox reserve exceeded for {} {} (queued={} reserve={}); critical work remains non-dropping",
-                    this.worldName,
-                    this.regionPos,
-                    queued,
-                    capacity
             );
         }
     }

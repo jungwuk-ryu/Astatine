@@ -44,16 +44,31 @@ class RegionMailboxTest {
     }
 
     @Test
-    void criticalSystemClassRemainsNonDroppingPastReserve() {
+    void criticalSystemClassRejectsAfterCapacityWithoutLosingAccounting() {
         final RegionMailbox mailbox = mailbox();
         final int capacity = mailbox.capacity(RegionTaskClass.CRITICAL_SYSTEM);
 
-        for (int i = 0; i < capacity + 2; i++) {
+        for (int i = 0; i < capacity; i++) {
             assertTrue(mailbox.offer(RegionTaskClass.CRITICAL_SYSTEM, () -> {}, 0L), "critical offer " + i);
         }
 
-        assertEquals(capacity + 2, mailbox.queued(RegionTaskClass.CRITICAL_SYSTEM));
-        assertEquals(0L, mailbox.rejected());
+        assertFalse(mailbox.offer(RegionTaskClass.CRITICAL_SYSTEM, () -> {}, 0L));
+        assertEquals(capacity, mailbox.queued(RegionTaskClass.CRITICAL_SYSTEM));
+        assertEquals(1L, mailbox.rejected());
+    }
+
+    @Test
+    void transferredClassRejectsAfterCapacityWithoutGrowingUnbounded() {
+        final RegionMailbox mailbox = mailbox();
+        final int capacity = mailbox.capacity(RegionTaskClass.OWNER_HANDOFF);
+
+        for (int i = 0; i < capacity; i++) {
+            assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)), "transferred offer " + i);
+        }
+
+        assertFalse(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)));
+        assertEquals(capacity, mailbox.queued(RegionTaskClass.OWNER_HANDOFF));
+        assertEquals(1L, mailbox.rejected());
     }
 
     @Test

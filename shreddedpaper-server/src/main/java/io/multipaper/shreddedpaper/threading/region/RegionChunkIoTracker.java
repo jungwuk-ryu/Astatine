@@ -520,6 +520,11 @@ public final class RegionChunkIoTracker {
         final int queued;
         for (;;) {
             final int current = Math.max(0, this.executorBackpressureCounters.retries.get());
+            if (current >= reserve) {
+                final long count = this.executorOverflowCounters.backpressure.incrementAndGet();
+                this.recordExecutorBackpressureSaturated(chunkX, chunkZ, workType, priority, current, reserve, count);
+                return false;
+            }
             if (this.executorBackpressureCounters.retries.compareAndSet(current, current + 1)) {
                 queued = current + 1;
                 break;
@@ -553,9 +558,6 @@ public final class RegionChunkIoTracker {
                     workType,
                     count
             );
-        }
-        if (queued > reserve) {
-            this.recordExecutorBackpressureSaturated(chunkX, chunkZ, workType, priority, queued, reserve, count);
         }
         return true;
     }

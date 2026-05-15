@@ -48,7 +48,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public DegradedRegionBossBar degradedRegionBossBar = new DegradedRegionBossBar();
         @Comment("Maximum queued tasks per region task class before backpressure/rejection begins.")
         public int regionMailboxCapacity = 4096;
-        @Comment("Warning reserve threshold for non-dropping critical system work per region.")
+        @Comment("Hard cap for queued critical system work per region.")
         public int criticalRegionMailboxCapacity = 1024;
         @Comment("Maximum queued player-action tasks per region. Values below 0 use regionMailboxCapacity.")
         public int playerActionRegionMailboxCapacity = 2048;
@@ -74,7 +74,7 @@ public class ShreddedPaperConfiguration extends ConfigurationPart {
         public int chunkIoExecutorMaxOverflowPerRegion = 64;
         @Comment("Hard cap for accepted but not-yet-started internal chunk worker tasks per region. Producers above this cap wait instead of growing memory without bound.")
         public int chunkIoExecutorMaxBacklogPerRegion = 8192;
-        @Comment("Warning reserve for internal chunk worker tasks waiting in the non-blocking backpressure retry coordinator per region. Engine work remains non-dropping.")
+        @Comment("Hard cap for internal chunk worker tasks waiting in the non-blocking backpressure retry coordinator per region.")
         public int chunkIoExecutorBackpressureRetryReserve = 4096;
         @Comment("Lower admitted internal chunk worker tasks to LOW priority while the target region is degraded.")
         public boolean chunkIoExecutorDowngradeDegradedPriority = true;
