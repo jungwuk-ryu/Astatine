@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
+import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperChunkTicker;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
@@ -14,12 +15,37 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.CraftWorld;
 import io.multipaper.shreddedpaper.region.RegionPos;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 public class ShreddedPaper {
+
+    private static final Logger LOGGER = LogUtils.getClassLogger();
+    private static final int RUN_SYNC_RETRY_CAPACITY = 8192;
+    private static final int RUN_SYNC_RETRY_DRAIN_LIMIT = 256;
+    private static final ConcurrentLinkedQueue<RunSyncRetry> RUN_SYNC_RETRIES = new ConcurrentLinkedQueue<>();
+    private static final AtomicInteger RUN_SYNC_RETRY_DEPTH = new AtomicInteger();
+    private static final AtomicLong RUN_SYNC_RETRY_REJECTIONS = new AtomicLong();
+    private static final AtomicLong RUN_SYNC_RETRY_DEFERRALS = new AtomicLong();
+    private static final AtomicLong RUN_SYNC_SCHEDULE_FAILURES = new AtomicLong();
+    private static final ScheduledExecutorService RUN_SYNC_RETRY_EXECUTOR = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        final Thread thread = new Thread(runnable, "ShreddedPaper runSync retry");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    static {
+        RUN_SYNC_RETRY_EXECUTOR.scheduleWithFixedDelay(ShreddedPaper::drainRunSyncRetries, 10L, 10L, TimeUnit.MILLISECONDS);
+    }
 
     public static void runSync(Location location, Runnable runnable) {
         runSync(((CraftWorld) location.getWorld()).getHandle(), new BlockPos(location.getBlockX(), location.getBlockY(), location.getBlockZ()), runnable);
@@ -41,12 +67,129 @@ public class ShreddedPaper {
         return entity.getBukkitEntity().taskScheduler.schedule(consumer, retired == null ? null : e -> retired.run(), 1);
     }
 
-    public static void runSync(ServerLevel serverLevel, BlockPos blockPos, Runnable runnable) {
-        runSync(serverLevel, ChunkPos.of(blockPos), runnable);
+    public static boolean runSync(ServerLevel serverLevel, BlockPos blockPos, Runnable runnable) {
+        return runSync(serverLevel, ChunkPos.of(blockPos), runnable);
     }
 
-    public static void runSync(ServerLevel serverLevel, ChunkPos chunkPos, Runnable runnable) {
-        serverLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(RegionPos.forChunk(chunkPos), runnable, 0L, RegionTaskClass.OWNER_HANDOFF);
+    public static boolean runSync(ServerLevel serverLevel, ChunkPos chunkPos, Runnable runnable) {
+        if (tryScheduleRunSyncNow(serverLevel, chunkPos, runnable)) {
+            return true;
+        }
+        return enqueueRunSyncRetry(serverLevel, chunkPos, runnable, "initial mailbox saturated");
+    }
+
+    private static boolean tryScheduleRunSyncNow(final ServerLevel serverLevel, final ChunkPos chunkPos, final Runnable runnable) {
+        try {
+            return scheduleRunSyncNow(serverLevel, chunkPos, runnable);
+        } catch (final RuntimeException exception) {
+            final long failures = RUN_SYNC_SCHEDULE_FAILURES.incrementAndGet();
+            if (failures == 1L || (failures & 255L) == 0L) {
+                LOGGER.warn(
+                        "Failed to schedule sync task for {} {} (failures={})",
+                        serverLevel.getWorld().getName(),
+                        RegionPos.forChunk(chunkPos),
+                        failures,
+                        exception
+                );
+            }
+            return false;
+        }
+    }
+
+    private static boolean scheduleRunSyncNow(final ServerLevel serverLevel, final ChunkPos chunkPos, final Runnable runnable) {
+        return serverLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(
+                RegionPos.forChunk(chunkPos),
+                runnable,
+                0L,
+                RegionTaskClass.OWNER_HANDOFF
+        );
+    }
+
+    private static boolean enqueueRunSyncRetry(
+            final ServerLevel serverLevel,
+            final ChunkPos chunkPos,
+            final Runnable runnable,
+            final String reason
+    ) {
+        final int depth = reserveRunSyncRetrySlot();
+        if (depth < 0) {
+            final long rejected = RUN_SYNC_RETRY_REJECTIONS.incrementAndGet();
+            if (rejected == 1L || (rejected & 255L) == 0L) {
+                LOGGER.warn(
+                        "Failed to enqueue sync retry for {} {} because {} and retry queue is full (rejections={})",
+                        serverLevel.getWorld().getName(),
+                        RegionPos.forChunk(chunkPos),
+                        reason,
+                        rejected
+                );
+            }
+            return false;
+        }
+        RUN_SYNC_RETRIES.offer(new RunSyncRetry(serverLevel, chunkPos, runnable));
+        if (depth == 1 || depth == RUN_SYNC_RETRY_CAPACITY || (depth & 255) == 0) {
+            LOGGER.warn(
+                    "Queued sync retry for {} {} because {} (retryDepth={}/{})",
+                    serverLevel.getWorld().getName(),
+                    RegionPos.forChunk(chunkPos),
+                    reason,
+                    depth,
+                    RUN_SYNC_RETRY_CAPACITY
+            );
+        }
+        return true;
+    }
+
+    private static int reserveRunSyncRetrySlot() {
+        int current;
+        do {
+            current = RUN_SYNC_RETRY_DEPTH.get();
+            if (current >= RUN_SYNC_RETRY_CAPACITY) {
+                return -1;
+            }
+        } while (!RUN_SYNC_RETRY_DEPTH.compareAndSet(current, current + 1));
+        return current + 1;
+    }
+
+    private static void releaseRunSyncRetrySlot() {
+        final int remaining = RUN_SYNC_RETRY_DEPTH.decrementAndGet();
+        if (remaining < 0) {
+            RUN_SYNC_RETRY_DEPTH.compareAndSet(remaining, 0);
+            LOGGER.error("runSync retry accounting underflow");
+        }
+    }
+
+    private static void drainRunSyncRetries() {
+        for (int i = 0; i < RUN_SYNC_RETRY_DRAIN_LIMIT; i++) {
+            final RunSyncRetry retry = RUN_SYNC_RETRIES.poll();
+            if (retry == null) {
+                return;
+            }
+            if (!tryScheduleRunSyncNow(retry.level(), retry.chunkPos(), retry.runnable())) {
+                requeueRunSyncRetry(retry, "retry mailbox still saturated");
+                return;
+            }
+            releaseRunSyncRetrySlot();
+        }
+    }
+
+    private static void requeueRunSyncRetry(final RunSyncRetry retry, final String reason) {
+        RUN_SYNC_RETRIES.offer(retry);
+        final long deferred = RUN_SYNC_RETRY_DEFERRALS.incrementAndGet();
+        final int depth = RUN_SYNC_RETRY_DEPTH.get();
+        if (deferred == 1L || (deferred & 255L) == 0L) {
+            LOGGER.warn(
+                    "Deferred sync retry for {} {} because {} (retryDepth={}/{}, deferrals={})",
+                    retry.level().getWorld().getName(),
+                    RegionPos.forChunk(retry.chunkPos()),
+                    reason,
+                    depth,
+                    RUN_SYNC_RETRY_CAPACITY,
+                    deferred
+            );
+        }
+    }
+
+    private record RunSyncRetry(ServerLevel level, ChunkPos chunkPos, Runnable runnable) {
     }
 
     public static void runSync(ServerLevel serverLevel, BoundingBox box, Runnable runnable) {

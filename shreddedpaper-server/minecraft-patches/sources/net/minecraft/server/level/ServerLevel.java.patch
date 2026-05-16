@@ -736,7 +736,7 @@
 +        }
 +        RegionPos targetRegion = RegionPos.forBlockPos(pos);
 +        if (!this.chunkSource.tickingRegions.scheduleTaskNonDropping(targetRegion, update, 0L, RegionTaskClass.OWNER_HANDOFF)) {
-+            throw new IllegalStateException("Region mailbox rejected cross-cell neighbor update for " + pos);
++            return false;
 +        }
 +        return false;
 +    }

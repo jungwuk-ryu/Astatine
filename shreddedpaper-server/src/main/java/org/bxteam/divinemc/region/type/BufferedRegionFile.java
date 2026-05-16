@@ -870,13 +870,13 @@ public class BufferedRegionFile implements IRegionFile {
             return buffer;
         }
 
-        public void restoreFrom(@NotNull ByteBuffer buffer) {
+        public void restoreFrom(@NotNull ByteBuffer buffer) throws IOException {
             this.offset = buffer.getLong();
             this.length = buffer.getLong();
             this.hasData = buffer.get() == 1;
 
             if (this.length < 0 || this.offset < 0 || (!this.hasData && this.length != 0)) {
-                throw new IllegalStateException("Invalid sector data: " + this);
+                throw new IOException("Invalid sector data: " + this + " in " + BufferedRegionFile.this.filePath);
             }
         }
 

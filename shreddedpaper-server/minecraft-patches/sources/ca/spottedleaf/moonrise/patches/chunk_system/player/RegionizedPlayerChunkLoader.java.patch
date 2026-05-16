@@ -412,7 +412,7 @@
 +                        if (!ShreddedPaperChunkTicker.isCurrentlyTickingRegion(this.world, RegionPos.forChunk(chunk.getPos()))) {
 +                            this.retryLaterSendQueue.add(this.sendQueue.dequeueLong());
 +                            if (this.postProcessQueuedChunks.add(pendingSend)) {
-+                                ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
++                                if (!ShreddedPaper.runSync(this.world, chunk.getPos(), () -> {
 +                                    try {
 +                                        final LevelChunk chunk2 = this.world.chunkSource.getChunkAtIfLoadedImmediately(pendingSendX, pendingSendZ);
 +                                        if (chunk2 != null && this.areNeighboursFullLoaded(pendingSendX, pendingSendZ, 1) && !chunk2.moonrise$isPostProcessingDone()) {
@@ -421,7 +421,9 @@
 +                                    } finally {
 +                                        this.postProcessQueuedChunks.remove(pendingSend);
 +                                    }
-+                                });
++                                })) {
++                                    this.postProcessQueuedChunks.remove(pendingSend);
++                                }
 +                            }
 +                            continue;
 +                        }

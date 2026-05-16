@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,16 +59,73 @@ class RegionMailboxTest {
     }
 
     @Test
-    void transferredClassRejectsAfterCapacityWithoutGrowingUnbounded() {
+    void transferredClassUsesEmergencyMailboxAfterCapacity() {
         final RegionMailbox mailbox = mailbox();
         final int capacity = mailbox.capacity(RegionTaskClass.OWNER_HANDOFF);
+        final List<String> ran = new ArrayList<>();
 
         for (int i = 0; i < capacity; i++) {
             assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)), "transferred offer " + i);
         }
 
-        assertFalse(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)));
+        assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> ran.add("emergency"), 0L, new RegionPos(1, 1)));
         assertEquals(capacity, mailbox.queued(RegionTaskClass.OWNER_HANDOFF));
+        assertEquals(1, mailbox.pressureDiagnostics().emergency().queued());
+        assertEquals(0L, mailbox.rejected());
+
+        mailbox.runDue(null);
+
+        assertEquals(List.of("emergency"), ran);
+    }
+
+    @Test
+    void emergencyMailboxPreservesDelayTicks() {
+        final RegionMailbox mailbox = mailbox();
+        final int capacity = mailbox.capacity(RegionTaskClass.OWNER_HANDOFF);
+        final List<String> ran = new ArrayList<>();
+
+        for (int i = 0; i < capacity; i++) {
+            assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)), "transferred offer " + i);
+        }
+
+        assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> ran.add("delayed"), 3L, new RegionPos(1, 1)));
+
+        mailbox.runDue(null);
+        mailbox.runDue(null);
+        assertTrue(ran.isEmpty());
+
+        mailbox.runDue(null);
+        assertEquals(List.of("delayed"), ran);
+    }
+
+    @Test
+    void emergencyMailboxRejectsAtBoundedCapacity() {
+        final RegionMailbox mailbox = mailbox();
+        final int capacity = mailbox.capacity(RegionTaskClass.OWNER_HANDOFF);
+        final int emergencyCapacity = mailbox.emergencyCapacity();
+
+        for (int i = 0; i < capacity; i++) {
+            assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)), "transferred offer " + i);
+        }
+        for (int i = 0; i < emergencyCapacity; i++) {
+            assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)), "emergency offer " + i);
+        }
+
+        assertFalse(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)));
+        assertEquals(emergencyCapacity, mailbox.pressureDiagnostics().emergency().queued());
+        assertEquals(1L, mailbox.rejected());
+    }
+
+    @Test
+    void staleOwnerWithoutBackingLevelRejectsWithoutThrowing() {
+        final AtomicLong epoch = new AtomicLong(1L);
+        final RegionMailbox mailbox = new RegionMailbox("world", REGION_POS, 1L, epoch::get, ignored -> false);
+
+        assertTrue(mailbox.offerTransferred(RegionTaskClass.OWNER_HANDOFF, () -> {}, 0L, new RegionPos(1, 1)));
+        epoch.incrementAndGet();
+
+        assertEquals(1, mailbox.runDue(null));
+        assertEquals(0, mailbox.depth());
         assertEquals(1L, mailbox.rejected());
     }
 
@@ -87,6 +145,7 @@ class RegionMailboxTest {
         assertEquals(1, pressure.transferred().peakDepth());
         assertTrue(pressure.transferred().oldestAgeNanos() >= 0L);
         assertTrue(pressure.transferred().peakProducerContext().contains("taskClass=OWNER_HANDOFF"));
+        assertEquals(0, pressure.emergency().queued());
 
         mailbox.runDue(null);
 

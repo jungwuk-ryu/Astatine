@@ -41,6 +41,7 @@ public final class RegionMailbox {
     private final LongSupplier ownerEpochSupplier;
     private final LongPredicate ownerOwnsCell;
     private final Queue<RegionTask> transferred = new ConcurrentLinkedQueue<>();
+    private final Queue<RegionTask> emergency = new ConcurrentLinkedQueue<>();
     private final Queue<RegionTask>[] ingress;
     private final AtomicInteger[] queuedByClass;
     private final int[] capacityByClass;
@@ -49,9 +50,13 @@ public final class RegionMailbox {
     private final PriorityQueue<RegionTask> delayed = new PriorityQueue<>();
     private final AtomicLong rejected = new AtomicLong();
     private final AtomicLong executed = new AtomicLong();
+    private final AtomicLong redirectRetries = new AtomicLong();
     private final AtomicInteger transferredDepth = new AtomicInteger();
+    private final AtomicInteger emergencyDepth = new AtomicInteger();
+    private final int emergencyCapacity;
     private final QueuePressureDiagnostics criticalSystemPressure = new QueuePressureDiagnostics();
     private final QueuePressureDiagnostics transferredPressure = new QueuePressureDiagnostics();
+    private final QueuePressureDiagnostics emergencyPressure = new QueuePressureDiagnostics();
     private volatile long currentTick;
 
     public RegionMailbox(
@@ -103,6 +108,7 @@ public final class RegionMailbox {
             this.failedByClass[index] = new AtomicLong();
             this.ingress[index] = new MpscArrayQueue<>(capacity);
         }
+        this.emergencyCapacity = Math.max(64, config.regionMailboxCapacity);
     }
 
     @SuppressWarnings("unchecked")
@@ -161,14 +167,13 @@ public final class RegionMailbox {
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final int queuedAfter = this.reserveTransferSlot(taskClass);
         if (queuedAfter < 0) {
-            this.reject(taskClass, "the transferred mailbox capacity is full");
-            return false;
+            return this.offerEmergency(taskClass, runnable, normalizedDelayTicks, affinityRegionPos, "transferred capacity is full");
         }
         final int transferredQueued = this.transferredDepth.incrementAndGet();
         this.recordQueuePressurePeak(this.transferredPressure, transferredQueued, taskClass, affinityRegionPos);
         final int capacity = this.capacityByClass[index(taskClass)];
         final long readyTick = this.currentTick + normalizedDelayTicks;
-        this.transferred.offer(new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, System.nanoTime()));
+        this.transferred.offer(new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, System.nanoTime(), true, false));
         if (this.shouldCommitCrossRegionTaskEvent(true, queuedAfter, capacity)) {
             this.commitCrossRegionTaskEvent(
                     "transferred",
@@ -194,10 +199,6 @@ public final class RegionMailbox {
     }
 
     public boolean offerNonDropping(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
-        if (taskClass == RegionTaskClass.CRITICAL_SYSTEM) {
-            return this.offer(taskClass, runnable, delayTicks, affinityRegionPos);
-        }
-
         final long normalizedDelayTicks = Math.max(1L, delayTicks);
         final int queuedAfterReserve = this.reserveSlot(taskClass);
         if (queuedAfterReserve < 0) {
@@ -205,7 +206,7 @@ public final class RegionMailbox {
         }
 
         final long readyTick = this.currentTick + normalizedDelayTicks;
-        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, 0L);
+        final RegionTask task = new RegionTask(taskClass, runnable, readyTick, this.ownerId, this.ownerEpochSupplier.getAsLong(), affinityRegionPos.longKey, 0L, true, false);
         final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (accepted) {
             return true;
@@ -213,6 +214,45 @@ public final class RegionMailbox {
 
         this.releaseSlot(taskClass);
         return this.offerTransferred(taskClass, runnable, normalizedDelayTicks, affinityRegionPos);
+    }
+
+    private boolean offerEmergency(
+            final RegionTaskClass taskClass,
+            final Runnable runnable,
+            final long normalizedDelayTicks,
+            final RegionPos affinityRegionPos,
+            final String reason
+    ) {
+        final long readyTick = this.currentTick + normalizedDelayTicks;
+        final int emergencyQueued = this.reserveEmergencySlot();
+        if (emergencyQueued < 0) {
+            this.reject(taskClass, "the emergency mailbox capacity is full");
+            return false;
+        }
+        this.recordQueuePressurePeak(this.emergencyPressure, emergencyQueued, taskClass, affinityRegionPos);
+        this.emergency.offer(new RegionTask(
+                taskClass,
+                runnable,
+                readyTick,
+                this.ownerId,
+                this.ownerEpochSupplier.getAsLong(),
+                affinityRegionPos.longKey,
+                System.nanoTime(),
+                false,
+                true
+        ));
+        if (emergencyQueued == 1 || emergencyQueued == this.emergencyCapacity || (emergencyQueued & 255) == 0) {
+            LOGGER.warn(
+                    "Accepted {} non-dropping region task for {} {} into emergency mailbox because {} (emergencyDepth={}/{})",
+                    taskClass,
+                    this.worldName,
+                    this.regionPos,
+                    reason,
+                    emergencyQueued,
+                    this.emergencyCapacity
+            );
+        }
+        return true;
     }
 
     public boolean offer(final RegionTaskClass taskClass, final Runnable runnable, final long delayTicks, final RegionPos affinityRegionPos) {
@@ -269,7 +309,9 @@ public final class RegionMailbox {
                 this.ownerId,
                 targetOwnerEpoch,
                 affinityRegionPos.longKey,
-                taskClass == RegionTaskClass.CRITICAL_SYSTEM ? System.nanoTime() : 0L
+                taskClass == RegionTaskClass.CRITICAL_SYSTEM ? System.nanoTime() : 0L,
+                true,
+                false
         );
         final boolean accepted = this.ingress[index(taskClass)].offer(task);
         if (!accepted) {
@@ -373,6 +415,17 @@ public final class RegionMailbox {
         return current + 1;
     }
 
+    private int reserveEmergencySlot() {
+        int current;
+        do {
+            current = this.emergencyDepth.get();
+            if (current >= this.emergencyCapacity) {
+                return -1;
+            }
+        } while (!this.emergencyDepth.compareAndSet(current, current + 1));
+        return current + 1;
+    }
+
     private void releaseSlot(final RegionTaskClass taskClass) {
         final int remaining = this.queuedByClass[index(taskClass)].decrementAndGet();
         if (remaining < 0) {
@@ -406,6 +459,7 @@ public final class RegionMailbox {
         do {
             final int beforeRound = ran;
             ran += this.drainTransferred(budget, 32);
+            ran += this.drainEmergency(budget, 32);
             ran += this.drainDelayed(budget, 64);
             if (budget != null && !budget.canContinue(RegionWorkType.REGION_TASK)) {
                 return ran;
@@ -425,6 +479,32 @@ public final class RegionMailbox {
             }
         } while (budget.canContinue(RegionWorkType.REGION_TASK));
         return ran;
+    }
+
+    private int drainEmergency(final RegionTickBudget budget, final int maxTasks) {
+        int ran = 0;
+        RegionTask task;
+        while (ran < maxTasks && (task = this.emergency.poll()) != null) {
+            if (task.readyTick() > this.currentTick) {
+                this.delayed.add(task);
+                continue;
+            }
+            if (budget != null && !budget.canContinue(RegionWorkType.REGION_TASK)) {
+                this.delayed.add(task);
+                break;
+            }
+            this.runTask(task);
+            ran++;
+        }
+        return ran;
+    }
+
+    private void decrementEmergencyDepth() {
+        final int remaining = this.emergencyDepth.decrementAndGet();
+        if (remaining < 0) {
+            this.emergencyDepth.compareAndSet(remaining, 0);
+            LOGGER.error("Emergency mailbox accounting underflow for {} {}", this.worldName, this.regionPos);
+        }
     }
 
     private int drainTransferred(final RegionTickBudget budget, final int maxTasks) {
@@ -502,7 +582,7 @@ public final class RegionMailbox {
             return;
         }
 
-        this.releaseSlot(task.taskClass());
+        this.releaseTaskAccounting(task);
         try {
             task.run();
             this.executed.incrementAndGet();
@@ -529,13 +609,43 @@ public final class RegionMailbox {
             return false;
         }
 
-        this.releaseSlot(task.taskClass());
         final RegionPos affinityRegionPos = new RegionPos(task.affinityCellKey());
         if (this.level == null) {
-            throw new IllegalStateException("Cannot redirect stale-owner task without a backing ServerLevel");
+            this.releaseTaskAccounting(task);
+            this.reject(task.taskClass(), "stale-owner task cannot be redirected without a backing ServerLevel");
+            return true;
         }
-        this.level.chunkSource.tickingRegions.scheduleTransferredTask(affinityRegionPos, task, 0L, task.taskClass());
+        if (this.level.chunkSource.tickingRegions.scheduleTransferredTask(affinityRegionPos, task, 0L, task.taskClass())) {
+            this.releaseTaskAccounting(task);
+            return true;
+        }
+
+        this.delayed.add(task.reschedule(this.currentTick + 1L));
+        final long retries = this.redirectRetries.incrementAndGet();
+        if (retries == 1L || (retries & 255L) == 0L) {
+            LOGGER.warn(
+                    "Target mailbox refused stale-owner {} task redirect for {} {} -> {}; keeping task on current mailbox for retry (redirectRetries={})",
+                    task.taskClass(),
+                    this.worldName,
+                    this.regionPos,
+                    affinityRegionPos,
+                    retries
+            );
+        }
         return true;
+    }
+
+    private void releaseReservedSlot(final RegionTask task) {
+        if (task.reservedSlot()) {
+            this.releaseSlot(task.taskClass());
+        }
+    }
+
+    private void releaseTaskAccounting(final RegionTask task) {
+        this.releaseReservedSlot(task);
+        if (task.emergencySlot()) {
+            this.decrementEmergencyDepth();
+        }
     }
 
     public boolean hasPendingTasks() {
@@ -544,7 +654,7 @@ public final class RegionMailbox {
                 return true;
             }
         }
-        return false;
+        return this.transferredDepth.get() > 0 || this.emergencyDepth.get() > 0 || !this.delayed.isEmpty();
     }
 
     public int depth() {
@@ -552,7 +662,7 @@ public final class RegionMailbox {
         for (final AtomicInteger queued : this.queuedByClass) {
             depth += Math.max(0, queued.get());
         }
-        return depth;
+        return depth + Math.max(0, this.emergencyDepth.get());
     }
 
     public PressureDiagnostics pressureDiagnostics() {
@@ -569,6 +679,12 @@ public final class RegionMailbox {
                         this.transferredPressure.peakDepth.get(),
                         this.oldestAgeNanos(this.transferred.peek(), now),
                         this.transferredPressure.peakProducerContext
+                ),
+                new QueuePressureSnapshot(
+                        Math.max(0, this.emergencyDepth.get()),
+                        this.emergencyPressure.peakDepth.get(),
+                        this.oldestAgeNanos(this.emergency.peek(), now),
+                        this.emergencyPressure.peakProducerContext
                 )
         );
     }
@@ -586,6 +702,10 @@ public final class RegionMailbox {
 
     public int capacity(final RegionTaskClass taskClass) {
         return this.capacityByClass[index(taskClass)];
+    }
+
+    int emergencyCapacity() {
+        return this.emergencyCapacity;
     }
 
     public double maxClassPressure() {
@@ -679,7 +799,8 @@ public final class RegionMailbox {
 
     public record PressureDiagnostics(
             QueuePressureSnapshot criticalSystem,
-            QueuePressureSnapshot transferred
+            QueuePressureSnapshot transferred,
+            QueuePressureSnapshot emergency
     ) {
     }
 

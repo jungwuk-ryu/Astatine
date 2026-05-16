@@ -25,7 +25,7 @@
 +        if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(level, pos)) {
 +            final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult = ShreddedPaperAccess.runWithWriteLockIfHeldOrDeferToOwner(level, pos, RegionTaskClass.OWNER_HANDOFF, () -> setWireState(level, pos, state, updateNeighborShapes));
 +            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
-+                throw new IllegalStateException("Failed to hand off cross-owner redstone wire write; world=" + level.getWorld().getName() + ", pos=" + pos + ", state=" + state);
++                return false;
 +            }
 +            return false;
 +        }

@@ -702,11 +702,11 @@ public class LevelChunkRegionMap {
 
     public boolean scheduleTaskNonDropping(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
         return this.applyRegionForCell(regionPos, region -> {
-            final boolean scheduled = region.scheduleTaskNonDropping(taskClass, task, delayInTicks, regionPos);
-            if (scheduled) {
+            final boolean accepted = region.scheduleTaskNonDropping(taskClass, task, delayInTicks, regionPos);
+            if (accepted) {
                 region.getOwner().armScheduler();
             }
-            return scheduled;
+            return accepted;
         });
     }
 
@@ -762,11 +762,11 @@ public class LevelChunkRegionMap {
 
     public boolean scheduleTransferredTask(RegionPos regionPos, Runnable task, long delayInTicks, RegionTaskClass taskClass) {
         return this.applyRegionForCell(regionPos, region -> {
-            final boolean scheduled = region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos);
-            if (scheduled) {
+            final boolean accepted = region.scheduleTransferredTask(taskClass, task, delayInTicks, regionPos);
+            if (accepted) {
                 region.getOwner().armScheduler();
             }
-            return scheduled;
+            return accepted;
         });
     }
 

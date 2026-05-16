@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.util.TickThread;
+import com.mojang.logging.LogUtils;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.region.RegionTickBudget;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
@@ -9,9 +10,14 @@ import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.LevelChunk;
+import org.slf4j.Logger;
+
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ShreddedPaperChangesBroadcaster {
 
+    private static final Logger LOGGER = LogUtils.getClassLogger();
+    private static final AtomicLong BROADCAST_RESCHEDULE_REJECTIONS = new AtomicLong();
     private static final ThreadLocal<BroadcastState> broadcastStateThreadLocal = new ThreadLocal<>();
 
     public static void setAsWorkerThread() {
@@ -93,7 +99,18 @@ public class ShreddedPaperChangesBroadcaster {
                     ShreddedPaperChangesBroadcaster.add(holder);
                     ShreddedPaperChangesBroadcaster.broadcastChanges();
                 };
-                targetLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(targetRegion, broadcastTask, 1L, RegionTaskClass.TRACKER_BROADCAST);
+                if (!targetLevel.getChunkSource().tickingRegions.scheduleTaskNonDropping(targetRegion, broadcastTask, 1L, RegionTaskClass.TRACKER_BROADCAST)) {
+                    pending.add(holder);
+                    final long rejected = BROADCAST_RESCHEDULE_REJECTIONS.incrementAndGet();
+                    if (rejected == 1L || (rejected & 255L) == 0L) {
+                        LOGGER.warn(
+                                "Failed to reschedule tracker broadcast for {} {}; keeping holder pending (rejections={})",
+                                targetLevel.getWorld().getName(),
+                                targetRegion,
+                                rejected
+                        );
+                    }
+                }
                 continue;
             }
 

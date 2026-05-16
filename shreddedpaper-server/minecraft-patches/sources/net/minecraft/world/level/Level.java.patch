@@ -124,8 +124,8 @@
      public boolean setBlock(BlockPos pos, BlockState state, @Block.UpdateFlags int flags, int recursionLeft) {
 +        if (this instanceof ServerLevel serverLevel && ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(serverLevel, pos)) { // ShreddedPaper - defer cross-owner block writes
 +            final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult = ShreddedPaperAccess.runWithWriteLockIfHeldOrDeferToOwner(serverLevel, pos, RegionTaskClass.OWNER_HANDOFF, () -> serverLevel.setBlock(pos, state, flags, recursionLeft)); // ShreddedPaper - defer cross-owner block writes
-+            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) { // ShreddedPaper - do not silently drop cross-owner block writes
-+                throw new IllegalStateException("Failed to hand off cross-owner block write; world=" + serverLevel.getWorld().getName() + ", pos=" + pos + ", state=" + state); // ShreddedPaper - do not silently drop cross-owner block writes
++            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) { // ShreddedPaper - avoid crashing on saturated owner handoff
++                return false; // ShreddedPaper - avoid crashing on saturated owner handoff
 +            }
 +            return false; // ShreddedPaper - defer cross-owner block writes
 +        }

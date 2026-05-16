@@ -457,7 +457,9 @@
 +                        if (this.level() instanceof ServerLevel && TickThread.isTickThreadFor(this)) { // ShreddedPaper - async teleportation
 +                            finishPortal.run(); // ShreddedPaper - async teleportation
 +                        } else { // ShreddedPaper - async teleportation
-+                            ShreddedPaper.runSync(this, finishPortal, finishPortal); // ShreddedPaper - async teleportation
++                            if (!ShreddedPaper.runSync(this, finishPortal, finishPortal)) { // ShreddedPaper - async teleportation
++                                finishPortal.run(); // ShreddedPaper - async teleportation
++                            } // ShreddedPaper - async teleportation
 +                        } // ShreddedPaper - async teleportation
 +                    }); // ShreddedPaper - async teleportation
  

@@ -143,7 +143,7 @@
 +                    );
 +            if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED
 +                    || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
-+                throw new IllegalStateException("Failed to hand off cross-owner vanilla redstone wire update; world=" + serverLevel.getWorld().getName() + ", pos=" + pos);
++                return state;
 +            }
 +            return state;
 +        }

@@ -405,7 +405,9 @@ public final class RegionChunkExecutorLimiter {
             )) {
                 return true;
             }
-            throw new IllegalStateException("Internal chunk executor backpressure retry coordinator refused non-dropping engine work");
+            this.backpressureRetryOutstanding.set(false);
+            this.releaseWaiting();
+            return this.startEmergencyBacklogOverflow();
         }
 
         private boolean startOverflow(final boolean executeNow) {

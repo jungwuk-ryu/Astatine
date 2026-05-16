@@ -37,15 +37,17 @@
      }
  
 +    // ShreddedPaper start - ensure write lock
-+    public boolean ensureFullStatusChangeWithWriteLock() {
++    public boolean ensureFullStatusChangeWithWriteLock(final List<NewChunkHolder> changedFullStatus) {
 +        // Upgrading to a full loaded chunk is just a chunk load task, which does not require the write lock
 +        // However, upgrading to block ticking or entity ticking is more than just loading a chunk, and requires us to have the write lock
 +        if (!TickThread.isTickThreadFor(this.world, this.chunkX, this.chunkZ)) {
-+            ShreddedPaper.runSync(world, vanillaChunkHolder.getPos(), () -> {
++            if (!ShreddedPaper.runSync(world, vanillaChunkHolder.getPos(), () -> {
 +                List<NewChunkHolder> changedFullStatus2 = new ArrayList<>();
 +                handleFullStatusChange(changedFullStatus2);
 +                this.scheduler.chunkHolderManager.addChangedStatuses(changedFullStatus2);
-+            });
++            })) {
++                changedFullStatus.add(this);
++            }
 +            return false;
 +        }
 +        return true;
@@ -59,7 +61,7 @@
                      }
  
                      if (!current.isOrAfter(FullChunkStatus.BLOCK_TICKING) && pending.isOrAfter(FullChunkStatus.BLOCK_TICKING)) {
-+                        if (!ensureFullStatusChangeWithWriteLock()) return ret; // ShreddedPaper
++                        if (!ensureFullStatusChangeWithWriteLock(changedFullStatus)) return ret; // ShreddedPaper
                          this.updateCurrentState(FullChunkStatus.BLOCK_TICKING);
                          this.changeEntityChunkStatus(FullChunkStatus.BLOCK_TICKING);
                          PlatformHooks.get().onChunkTicking(chunk, this.vanillaChunkHolder);
@@ -67,7 +69,7 @@
                      }
  
                      if (!current.isOrAfter(FullChunkStatus.ENTITY_TICKING) && pending.isOrAfter(FullChunkStatus.ENTITY_TICKING)) {
-+                        if (!ensureFullStatusChangeWithWriteLock()) return ret; // ShreddedPaper
++                        if (!ensureFullStatusChangeWithWriteLock(changedFullStatus)) return ret; // ShreddedPaper
                          this.updateCurrentState(FullChunkStatus.ENTITY_TICKING);
                          this.changeEntityChunkStatus(FullChunkStatus.ENTITY_TICKING);
                          PlatformHooks.get().onChunkEntityTicking(chunk, this.vanillaChunkHolder);

@@ -354,6 +354,7 @@
 +        final ServerLevel disconnectingLevel = (ServerLevel) disconnectingPlayer.level(); // ShreddedPaper - fallback target captured before retirement
 +        final ChunkPos disconnectingChunk = disconnectingPlayer.chunkPosition(); // ShreddedPaper - fallback target captured before retirement
 +        final Runnable[] retryDisconnectCleanupRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
++        final Runnable[] fallbackToDisconnectingChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
 +        final Consumer<Entity>[] runOnPlayersThreadRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
 +        final Runnable disconnectCleanup = () -> { // ShreddedPaper - run disconnect cleanup only after ownership handoff
 +        this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
@@ -361,7 +362,11 @@
 @@ -2326,2 +2487,25 @@
          super.onDisconnect(details);
 +        }; // ShreddedPaper - run disconnect cleanup only after ownership handoff
-+        final Runnable fallbackToDisconnectingChunk = () -> ShreddedPaper.runSync(disconnectingLevel, disconnectingChunk, disconnectCleanup); // ShreddedPaper - entity scheduler retired after accepting task
++        final Runnable fallbackToDisconnectingChunk = fallbackToDisconnectingChunkRef[0] = () -> { // ShreddedPaper - entity scheduler retired after accepting task
++            if (!ShreddedPaper.runSync(disconnectingLevel, disconnectingChunk, disconnectCleanup)) { // ShreddedPaper - saturated fallback handoff
++                this.server.execute(fallbackToDisconnectingChunkRef[0]); // ShreddedPaper - retry later instead of dropping cleanup
++            } // ShreddedPaper - saturated fallback handoff
++        }; // ShreddedPaper - entity scheduler retired after accepting task
 +        final Consumer<Entity> runOnPlayersThread = runOnPlayersThreadRef[0] = e -> { // ShreddedPaper - run on player's thread
 +            if (e instanceof ServerPlayer scheduledPlayer && this.player != scheduledPlayer) {
 +                retryDisconnectCleanupRef[0].run();
@@ -433,7 +438,12 @@
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
 +                    final ChunkPos completionChunk = completionPlayer.chunkPosition(); // ShreddedPaper - async respawn fallback owner
-+                    final Runnable fallbackRespawnCompletion = () -> ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn); // ShreddedPaper - async respawn fallback owner
++                    final Runnable[] fallbackRespawnCompletionRef = new Runnable[1]; // ShreddedPaper - async respawn saturated fallback retry
++                    final Runnable fallbackRespawnCompletion = fallbackRespawnCompletionRef[0] = () -> { // ShreddedPaper - async respawn fallback owner
++                        if (!ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn)) { // ShreddedPaper - async respawn saturated fallback
++                            this.server.execute(fallbackRespawnCompletionRef[0]); // ShreddedPaper - retry later instead of dropping completion
++                        } // ShreddedPaper - async respawn saturated fallback
++                    }; // ShreddedPaper - async respawn fallback owner
 +                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
 +                        finishRespawn.run(); // ShreddedPaper - async respawn
 +                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, fallbackRespawnCompletion)) { // ShreddedPaper - async respawn
@@ -463,7 +473,12 @@
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
 +                    final ChunkPos completionChunk = completionPlayer.chunkPosition(); // ShreddedPaper - async respawn fallback owner
-+                    final Runnable fallbackRespawnCompletion = () -> ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn); // ShreddedPaper - async respawn fallback owner
++                    final Runnable[] fallbackRespawnCompletionRef = new Runnable[1]; // ShreddedPaper - async respawn saturated fallback retry
++                    final Runnable fallbackRespawnCompletion = fallbackRespawnCompletionRef[0] = () -> { // ShreddedPaper - async respawn fallback owner
++                        if (!ShreddedPaper.runSync(completionLevel, completionChunk, finishRespawn)) { // ShreddedPaper - async respawn saturated fallback
++                            this.server.execute(fallbackRespawnCompletionRef[0]); // ShreddedPaper - retry later instead of dropping completion
++                        } // ShreddedPaper - async respawn saturated fallback
++                    }; // ShreddedPaper - async respawn fallback owner
 +                    if (TickThread.isTickThreadFor(completionPlayer)) { // ShreddedPaper - async respawn
 +                        finishRespawn.run(); // ShreddedPaper - async respawn
 +                    } else if (!ShreddedPaper.runSync(completionPlayer, finishRespawn, fallbackRespawnCompletion)) { // ShreddedPaper - async respawn
@@ -550,6 +565,7 @@
 +        final ServerLevel disconnectLevel = (ServerLevel) disconnectPlayer.level(); // ShreddedPaper - fallback target captured before retirement
 +        final ChunkPos disconnectChunk = disconnectPlayer.chunkPosition(); // ShreddedPaper - fallback target captured before retirement
 +        final Runnable[] retryDisconnectTaskRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
++        final Runnable[] fallbackToDisconnectChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
 +        final Consumer<Entity>[] disconnectTaskRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
 +        final Runnable asyncDisconnectCleanup = () -> {
              this.disconnect(disconnectionInfo);
@@ -557,7 +573,11 @@
              }
 -        });
 +        };
-+        final Runnable fallbackToDisconnectChunk = () -> ShreddedPaper.runSync(disconnectLevel, disconnectChunk, asyncDisconnectCleanup); // ShreddedPaper - entity scheduler retired after accepting task
++        final Runnable fallbackToDisconnectChunk = fallbackToDisconnectChunkRef[0] = () -> { // ShreddedPaper - entity scheduler retired after accepting task
++            if (!ShreddedPaper.runSync(disconnectLevel, disconnectChunk, asyncDisconnectCleanup)) { // ShreddedPaper - saturated fallback handoff
++                this.server.execute(fallbackToDisconnectChunkRef[0]); // ShreddedPaper - retry later instead of dropping cleanup
++            } // ShreddedPaper - saturated fallback handoff
++        }; // ShreddedPaper - entity scheduler retired after accepting task
 +        final Consumer<Entity> disconnectTask = disconnectTaskRef[0] = e -> {
 +            if (e instanceof ServerPlayer scheduledPlayer && this.player != scheduledPlayer) {
 +                retryDisconnectTaskRef[0].run();

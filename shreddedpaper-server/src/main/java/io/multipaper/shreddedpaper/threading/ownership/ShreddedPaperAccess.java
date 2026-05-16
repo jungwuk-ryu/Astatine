@@ -5,6 +5,7 @@ import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
+import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -25,9 +26,11 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
+import org.slf4j.Logger;
 
 public final class ShreddedPaperAccess {
 
+    private static final Logger LOGGER = LogUtils.getClassLogger();
     private static final int MAX_OWNER_HANDOFF_REQUEUES = 8;
     private static final int MAX_LOADED_READ_FALLBACK_SAMPLES = 8;
     private static final int LOADED_READ_FALLBACK_SAMPLE_MASK = MAX_LOADED_READ_FALLBACK_SAMPLES - 1;
@@ -168,7 +171,7 @@ public final class ShreddedPaperAccess {
 
         OWNER_HANDOFFS.increment();
         final RegionPos regionPos = RegionPos.forChunk(pos);
-        final boolean queued = level.getChunkSource().tickingRegions.scheduleTask(regionPos, () -> {
+        final boolean queued = level.getChunkSource().tickingRegions.scheduleTaskNonDropping(regionPos, () -> {
             if (isOwned(level, pos)) {
                 task.run();
                 return;
@@ -176,12 +179,8 @@ public final class ShreddedPaperAccess {
 
             OWNER_HANDOFF_REQUEUES.increment();
             if (requeues >= MAX_OWNER_HANDOFF_REQUEUES) {
-                OWNER_HANDOFF_REJECTIONS.increment();
-                throw new IllegalStateException(
-                        "Cross-owner handoff exceeded requeue limit; world=" + level.getWorld().getName()
-                                + ", chunk=[" + pos.x + "," + pos.z + "]"
-                                + ", taskClass=" + taskClass
-                );
+                scheduleOwnerHandoffLockFallback(level, pos, regionPos, taskClass, task);
+                return;
             }
             runOrDeferToOwner(level, pos, taskClass, task, requeues + 1, 1L);
         }, delayTicks, taskClass);
@@ -191,6 +190,36 @@ public final class ShreddedPaperAccess {
             return OwnerTaskResult.REJECTED;
         }
         return OwnerTaskResult.QUEUED_TO_OWNER;
+    }
+
+    private static void scheduleOwnerHandoffLockFallback(
+            final ServerLevel level,
+            final ChunkPos pos,
+            final RegionPos regionPos,
+            final RegionTaskClass taskClass,
+            final Runnable task
+    ) {
+        LOGGER.warn(
+                "Cross-owner handoff exceeded requeue limit; scheduling exact-lock fallback world={} chunk=[{},{}] taskClass={}",
+                level.getWorld().getName(),
+                pos.x,
+                pos.z,
+                taskClass
+        );
+        level.chunkScheduler.schedule(regionPos, task).whenComplete((ignored, throwable) -> {
+            if (throwable == null) {
+                return;
+            }
+            OWNER_HANDOFF_REJECTIONS.increment();
+            LOGGER.error(
+                    "Cross-owner handoff exact-lock fallback failed; world={} chunk=[{},{}] taskClass={}",
+                    level.getWorld().getName(),
+                    pos.x,
+                    pos.z,
+                    taskClass,
+                    throwable
+            );
+        });
     }
 
     private static RegionTaskClass ownerHandoffTaskClass(final RegionTaskClass taskClass) {

@@ -144,7 +144,7 @@
 +            if (ShreddedPaperTickThread.isShreddedPaperTickThread() && !ShreddedPaperAccess.isOwned(this.world, pos)) { // ShreddedPaper - owner-required biome mutation
 +                final io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult handoffResult = ShreddedPaperAccess.runOrDeferToOwner(this.world, pos, io.multipaper.shreddedpaper.threading.region.RegionTaskClass.OWNER_HANDOFF, () -> this.setBiome(x, y, z, bb));
 +                if (handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.REJECTED || handoffResult == io.multipaper.shreddedpaper.threading.ownership.OwnerTaskResult.CHUNK_UNAVAILABLE) {
-+                    throw new IllegalStateException("Failed to hand off cross-owner biome write; world=" + this.world.getWorld().getName() + ", pos=" + pos);
++                    return;
 +                }
 +                return;
 +            }

@@ -7,7 +7,6 @@ import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.storage.RegionFileVersion;
 import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
@@ -143,7 +142,7 @@ public class LinearRegionFile implements IRegionFile {
         return bx * gridSize + bz;
     }
 
-    private void openBucket(int chunkX, int chunkZ) {
+    private void openBucket(int chunkX, int chunkZ) throws IOException {
         chunkX = Math.floorMod(chunkX, 32);
         chunkZ = Math.floorMod(chunkZ, 32);
         int idx = chunkToBucketIdx(chunkX, chunkZ);
@@ -193,50 +192,49 @@ public class LinearRegionFile implements IRegionFile {
                     }
                 }
             } catch (IOException ex) {
-                LOGGER.error("Region file corrupted: {} bucket: {}", regionFile, idx);
-                MinecraftServer.getServer().safeShutdown(true, false);
+                LOGGER.error("Region file corrupted: {} bucket: {}", regionFile, idx, ex);
+                bucketBuffers[idx] = null;
+                throw ex;
             }
             bucketBuffers[idx] = null;
         }
     }
 
-    private synchronized void openRegionFile() {
+    private synchronized void openRegionFile() throws IOException {
         if (regionFileOpen) return;
-        regionFileOpen = true;
 
         File regionFile = new File(this.regionFile.toString());
 
         if(!regionFile.canRead()) {
+            regionFileOpen = true;
             this.bindThread.start();
             return;
         }
 
-        try {
-            final long fileSize = Files.size(this.regionFile);
-            if (fileSize < HEADER_SIZE + FOOTER_SIZE || fileSize > MAX_REGION_FILE_SIZE) {
-                throw new IOException("Invalid region file size " + fileSize + " for " + this.regionFile);
-            }
-            byte[] fileContent = Files.readAllBytes(this.regionFile);
-            ByteBuffer buffer = ByteBuffer.wrap(fileContent);
-
-            requireRemaining(buffer, Long.BYTES + Byte.BYTES, "linear region header");
-            long superBlock = buffer.getLong();
-            if (superBlock != SUPERBLOCK)
-                throw new RuntimeException("Invalid superblock: " + superBlock + " file " + this.regionFile);
-
-            byte version = buffer.get();
-            if (version == 1 || version == 2) {
-                parseLinearV1(buffer);
-            } else if (version == 3) {
-                parseLinearV2(buffer);
-            } else {
-                throw new RuntimeException("Invalid version: " + version + " file " + this.regionFile);
-            }
-
-            this.bindThread.start();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to open region file " + this.regionFile, e);
+        final long fileSize = Files.size(this.regionFile);
+        if (fileSize < HEADER_SIZE + FOOTER_SIZE || fileSize > MAX_REGION_FILE_SIZE) {
+            throw new IOException("Invalid region file size " + fileSize + " for " + this.regionFile);
         }
+        byte[] fileContent = Files.readAllBytes(this.regionFile);
+        ByteBuffer buffer = ByteBuffer.wrap(fileContent);
+
+        requireRemaining(buffer, Long.BYTES + Byte.BYTES, "linear region header");
+        long superBlock = buffer.getLong();
+        if (superBlock != SUPERBLOCK) {
+            throw new IOException("Invalid superblock: " + superBlock + " file " + this.regionFile);
+        }
+
+        byte version = buffer.get();
+        if (version == 1 || version == 2) {
+            parseLinearV1(buffer);
+        } else if (version == 3) {
+            parseLinearV2(buffer);
+        } else {
+            throw new IOException("Invalid version: " + version + " file " + this.regionFile);
+        }
+
+        regionFileOpen = true;
+        this.bindThread.start();
     }
 
     private void parseLinearV1(ByteBuffer buffer) throws IOException {
@@ -301,7 +299,7 @@ public class LinearRegionFile implements IRegionFile {
         buffer.getLong(); // Skip newestTimestamp (Long)
         gridSize = buffer.get();
         if (gridSize != 1 && gridSize != 2 && gridSize != 4 && gridSize != 8 && gridSize != 16 && gridSize != 32)
-            throw new RuntimeException("Invalid grid size: " + gridSize + " file " + this.regionFile);
+            throw new IOException("Invalid grid size: " + gridSize + " file " + this.regionFile);
         bucketSize = 32 / gridSize;
 
         requireRemaining(buffer, Integer.BYTES + Integer.BYTES + 128, "linear v2 region header");
@@ -388,18 +386,28 @@ public class LinearRegionFile implements IRegionFile {
     }
 
     public synchronized boolean doesChunkExist(ChunkPos pos) {
-        openRegionFile();
-        openBucket(pos.x, pos.z);
-        return this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] > 0;
+        try {
+            openRegionFile();
+            openBucket(pos.x, pos.z);
+            return this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] > 0;
+        } catch (IOException ex) {
+            LOGGER.error("Failed to check chunk existence in {} chunk {}", this.regionFile, pos, ex);
+            return false;
+        }
     }
 
     public synchronized boolean hasChunk(ChunkPos pos) {
-        openRegionFile();
-        openBucket(pos.x, pos.z);
-        return this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] > 0;
+        try {
+            openRegionFile();
+            openBucket(pos.x, pos.z);
+            return this.bufferUncompressedSize[getChunkIndex(pos.x, pos.z)] > 0;
+        } catch (IOException ex) {
+            LOGGER.error("Failed to check chunk presence in {} chunk {}", this.regionFile, pos, ex);
+            return false;
+        }
     }
 
-    public synchronized void write(ChunkPos pos, ByteBuffer buffer) {
+    public synchronized void write(ChunkPos pos, ByteBuffer buffer) throws IOException {
         openRegionFile();
         openBucket(pos.x, pos.z);
         try {
@@ -430,14 +438,14 @@ public class LinearRegionFile implements IRegionFile {
         markToSave();
     }
 
-    public DataOutputStream getChunkDataOutputStream(ChunkPos pos) {
+    public DataOutputStream getChunkDataOutputStream(ChunkPos pos) throws IOException {
         openRegionFile();
         openBucket(pos.x, pos.z);
         return new DataOutputStream(new BufferedOutputStream(new LinearRegionFile.ChunkBuffer(pos)));
     }
 
     @Nullable
-    public synchronized DataInputStream getChunkDataInputStream(ChunkPos pos) {
+    public synchronized DataInputStream getChunkDataInputStream(ChunkPos pos) throws IOException {
         openRegionFile();
         openBucket(pos.x, pos.z);
 
@@ -449,13 +457,17 @@ public class LinearRegionFile implements IRegionFile {
                 return null;
             }
             byte[] content = new byte[uncompressedSize];
-            this.decompressor.decompress(this.buffer[chunkIndex], 0, content, 0, uncompressedSize);
+            try {
+                this.decompressor.decompress(this.buffer[chunkIndex], 0, content, 0, uncompressedSize);
+            } catch (RuntimeException ex) {
+                throw new IOException("Chunk decompression failed for " + this.regionFile + " chunk " + pos, ex);
+            }
             return new DataInputStream(new ByteArrayInputStream(content));
         }
         return null;
     }
 
-    public synchronized void clear(ChunkPos pos) {
+    public synchronized void clear(ChunkPos pos) throws IOException {
         openRegionFile();
         openBucket(pos.x, pos.z);
         int i = getChunkIndex(pos.x, pos.z);

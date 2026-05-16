@@ -14,6 +14,8 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
     private final long targetOwnerEpoch;
     private final long affinityCellKey;
     private final long enqueueNanos;
+    private final boolean reservedSlot;
+    private final boolean emergencySlot;
 
     RegionTask(
             final RegionTaskClass taskClass,
@@ -22,7 +24,9 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
             final long targetOwnerId,
             final long targetOwnerEpoch,
             final long affinityCellKey,
-            final long enqueueNanos
+            final long enqueueNanos,
+            final boolean reservedSlot,
+            final boolean emergencySlot
     ) {
         this.taskClass = taskClass;
         this.runnable = runnable;
@@ -32,6 +36,8 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
         this.targetOwnerEpoch = targetOwnerEpoch;
         this.affinityCellKey = affinityCellKey;
         this.enqueueNanos = enqueueNanos;
+        this.reservedSlot = reservedSlot;
+        this.emergencySlot = emergencySlot;
     }
 
     RegionTaskClass taskClass() {
@@ -56,6 +62,28 @@ final class RegionTask implements Comparable<RegionTask>, Runnable {
 
     long enqueueNanos() {
         return this.enqueueNanos;
+    }
+
+    boolean reservedSlot() {
+        return this.reservedSlot;
+    }
+
+    boolean emergencySlot() {
+        return this.emergencySlot;
+    }
+
+    RegionTask reschedule(final long readyTick) {
+        return new RegionTask(
+                this.taskClass,
+                this.runnable,
+                readyTick,
+                this.targetOwnerId,
+                this.targetOwnerEpoch,
+                this.affinityCellKey,
+                this.enqueueNanos,
+                this.reservedSlot,
+                this.emergencySlot
+        );
     }
 
     @Override
