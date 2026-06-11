@@ -42,11 +42,11 @@ public class LinearRegionFile implements IRegionFile {
     private static final Logger LOGGER = LogManager.getLogger(LinearRegionFile.class.getSimpleName());
     private static final Object saveLock = new Object();
 
-    public static final int MAX_CHUNK_SIZE = 32 * 1024 * 1024;
-    private static final int MAX_REGION_FILE_SIZE = 512 * 1024 * 1024;
-    private static final int MAX_BUCKET_SIZE = 64 * 1024 * 1024;
-    private static final int MAX_BUCKET_DECOMPRESSED_SIZE = 128 * 1024 * 1024;
-    private static final int MAX_LINEAR_V1_DECOMPRESSED_SIZE = 256 * 1024 * 1024;
+    public static final int MAX_CHUNK_SIZE = 256 * 1024 * 1024;
+    private static final int MAX_REGION_FILE_SIZE = 1024 * 1024 * 1024;
+    private static final int MAX_BUCKET_SIZE = 512 * 1024 * 1024;
+    private static final int MAX_BUCKET_DECOMPRESSED_SIZE = 512 * 1024 * 1024;
+    private static final int MAX_LINEAR_V1_DECOMPRESSED_SIZE = 512 * 1024 * 1024;
     private static final int MAX_FEATURE_NAME_SIZE = 128;
     public static int SAVE_THREAD_MAX_COUNT = 6;
     public static int SAVE_DELAY_MS = 100;
@@ -414,8 +414,7 @@ public class LinearRegionFile implements IRegionFile {
             ByteBuffer source = buffer.slice();
             int uncompressedSize = source.remaining();
             if (uncompressedSize > MAX_CHUNK_SIZE) {
-                LOGGER.error("Chunk exceeds maximum size {} {}", uncompressedSize, this.regionFile);
-                clear(pos);
+                LOGGER.error("Chunk {} exceeds maximum size {} (max {}) {}; preserving existing stored data", pos, uncompressedSize, MAX_CHUNK_SIZE, this.regionFile);
                 return;
             }
 
