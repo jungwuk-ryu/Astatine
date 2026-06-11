@@ -1,0 +1,39 @@
+--- a/net/minecraft/world/entity/decoration/ItemFrame.java
++++ b/net/minecraft/world/entity/decoration/ItemFrame.java
+@@ -54,6 +_,7 @@
+     private static final boolean DEFAULT_FIXED = false;
+     public float dropChance = 1.0F;
+     public boolean fixed = false;
++    private boolean shreddedpaper$duplicateItemDropOnBreak; // ShreddedPaper - allow old item frame item duplication
+     public @Nullable MapId cachedMapId; // Paper - Perf: Cache map ids on item frames
+ 
+     public ItemFrame(EntityType<? extends ItemFrame> type, Level level) {
+@@ -191,6 +_,18 @@
+                     this.setItem(ItemStack.fromBukkitCopy(event.getItemStack()), false);
+                 }
+                 // Paper end - Add PlayerItemFrameChangeEvent
++                // ShreddedPaper start - allow old item frame item duplication
++                if (io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.allowItemFrameItemDuplication
++                    && damageSource.getEntity() instanceof Player player
++                    && !player.hasInfiniteMaterials()) {
++                    this.shreddedpaper$duplicateItemDropOnBreak = true;
++                    try {
++                        return super.hurtServer(level, damageSource, amount);
++                    } finally {
++                        this.shreddedpaper$duplicateItemDropOnBreak = false;
++                    }
++                }
++                // ShreddedPaper end - allow old item frame item duplication
+                 this.dropItem(level, damageSource.getEntity(), false);
+                 this.gameEvent(GameEvent.BLOCK_CHANGE, damageSource.getEntity());
+                 this.playSound(this.getRemoveItemSound(), 1.0F, 1.0F);
+@@ -258,6 +_,9 @@
+                     this.removeFramedMap(item);
+                     if (this.random.nextFloat() < this.dropChance) {
+                         this.spawnAtLocation(level, item);
++                        if (this.shreddedpaper$duplicateItemDropOnBreak) {
++                            this.spawnAtLocation(level, item.copy());
++                        }
+                     }
+                 }
+             }

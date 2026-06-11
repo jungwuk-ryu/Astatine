@@ -1,0 +1,11 @@
+--- a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
++++ b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
+@@ -178,6 +_,8 @@
+         public boolean allowPermanentBlockBreakExploits = false;
+         @Comment("This setting controls if player should be able to use TNT duplication, but this also allows duplicating carpet, rails and potentially other items")
+         public boolean allowPistonDuplication = false;
++        @Comment("This setting controls if players should be able to duplicate items by breaking filled item frames like in older Minecraft versions.")
++        public boolean allowItemFrameItemDuplication = false;
+         public boolean performUsernameValidation = true;
+         @Comment("This setting controls if players should be able to create headless pistons.")
+         public boolean allowHeadlessPistons = false;
