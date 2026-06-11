@@ -85,3 +85,99 @@
          for (int i = 0; i < this.players.size(); i++) {
              ServerPlayer serverPlayer = this.players.get(i);
              // CraftBukkit start - Test if player receiving packet can see the source of the packet
+@@ -1288,9 +_,16 @@
+ 
+     public void reloadResources() {
+         // Paper start - API for updating recipes on clients
+-        this.reloadAdvancementData();
+-        this.reloadTagData();
+-        this.reloadRecipes();
++        final net.minecraft.server.ServerAdvancementManager advancementManager = this.server.getAdvancements(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++        final ClientboundUpdateTagsPacket updateTagsPacket = this.createUpdateTagsPacket(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++        final ClientboundUpdateRecipesPacket updateRecipesPacket = this.createUpdateRecipesPacket(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++        for (ServerPlayer player : List.copyOf(this.players)) { // ShreddedPaper - schedule player-owned resource reload work
++            this.schedulePlayerResourceReload(player, () -> {
++                this.reloadAdvancementData(player, advancementManager);
++                player.connection.send(updateTagsPacket);
++                this.reloadRecipes(player, updateRecipesPacket);
++            });
++        }
+     }
+     public void reloadAdvancementData() {
+         // Paper end - API for updating recipes on clients
+@@ -1298,16 +_,19 @@
+         // for (PlayerAdvancements playerAdvancements : this.advancements.values()) {
+         //     playerAdvancements.reload(this.server.getAdvancements());
+         // }
+-        for (ServerPlayer player : this.players) {
+-            player.getAdvancements().reload(this.server.getAdvancements());
+-            player.getAdvancements().flushDirty(player, false); // CraftBukkit - trigger immediate flush of advancements
++        final net.minecraft.server.ServerAdvancementManager advancementManager = this.server.getAdvancements(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++        for (ServerPlayer player : List.copyOf(this.players)) { // ShreddedPaper - schedule player-owned resource reload work
++            this.schedulePlayerResourceReload(player, () -> this.reloadAdvancementData(player, advancementManager));
+         }
+         // CraftBukkit end
+ 
+         // Paper start - API for updating recipes on clients
+     }
+     public void reloadTagData() {
+-        this.broadcastAll(new ClientboundUpdateTagsPacket(TagNetworkSerialization.serializeTagsToNetwork(this.registries)));
++        final ClientboundUpdateTagsPacket updateTagsPacket = this.createUpdateTagsPacket(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++        for (ServerPlayer player : List.copyOf(this.players)) { // ShreddedPaper - schedule player-owned resource reload work
++            this.schedulePlayerResourceReload(player, () -> player.connection.send(updateTagsPacket));
++        }
+         // CraftBukkit start
+         // this.reloadRecipes(); // Paper - do not reload recipes just because tag data was reloaded
+         // Paper end - API for updating recipes on clients
+@@ -1315,15 +_,45 @@
+ 
+     public void reloadRecipes() {
+         // CraftBukkit end
++        final ClientboundUpdateRecipesPacket updateRecipesPacket = this.createUpdateRecipesPacket(); // ShreddedPaper - prepare global reload inputs before player owner handoff
++
++        for (ServerPlayer serverPlayer : List.copyOf(this.players)) { // ShreddedPaper - schedule player-owned resource reload work
++            this.schedulePlayerResourceReload(serverPlayer, () -> this.reloadRecipes(serverPlayer, updateRecipesPacket));
++        }
++    }
++
++    private ClientboundUpdateTagsPacket createUpdateTagsPacket() { // ShreddedPaper - prepare global reload inputs before player owner handoff
++        return new ClientboundUpdateTagsPacket(TagNetworkSerialization.serializeTagsToNetwork(this.registries));
++    }
++
++    private ClientboundUpdateRecipesPacket createUpdateRecipesPacket() { // ShreddedPaper - prepare global reload inputs before player owner handoff
+         RecipeManager recipeManager = this.server.getRecipeManager();
+-        ClientboundUpdateRecipesPacket clientboundUpdateRecipesPacket = new ClientboundUpdateRecipesPacket(
++        return new ClientboundUpdateRecipesPacket(
+             recipeManager.getSynchronizedItemProperties(), recipeManager.getSynchronizedStonecutterRecipes()
+         );
+-
+-        for (ServerPlayer serverPlayer : this.players) {
+-            serverPlayer.connection.send(clientboundUpdateRecipesPacket);
+-            serverPlayer.getRecipeBook().sendInitialRecipeBook(serverPlayer);
+-        }
++    }
++
++    private void schedulePlayerResourceReload(ServerPlayer player, Runnable task) { // ShreddedPaper - run per-player resource reload work on the player's owner
++        ShreddedPaper.runSync(player, () -> {
++            if (!this.isActiveResourceReloadTarget(player)) {
++                return;
++            }
++            task.run();
++        }, () -> {});
++    }
++
++    private boolean isActiveResourceReloadTarget(ServerPlayer player) { // ShreddedPaper - tolerate disconnect while reload work is queued
++        return !player.isRemoved() && !player.hasDisconnected() && player.connection != null && this.players.contains(player);
++    }
++
++    private void reloadAdvancementData(ServerPlayer player, net.minecraft.server.ServerAdvancementManager advancementManager) { // ShreddedPaper - player-owned advancement reload
++        player.getAdvancements().reload(advancementManager);
++        player.getAdvancements().flushDirty(player, false); // CraftBukkit - trigger immediate flush of advancements
++    }
++
++    private void reloadRecipes(ServerPlayer serverPlayer, ClientboundUpdateRecipesPacket updateRecipesPacket) { // ShreddedPaper - player-owned recipe book reload
++        serverPlayer.connection.send(updateRecipesPacket);
++        serverPlayer.getRecipeBook().sendInitialRecipeBook(serverPlayer);
+     }
+ 
+     public boolean isAllowCommandsForAllPlayers() {
