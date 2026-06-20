@@ -181,11 +181,6 @@ public class LinearRegionFile implements IRegionFile {
                             byte[] finalCompressed = new byte[compressedLength];
                             System.arraycopy(compressed, 0, finalCompressed, 0, compressedLength);
 
-                            if (chunkX == cx && chunkZ == cz) {
-                                this.buffer[chunkIndex] = finalCompressed;
-                                this.bufferUncompressedSize[chunkIndex] = chunkData.length;
-                                return;
-                            }
                             this.buffer[chunkIndex] = finalCompressed;
                             this.bufferUncompressedSize[chunkIndex] = chunkData.length;
                         }

@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/src/test/java/io/papermc/paper/chunk/storage/LinearRegionFileTest.java
-@@ -1,0 +_,239 @@
+@@ -1,0 +_,261 @@
 +package io.papermc.paper.chunk.storage;
 +
 +import com.github.luben.zstd.Zstd;
@@ -65,6 +65,28 @@
 +             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
 +            assertEquals(expected, NbtIo.read(in));
 +            assertEquals(true, regionFile.doesChunkExist(pos));
++        }
++    }
++
++    @Test
++    void linearOverwriteOfFirstBucketChunkPersists(@TempDir final Path tempDir) throws Exception {
++        final Path file = tempDir.resolve("r.0.0.linear");
++        final ChunkPos pos = new ChunkPos(0, 0);
++        final CompoundTag initial = createTag("linear-initial", 1);
++        final CompoundTag replacement = createTag("linear-replacement", 2);
++        final RegionStorageInfo storageInfo = storageInfo();
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), initial);
++        }
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1)) {
++            writeTag(regionFile.getChunkDataOutputStream(pos), replacement);
++        }
++
++        try (LinearRegionFile regionFile = new LinearRegionFile(storageInfo, file, tempDir, false, 1);
++             DataInputStream in = regionFile.getChunkDataInputStream(pos)) {
++            assertEquals(replacement, NbtIo.read(in));
 +        }
 +    }
 +
