@@ -10,28 +10,36 @@
 +import io.multipaper.shreddedpaper.threading.ownership.ShreddedPaperAccess;
 +import io.multipaper.shreddedpaper.threading.region.RegionTaskClass;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
-@@ -189,2 +193,3 @@
+@@ -25,2 +29,3 @@
+ import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.function.BiFunction;
+@@ -189,2 +194,3 @@
  import net.minecraft.world.level.GameType;
 +import net.minecraft.world.level.ChunkPos;
  import net.minecraft.world.level.Level;
-@@ -205,2 +210,3 @@
+@@ -205,2 +211,3 @@
  import net.minecraft.world.level.gamerules.GameRules;
 +import net.minecraft.world.level.levelgen.structure.BoundingBox;
  import net.minecraft.world.level.material.Fluids;
-@@ -265,2 +271,3 @@
+@@ -228,2 +235,3 @@
+     public static final int CLIENT_LOADED_TIMEOUT_TIME = 60;
++    private static final long DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS = 3000L; // ShreddedPaper - recover stale duplicate-login players
+     private static final Component CHAT_VALIDATION_FAILED = Component.translatable("multiplayer.disconnect.chat_validation_failed");
+@@ -265,2 +273,3 @@
      public final PlayerChunkSender chunkSender;
 +    private boolean shreddedpaper$respawnInProgress; // ShreddedPaper - async respawn
      private int tickCount;
-@@ -293,2 +300,3 @@
+@@ -293,2 +302,3 @@
      private int knownMovePacketCount;
 +    private long shreddedpaper$moveHandoffSequence; // ShreddedPaper - discard stale cross-region movement handoffs
      private boolean receivedMovementThisTick;
-@@ -371,3 +379,3 @@
+@@ -371,3 +381,3 @@
          if (this.server.isPaused() || !this.tickPlayer()) {
 -            this.keepConnectionAlive();
 +            // this.keepConnectionAlive(); // ShreddedPaper - called elsewhere
              this.chatSpamThrottler.tick();
-@@ -392,2 +400,9 @@
+@@ -392,2 +402,9 @@
      private boolean tickPlayer() {
 +        // ShreddedPaper start - defer player world ticking until the current chunk is full
 +        if (io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
@@ -41,7 +49,7 @@
 +        }
 +        // ShreddedPaper end - defer player world ticking until the current chunk is full
          this.resetPosition();
-@@ -578,2 +593,31 @@
+@@ -578,2 +595,31 @@
                  double d2 = clampHorizontal(packet.position().z()); final double toZ = d2; // Paper - OBFHELPER
 +                // ShreddedPaper start - process cross-region movement on every touched owner
 +                final Vec3 vehicleMovement = new Vec3(toX, toY, toZ).subtract(rootVehicle.position());
@@ -73,7 +81,7 @@
 +                }
 +                // ShreddedPaper end - process cross-region movement on every touched owner
                  float f = Mth.wrapDegrees(packet.yRot());
-@@ -965,3 +1009,7 @@
+@@ -965,3 +1011,7 @@
              BlockPos pos = packet.getPos();
 -            BlockEntity blockEntity = this.player.level().getBlockEntity(pos);
 +            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware command block edits
@@ -82,7 +90,7 @@
 +            }
 +            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
              if (blockEntity instanceof CommandBlockEntity commandBlockEntity1) {
-@@ -975,3 +1023,6 @@
+@@ -975,3 +1025,6 @@
                  CommandBlockEntity.Mode mode = commandBlockEntity.getMode();
 -                BlockState blockState = this.player.level().getBlockState(pos);
 +                BlockState blockState = serverLevel.getBlockStateIfLoaded(pos); // ShreddedPaper - avoid sync chunk loads during command block edits
@@ -90,7 +98,7 @@
 +                    return;
 +                }
                  Direction direction = blockState.getValue(CommandBlock.FACING);
-@@ -985,5 +1036,5 @@
+@@ -985,5 +1038,5 @@
                  if (blockState2 != blockState) {
 -                    this.player.level().setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
 +                    serverLevel.setBlock(pos, blockState2, Block.UPDATE_CLIENTS);
@@ -98,14 +106,14 @@
 -                    this.player.level().getChunkAt(pos).setBlockEntity(blockEntity);
 +                    ShreddedPaperAccess.setBlockEntityIfOwnedOrDefer(serverLevel, blockEntity, RegionTaskClass.OWNER_HANDOFF);
                  }
-@@ -1001,4 +1052,4 @@
+@@ -1001,4 +1054,4 @@
  
 -                if (this.player.level().isCommandBlockEnabled()) {
 -                    baseCommandBlock.onUpdated(this.player.level());
 +                if (serverLevel.isCommandBlockEnabled()) {
 +                    baseCommandBlock.onUpdated(serverLevel);
                  }
-@@ -1008,6 +1059,6 @@
+@@ -1008,6 +1061,6 @@
                          .sendSystemMessage(
 -                            Component.translatable(
 -                                this.player.level().isCommandBlockEnabled() ? "advMode.setCommand.success" : "advMode.setCommand.disabled", command
@@ -116,7 +124,7 @@
 +	                            )
 +	                        );
                  }
-@@ -1053,4 +1104,10 @@
+@@ -1053,4 +1106,10 @@
          if (this.player.isWithinBlockInteractionRange(blockPos, 1.0)) {
 -            if (serverLevel.isLoaded(blockPos)) {
 -                BlockState blockState = serverLevel.getBlockState(blockPos);
@@ -129,7 +137,7 @@
 +                    return;
 +                }
                  boolean flag = this.player.hasInfiniteMaterials() && packet.includeData();
-@@ -1157,4 +1214,11 @@
+@@ -1157,4 +1216,11 @@
              BlockPos pos = packet.getPos();
 -            BlockState blockState = this.player.level().getBlockState(pos);
 -            if (this.player.level().getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
@@ -143,19 +151,19 @@
 +            }
 +            if (serverLevel.getBlockEntity(pos) instanceof StructureBlockEntity structureBlockEntity) {
                  structureBlockEntity.setMode(packet.getMode());
-@@ -1183,3 +1247,3 @@
+@@ -1183,3 +1249,3 @@
                              this.player.displayClientMessage(Component.translatable("structure_block.load_not_found", structureName), false);
 -                        } else if (structureBlockEntity.placeStructureIfSameSize(this.player.level())) {
 +	                        } else if (structureBlockEntity.placeStructureIfSameSize(serverLevel)) {
                              this.player.displayClientMessage(Component.translatable("structure_block.load_success", structureName), false);
-@@ -1199,4 +1263,4 @@
+@@ -1199,4 +1265,4 @@
  
 -                structureBlockEntity.setChanged();
 -                this.player.level().sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
 +	                structureBlockEntity.setChanged();
 +                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
              }
-@@ -1210,4 +1274,11 @@
+@@ -1210,4 +1276,11 @@
              BlockPos blockPos = packet.position();
 -            BlockState blockState = this.player.level().getBlockState(blockPos);
 -            if (this.player.level().getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
@@ -169,12 +177,12 @@
 +            }
 +            if (serverLevel.getBlockEntity(blockPos) instanceof TestBlockEntity testBlockEntity) {
                  testBlockEntity.setMode(packet.mode());
-@@ -1215,3 +1286,3 @@
+@@ -1215,3 +1288,3 @@
                  testBlockEntity.setChanged();
 -                this.player.level().sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
 +                serverLevel.sendBlockUpdated(blockPos, blockState, testBlockEntity.getBlockState(), Block.UPDATE_ALL);
              }
-@@ -1224,3 +1295,10 @@
+@@ -1224,3 +1297,10 @@
          BlockPos blockPos = packet.pos();
 -        if (this.player.canUseGameMasterBlocks() && this.player.level().getBlockEntity(blockPos) instanceof TestInstanceBlockEntity testInstanceBlockEntity) {
 +        if (this.player.canUseGameMasterBlocks()) {
@@ -186,7 +194,7 @@
 +                return;
 +            }
              if (packet.action() != ServerboundTestInstanceBlockActionPacket.Action.QUERY
-@@ -1238,4 +1316,7 @@
+@@ -1238,4 +1318,7 @@
  
 -                BlockState blockState = this.player.level().getBlockState(blockPos);
 -                this.player.level().sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
@@ -196,17 +204,17 @@
 +                }
 +                serverLevel.sendBlockUpdated(blockPos, Blocks.AIR.defaultBlockState(), blockState, Block.UPDATE_ALL);
              } else {
-@@ -1250,3 +1331,3 @@
+@@ -1250,3 +1333,3 @@
  
 -                Optional<Vec3i> optional1;
 +	                Optional<Vec3i> optional1;
                  if (packet.action() == ServerboundTestInstanceBlockActionPacket.Action.QUERY) {
-@@ -1254,3 +1335,3 @@
+@@ -1254,3 +1337,3 @@
                          .test()
 -                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(this.player.level(), (ResourceKey<GameTestInstance>)resourceKey));
 +                        .flatMap(resourceKey -> TestInstanceBlockEntity.getStructureSize(serverLevel, (ResourceKey<GameTestInstance>)resourceKey));
                  } else {
-@@ -1269,4 +1350,11 @@
+@@ -1269,4 +1352,11 @@
              BlockPos pos = packet.getPos();
 -            BlockState blockState = this.player.level().getBlockState(pos);
 -            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
@@ -220,7 +228,7 @@
 +            }
 +            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
                  jigsawBlockEntity.setName(packet.getName());
-@@ -1277,5 +1365,5 @@
+@@ -1277,5 +1367,5 @@
                  jigsawBlockEntity.setPlacementPriority(packet.getPlacementPriority());
 -                jigsawBlockEntity.setSelectionPriority(packet.getSelectionPriority());
 -                jigsawBlockEntity.setChanged();
@@ -229,7 +237,7 @@
 +	                jigsawBlockEntity.setChanged();
 +                serverLevel.sendBlockUpdated(pos, blockState, blockState, Block.UPDATE_ALL);
              }
-@@ -1289,4 +1377,11 @@
+@@ -1289,4 +1379,11 @@
              BlockPos pos = packet.getPos();
 -            if (this.player.level().getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
 -                jigsawBlockEntity.generate(this.player.level(), packet.levels(), packet.keepJigsaws());
@@ -243,12 +251,12 @@
 +            if (serverLevel.getBlockEntity(pos) instanceof JigsawBlockEntity jigsawBlockEntity) {
 +                jigsawBlockEntity.generate(serverLevel, packet.levels(), packet.keepJigsaws());
              }
-@@ -1382,3 +1477,3 @@
+@@ -1382,3 +1479,3 @@
                  : list1 -> this.updateBookContents(list1, slot, hasEditPerm); // Purpur - Allow color codes in books
 -            this.filterTextPacket(list).thenAcceptAsync(consumer, this.server);
 +            this.filterTextPacket(list).thenAcceptAsync(consumer, r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
          }
-@@ -1466,3 +1561,12 @@
+@@ -1466,3 +1563,12 @@
          if (this.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) {
 -            BlockEntity blockEntity = this.player.level().getBlockEntity(packet.getPos());
 +            ServerLevel serverLevel = this.player.level(); // ShreddedPaper - owner-aware block entity query
@@ -262,7 +270,7 @@
 +            }
 +            BlockEntity blockEntity = serverLevel.getBlockEntity(pos);
              CompoundTag compoundTag = blockEntity != null ? blockEntity.saveWithoutMetadata(this.player.registryAccess()) : null;
-@@ -1506,2 +1610,25 @@
+@@ -1506,2 +1612,25 @@
                          } else {
 +                            // ShreddedPaper start - process cross-region movement on every touched owner
 +                            final Vec3 playerMovement = new Vec3(toX, toY, toZ).subtract(this.player.position());
@@ -288,13 +296,13 @@
 +                            }
 +                            // ShreddedPaper end - process cross-region movement on every touched owner
                              // CraftBukkit - Make sure the move is valid but then reset it for plugins to modify
-@@ -2074,2 +2201,5 @@
+@@ -2074,2 +2203,5 @@
                  case STOP_DESTROY_BLOCK:
 +                    if (this.shreddedpaper$rescheduleIfMissingOwnership(this.player.level(), ChunkPos.of(pos), () -> this.handlePlayerAction(packet))) {
 +                        return;
 +                    }
                      // Paper start - Don't allow digging into unloaded chunks
-@@ -2169,2 +2299,12 @@
+@@ -2169,2 +2301,12 @@
                          Direction direction = hitResult.getDirection();
 +                        BlockPos relativeBlockPos = blockPos.relative(direction); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
 +                        BoundingBox interactionBox = BoundingBox.fromCorners(blockPos, relativeBlockPos); // ShreddedPaper - avoid sync block reads/updates across adjacent interaction cells
@@ -307,24 +315,24 @@
 +                            return; // ShreddedPaper - do not sync-load the clicked block
 +                        }
                          this.player.resetLastActionTime();
-@@ -2172,3 +2312,3 @@
+@@ -2172,3 +2314,3 @@
                          if (blockPos.getY() <= maxY) {
 -                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && serverLevel.getBlockState(blockPos).getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection
 +                            if (this.awaitingPositionFromClient == null && (serverLevel.mayInteract(this.player, blockPos) || (serverLevel.paperConfig().spawn.allowUsingSignsInsideSpawnProtection && blockState.getBlock() instanceof net.minecraft.world.level.block.SignBlock))) { // Paper - Allow using signs inside spawn protection // ShreddedPaper - do not sync-load the clicked block
                                  this.player.stopUsingItem(); // CraftBukkit - SPIGOT-4706
-@@ -2192,3 +2332,3 @@
+@@ -2192,3 +2334,3 @@
                              } else if (this.server.isUnderSpawnProtection(serverLevel, blockPos, player)) {
 -                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, serverLevel.getBlockState(blockPos), itemInHand)) {
 +                                if (io.papermc.paper.util.MCUtil.clientPredictsInteraction(this.player, blockState, itemInHand)) { // ShreddedPaper - do not sync-load the clicked block
                                      this.player.containerMenu.sendAllDataToRemote();
-@@ -2204,4 +2344,4 @@
+@@ -2204,4 +2346,4 @@
  
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos));
 -                        this.send(new ClientboundBlockUpdatePacket(serverLevel, blockPos.relative(direction)));
 +                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, blockPos); // ShreddedPaper - do not sync-load for interaction resync packets
 +                        this.shreddedpaper$sendBlockUpdateIfLoaded(serverLevel, relativeBlockPos); // ShreddedPaper - do not sync-load for interaction resync packets
                          if (io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.updateEquipmentOnPlayerActions) this.player.detectEquipmentUpdates(); // Paper - Force update attributes.
-@@ -2214,2 +2354,9 @@
+@@ -2214,2 +2356,9 @@
  
 +    private void shreddedpaper$sendBlockUpdateIfLoaded(ServerLevel serverLevel, BlockPos blockPos) { // ShreddedPaper - do not sync-load for interaction resync packets
 +        BlockState blockState = serverLevel.getBlockStateIfLoaded(blockPos);
@@ -334,7 +342,7 @@
 +    }
 +
      @Override
-@@ -2247,2 +2394,7 @@
+@@ -2247,2 +2396,7 @@
                  Vec3 to = from.add((double) f7 * d3, (double) f6 * d3, (double) f8 * d3);
 +                BoundingBox interactionBox = BoundingBox.fromCorners(BlockPos.containing(from), BlockPos.containing(to)); // ShreddedPaper - avoid sync ray-trace loads across region boundaries
 +                if (!TickThread.isTickThreadFor(this.player) || !ShreddedPaper.isSync(serverLevel, interactionBox)) { // ShreddedPaper - run ray trace on all touched owner regions
@@ -342,13 +350,13 @@
 +                    return; // ShreddedPaper - run ray trace on all touched owner regions
 +                }
                  BlockHitResult hitResult = this.player.level().clip(new net.minecraft.world.level.ClipContext(from, to, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, this.player));
-@@ -2296,3 +2448,5 @@
+@@ -2296,3 +2450,5 @@
                  if (entity != null) {
 +                    ShreddedPaper.ensureSync(this.player, entity, () -> { // ShreddedPaper - ensure on entity's thread
                      this.player.teleportTo(serverLevel, entity.getX(), entity.getY(), entity.getZ(), Set.of(), entity.getYRot(), entity.getXRot(), true, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.SPECTATE); // CraftBukkit
 +                    }); // ShreddedPaper - ensure on entity's thread
                      return;
-@@ -2320,2 +2474,9 @@
+@@ -2320,2 +2476,13 @@
          // CraftBukkit end
 +        final ServerPlayer disconnectingPlayer = this.player; // ShreddedPaper - stable scheduler target
 +        final ServerLevel disconnectingLevel = (ServerLevel) disconnectingPlayer.level(); // ShreddedPaper - fallback target captured before retirement
@@ -356,10 +364,14 @@
 +        final Runnable[] retryDisconnectCleanupRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
 +        final Runnable[] fallbackToDisconnectingChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
 +        final Consumer<Entity>[] runOnPlayersThreadRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final AtomicBoolean disconnectCleanupStarted = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback cleanup
++        final AtomicBoolean disconnectCleanupFallbackRequested = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback cleanup
++        final String disconnectingPlayerName = disconnectingPlayer.getScoreboardName(); // ShreddedPaper - logging snapshot
 +        final Runnable disconnectCleanup = () -> { // ShreddedPaper - run disconnect cleanup only after ownership handoff
-+        this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
++            if (!disconnectCleanupStarted.compareAndSet(false, true)) return; // ShreddedPaper - avoid duplicate fallback cleanup
++            this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
-@@ -2326,2 +2487,25 @@
+@@ -2326,2 +2493,32 @@
          super.onDisconnect(details);
 +        }; // ShreddedPaper - run disconnect cleanup only after ownership handoff
 +        final Runnable fallbackToDisconnectingChunk = fallbackToDisconnectingChunkRef[0] = () -> { // ShreddedPaper - entity scheduler retired after accepting task
@@ -382,36 +394,43 @@
 +                    return;
 +                }
 +                if (ShreddedPaper.runSync(currentPlayer, runOnPlayersThreadRef[0], fallbackToDisconnectingChunk)) {
++                    this.scheduleDisconnectOwnerHandoffWatchdog(disconnectingPlayerName, disconnectCleanupStarted, disconnectCleanupFallbackRequested, fallbackToDisconnectingChunk);
 +                    return;
 +                }
 +            }
 +            fallbackToDisconnectingChunk.run();
 +        }; // ShreddedPaper - entity scheduler may retire after accepting the task
-+        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) runOnPlayersThread.accept(disconnectingPlayer); else if (!ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) retryDisconnectCleanupRef[0].run(); // ShreddedPaper - run on player's thread
++        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) {
++            runOnPlayersThread.accept(disconnectingPlayer);
++        } else if (ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) { // ShreddedPaper - run on player's thread
++            this.scheduleDisconnectOwnerHandoffWatchdog(disconnectingPlayerName, disconnectCleanupStarted, disconnectCleanupFallbackRequested, fallbackToDisconnectingChunk);
++        } else {
++            retryDisconnectCleanupRef[0].run();
++        }
      }
-@@ -2587,3 +2771,3 @@
+@@ -2587,3 +2784,3 @@
              if (sync) {
 -                this.server.execute(handler);
 +                ShreddedPaper.runSync(player, handler); // ShreddedPaper - run on player's thread
              } else {
-@@ -2856,3 +3040,3 @@
+@@ -2856,3 +3053,3 @@
      public SocketAddress getRemoteAddress() {
 -        return this.connection.getRemoteAddress();
 +        return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactPublicSocketAddress(this.connection.getRemoteAddress());
      }
-@@ -2861,2 +3045,5 @@
+@@ -2861,2 +3058,5 @@
      public SocketAddress getRawAddress() {
 +        if (io.multipaper.shreddedpaper.privacy.AnonymousMode.enabled()) {
 +            return io.multipaper.shreddedpaper.privacy.AnonymousMode.redactedSocketAddress();
 +        }
          // Paper start - Unix domain socket support; this can be nullable in the case of a Unix domain socket, so if it is, fake something
-@@ -2898,2 +3085,5 @@
+@@ -2898,2 +3098,5 @@
              if (target != null) {
 +                if (this.shreddedpaper$rescheduleIfMissingOwnership(target, () -> this.handleInteract(packet))) {
 +                    return;
 +                }
                  if (!serverLevel.getWorldBorder().isWithinBounds(target.blockPosition())) {
-@@ -3043,5 +3233,20 @@
+@@ -3043,5 +3246,20 @@
              case PERFORM_RESPAWN:
 +                if (this.shreddedpaper$respawnInProgress) { // ShreddedPaper - async respawn
 +                    return; // ShreddedPaper - async respawn
@@ -433,7 +452,7 @@
                      this.player.wonGame = false;
 -                    this.player = this.server.getPlayerList().respawn(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL); // CraftBukkit
                      this.resetPosition();
-@@ -3049,2 +3254,12 @@
+@@ -3049,2 +3267,12 @@
                      CriteriaTriggers.CHANGED_DIMENSION.trigger(this.player, Level.END, Level.OVERWORLD);
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
@@ -451,7 +470,7 @@
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  } else {
-@@ -3054,3 +3269,15 @@
+@@ -3054,3 +3282,15 @@
  
 -                    this.player = this.server.getPlayerList().respawn(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit
 +                    this.shreddedpaper$respawnInProgress = true; // ShreddedPaper - async respawn
@@ -468,7 +487,7 @@
 +                    this.player = player; // ShreddedPaper - async respawn
 +                    this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends after respawn handoff
                      this.resetPosition();
-@@ -3061,2 +3288,12 @@
+@@ -3061,2 +3301,12 @@
                      }
 +                    }; // ShreddedPaper - async respawn
 +                    final ServerLevel completionLevel = completionPlayer.level(); // ShreddedPaper - async respawn fallback owner
@@ -486,12 +505,12 @@
 +                    } // ShreddedPaper - async respawn
 +                    }); // ShreddedPaper - async respawn
                  }
-@@ -3589,3 +3826,3 @@
+@@ -3589,3 +3839,3 @@
          // Paper end - Limit client sign length
 -        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), this.server);
 +        this.filterTextPacket(list).thenAcceptAsync(texts -> this.updateSignText(packet, (List<FilteredText>)texts), r -> ShreddedPaper.ensureSync(this.player, r)); // ShreddedPaper - run on region thread
      }
-@@ -3597,3 +3834,6 @@
+@@ -3597,3 +3847,6 @@
          BlockPos pos = packet.getPos();
 -        if (serverLevel.hasChunkAt(pos)) {
 +        if (this.shreddedpaper$rescheduleIfMissingOwnership(serverLevel, ChunkPos.of(pos), () -> this.updateSignText(packet, filteredText))) { // ShreddedPaper - owner-aware sign updates
@@ -499,7 +518,7 @@
 +        }
 +        if (serverLevel.getBlockStateIfLoaded(pos) != null) { // ShreddedPaper - avoid sync chunk loads from sign updates
              // Paper start - Add API for client-side signs
-@@ -3797,2 +4037,52 @@
+@@ -3797,2 +4050,52 @@
  
 +    private boolean shreddedpaper$rescheduleIfMissingOwnership(ServerLevel level, ChunkPos chunkPos, Runnable action) { // ShreddedPaper
 +        if (TickThread.isTickThreadFor(this.player) && TickThread.isTickThreadFor(level, chunkPos)) {
@@ -552,7 +571,7 @@
 +    }
 +
      public void tickClientLoadTimeout() {
-@@ -3852,9 +4142,8 @@
+@@ -3852,9 +4155,12 @@
      public void disconnectAsync(final net.minecraft.network.DisconnectionDetails disconnectionInfo) {
 -        if (this.cserver.isPrimaryThread()) {
 -            this.disconnect(disconnectionInfo);
@@ -567,9 +586,13 @@
 +        final Runnable[] retryDisconnectTaskRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
 +        final Runnable[] fallbackToDisconnectChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
 +        final Consumer<Entity>[] disconnectTaskRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final AtomicBoolean asyncDisconnectStarted = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback disconnect
++        final AtomicBoolean asyncDisconnectFallbackRequested = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback disconnect
++        final String disconnectPlayerName = disconnectPlayer.getScoreboardName(); // ShreddedPaper - logging snapshot
 +        final Runnable asyncDisconnectCleanup = () -> {
++            if (!asyncDisconnectStarted.compareAndSet(false, true)) return; // ShreddedPaper - avoid duplicate fallback disconnect
              this.disconnect(disconnectionInfo);
-@@ -3864,3 +4153,33 @@
+@@ -3864,3 +4170,54 @@
              }
 -        });
 +        };
@@ -593,6 +616,7 @@
 +                    return;
 +                }
 +                if (ShreddedPaper.runSync(currentPlayer, disconnectTaskRef[0], fallbackToDisconnectChunk)) {
++                    this.scheduleDisconnectOwnerHandoffWatchdog(disconnectPlayerName, asyncDisconnectStarted, asyncDisconnectFallbackRequested, fallbackToDisconnectChunk);
 +                    return;
 +                }
 +            }
@@ -604,7 +628,27 @@
 +        }
 +
 +        this.connection.setReadOnly();
-+        if (!ShreddedPaper.runSync(disconnectPlayer, disconnectTask, retryDisconnectTaskRef[0])) { // ShreddedPaper - disconnect on player owner, with retired fallback
++        if (ShreddedPaper.runSync(disconnectPlayer, disconnectTask, retryDisconnectTaskRef[0])) { // ShreddedPaper - disconnect on player owner, with retired fallback
++            this.scheduleDisconnectOwnerHandoffWatchdog(disconnectPlayerName, asyncDisconnectStarted, asyncDisconnectFallbackRequested, fallbackToDisconnectChunk);
++        } else {
 +            retryDisconnectTaskRef[0].run();
 +        }
      }
++
++    private void scheduleDisconnectOwnerHandoffWatchdog(
++        final String playerName,
++        final AtomicBoolean completed,
++        final AtomicBoolean fallbackRequested,
++        final Runnable fallback
++    ) {
++        ShreddedPaper.scheduleRunSyncWatchdog(() -> {
++            if (!completed.get() && fallbackRequested.compareAndSet(false, true)) {
++                LOGGER.warn(
++                    "Disconnect cleanup for {} did not run on the player owner within {}ms; retrying on captured chunk",
++                    playerName,
++                    DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS
++                );
++                fallback.run();
++            }
++        }, DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS, TimeUnit.MILLISECONDS);
++    }
