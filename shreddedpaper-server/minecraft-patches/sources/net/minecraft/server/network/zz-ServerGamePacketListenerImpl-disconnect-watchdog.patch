@@ -1,0 +1,105 @@
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -27,6 +27,7 @@
+ import java.util.concurrent.CancellationException;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.function.BiFunction;
+ import java.util.function.Consumer;
+ import java.util.stream.Collectors;
+@@ -264,6 +265,7 @@
+     private static final int MAXIMUM_FLYING_TICKS = 80;
+     private static final int ATTACK_INDICATOR_TOLERANCE_TICKS = 5;
+     public static final int CLIENT_LOADED_TIMEOUT_TIME = 60;
++    private static final long DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS = 3000L; // ShreddedPaper - recover stale duplicate-login players
+     private static final Component CHAT_VALIDATION_FAILED = Component.translatable("multiplayer.disconnect.chat_validation_failed");
+     private static final Component INVALID_COMMAND_SIGNATURE = Component.translatable("chat.disabled.invalid_command_signature").withStyle(ChatFormatting.RED);
+     private static final int MAX_COMMAND_SUGGESTIONS = 1000;
+@@ -2481,8 +2483,12 @@
+         final Runnable[] retryDisconnectCleanupRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
+         final Runnable[] fallbackToDisconnectingChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
+         final Consumer<Entity>[] runOnPlayersThreadRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final AtomicBoolean disconnectCleanupStarted = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback cleanup
++        final AtomicBoolean disconnectCleanupFallbackRequested = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback cleanup
++        final String disconnectingPlayerName = disconnectingPlayer.getScoreboardName(); // ShreddedPaper - logging snapshot
+         final Runnable disconnectCleanup = () -> { // ShreddedPaper - run disconnect cleanup only after ownership handoff
+-        this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
++            if (!disconnectCleanupStarted.compareAndSet(false, true)) return; // ShreddedPaper - avoid duplicate fallback cleanup
++            this.chunkSender.clearPendingChunks(); // ShreddedPaper - clear stale chunk sends on disconnect
+         LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
+         // Paper start - Fix kick event leave message not being sent
+         final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
+@@ -2510,12 +2516,19 @@
+                     return;
+                 }
+                 if (ShreddedPaper.runSync(currentPlayer, runOnPlayersThreadRef[0], fallbackToDisconnectingChunk)) {
++                    this.scheduleDisconnectOwnerHandoffWatchdog(disconnectingPlayerName, disconnectCleanupStarted, disconnectCleanupFallbackRequested, fallbackToDisconnectingChunk);
+                     return;
+                 }
+             }
+             fallbackToDisconnectingChunk.run();
+         }; // ShreddedPaper - entity scheduler may retire after accepting the task
+-        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) runOnPlayersThread.accept(disconnectingPlayer); else if (!ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) retryDisconnectCleanupRef[0].run(); // ShreddedPaper - run on player's thread
++        if (TickThread.isShutdownThread() || TickThread.isTickThreadFor(disconnectingPlayer)) {
++            runOnPlayersThread.accept(disconnectingPlayer);
++        } else if (ShreddedPaper.runSync(disconnectingPlayer, runOnPlayersThread, retryDisconnectCleanupRef[0])) { // ShreddedPaper - run on player's thread
++            this.scheduleDisconnectOwnerHandoffWatchdog(disconnectingPlayerName, disconnectCleanupStarted, disconnectCleanupFallbackRequested, fallbackToDisconnectingChunk);
++        } else {
++            retryDisconnectCleanupRef[0].run();
++        }
+     }
+ 
+     private void removePlayerFromWorld() {
+@@ -4164,7 +4177,11 @@
+         final Runnable[] retryDisconnectTaskRef = new Runnable[1]; // ShreddedPaper - retry on respawn handoff, then fallback to captured chunk
+         final Runnable[] fallbackToDisconnectChunkRef = new Runnable[1]; // ShreddedPaper - retry saturated fallback handoff
+         final Consumer<Entity>[] disconnectTaskRef = new Consumer[1]; // ShreddedPaper - self-reference for respawn handoff retry
++        final AtomicBoolean asyncDisconnectStarted = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback disconnect
++        final AtomicBoolean asyncDisconnectFallbackRequested = new AtomicBoolean(false); // ShreddedPaper - avoid duplicate fallback disconnect
++        final String disconnectPlayerName = disconnectPlayer.getScoreboardName(); // ShreddedPaper - logging snapshot
+         final Runnable asyncDisconnectCleanup = () -> {
++            if (!asyncDisconnectStarted.compareAndSet(false, true)) return; // ShreddedPaper - avoid duplicate fallback disconnect
+             this.disconnect(disconnectionInfo);
+             if (this.player.quitReason == null) {
+                 // cancelled
+@@ -4191,6 +4208,7 @@
+                     return;
+                 }
+                 if (ShreddedPaper.runSync(currentPlayer, disconnectTaskRef[0], fallbackToDisconnectChunk)) {
++                    this.scheduleDisconnectOwnerHandoffWatchdog(disconnectPlayerName, asyncDisconnectStarted, asyncDisconnectFallbackRequested, fallbackToDisconnectChunk);
+                     return;
+                 }
+             }
+@@ -4202,11 +4220,30 @@
+         }
+ 
+         this.connection.setReadOnly();
+-        if (!ShreddedPaper.runSync(disconnectPlayer, disconnectTask, retryDisconnectTaskRef[0])) { // ShreddedPaper - disconnect on player owner, with retired fallback
++        if (ShreddedPaper.runSync(disconnectPlayer, disconnectTask, retryDisconnectTaskRef[0])) { // ShreddedPaper - disconnect on player owner, with retired fallback
++            this.scheduleDisconnectOwnerHandoffWatchdog(disconnectPlayerName, asyncDisconnectStarted, asyncDisconnectFallbackRequested, fallbackToDisconnectChunk);
++        } else {
+             retryDisconnectTaskRef[0].run();
+         }
+     }
+ 
++    private void scheduleDisconnectOwnerHandoffWatchdog(
++        final String playerName,
++        final AtomicBoolean completed,
++        final AtomicBoolean fallbackRequested,
++        final Runnable fallback
++    ) {
++        ShreddedPaper.scheduleRunSyncWatchdog(() -> {
++            if (!completed.get() && fallbackRequested.compareAndSet(false, true)) {
++                LOGGER.warn(
++                    "Disconnect cleanup for {} did not run on the player owner within {}ms; retrying on captured chunk",
++                    playerName,
++                    DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS
++                );
++                fallback.run();
++            }
++        }, DISCONNECT_OWNER_HANDOFF_WATCHDOG_MS, TimeUnit.MILLISECONDS);
++    }
+ 
+     public final boolean isDisconnected() {
+         return (!this.player.joining && !this.connection.isConnected()) || this.processedDisconnect; // Paper - Fix duplication bugs
