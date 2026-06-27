@@ -167,7 +167,7 @@ public class ShreddedPaperChunkTicker {
 
             region.forEachTickingEntity(entity -> {
                 CraftEntity bukkitEntity = entity.getBukkitEntityRaw();
-                if (bukkitEntity != null && !entity.isRemoved() && !bukkitEntity.taskScheduler.isRetired() && TickThread.isTickThreadFor(entity)) {
+                if (!(entity instanceof ServerPlayer) && bukkitEntity != null && !entity.isRemoved() && !bukkitEntity.taskScheduler.isRetired() && TickThread.isTickThreadFor(entity)) {
                     bukkitEntity.taskScheduler.executeTick();
                 }
             });

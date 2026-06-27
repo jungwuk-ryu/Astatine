@@ -1,6 +1,7 @@
 package io.multipaper.shreddedpaper.threading;
 
 import ca.spottedleaf.moonrise.common.PlatformHooks;
+import ca.spottedleaf.moonrise.common.util.TickThread;
 import ca.spottedleaf.moonrise.patches.chunk_system.player.RegionizedPlayerChunkLoader;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -16,6 +17,10 @@ public class ShreddedPaperPlayerTicker {
         }
         if (tickingRegion != null && (serverPlayer.currentRegion != tickingRegion || serverPlayer.level() != tickingRegion.getLevel())) {
             return;
+        }
+        final org.bukkit.craftbukkit.entity.CraftPlayer bukkitPlayer = serverPlayer.getBukkitEntity();
+        if (!bukkitPlayer.taskScheduler.isRetired() && TickThread.isTickThreadFor(serverPlayer)) {
+            bukkitPlayer.taskScheduler.executeTick();
         }
 
         tickPlayerChunkLoader(serverPlayer);
