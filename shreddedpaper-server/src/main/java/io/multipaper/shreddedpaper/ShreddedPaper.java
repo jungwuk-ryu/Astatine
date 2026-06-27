@@ -47,6 +47,10 @@ public class ShreddedPaper {
         RUN_SYNC_RETRY_EXECUTOR.scheduleWithFixedDelay(ShreddedPaper::drainRunSyncRetries, 10L, 10L, TimeUnit.MILLISECONDS);
     }
 
+    public static void scheduleRunSyncWatchdog(Runnable runnable, long delay, TimeUnit unit) {
+        RUN_SYNC_RETRY_EXECUTOR.schedule(runnable, delay, unit);
+    }
+
     public static void runSync(Location location, Runnable runnable) {
         runSync(((CraftWorld) location.getWorld()).getHandle(), new BlockPos(location.getBlockX(), location.getBlockY(), location.getBlockZ()), runnable);
     }
