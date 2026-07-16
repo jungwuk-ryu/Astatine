@@ -14,3 +14,5 @@ rootProject.name = "astatine"
 
 include("shreddedpaper-api")
 include("shreddedpaper-server")
+include("linear-recompressor")
+project(":linear-recompressor").projectDir = file("tools/linear-recompressor")
