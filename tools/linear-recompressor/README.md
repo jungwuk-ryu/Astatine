@@ -39,5 +39,9 @@ rebuilds an invalid one. The append-only checkpoint is forced after every
 successful replacement.
 
 Useful options are `--max-files N`, `--continue-on-error`, `--min-free-gib N`
-(default: 5), and `--progress-every N` (default: 100). Only version 3 is
+(default: 5), `--min-age-seconds N`, and `--progress-every N` (default: 100). Only version 3 is
 accepted; older Linear versions are rejected rather than silently converted.
+
+For a live cold-file pass, `--min-age-seconds 600` defers files written in the
+last ten minutes. A later coordinated pass must process those deferred files;
+the age gate alone is not a replacement for stopping saves on hot regions.

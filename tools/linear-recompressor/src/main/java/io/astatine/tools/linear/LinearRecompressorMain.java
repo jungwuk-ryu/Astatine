@@ -49,8 +49,8 @@ public final class LinearRecompressorMain {
                 visit(root, options, guard, checkpoint, counters);
             }
             System.out.printf(Locale.ROOT,
-                "SUMMARY mode=%s seen=%d completed=%d skipped=%d failed=%d input=%d output=%d saved=%d%n",
-                options.mode, counters.seen, counters.completed, counters.skipped, counters.failed,
+                "SUMMARY mode=%s seen=%d completed=%d skipped=%d deferred=%d failed=%d input=%d output=%d saved=%d%n",
+                options.mode, counters.seen, counters.completed, counters.skipped, counters.deferred, counters.failed,
                 counters.inputBytes, counters.outputBytes, counters.inputBytes - counters.outputBytes);
             return counters.failed == 0 ? 0 : 1;
         }
@@ -87,6 +87,14 @@ public final class LinearRecompressorMain {
                 counters.skipped++;
                 progress(options, counters, "SKIP", file, 0, 0);
                 return;
+            }
+            if (options.minAgeSeconds > 0) {
+                long ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(file).toMillis();
+                if (ageMillis < options.minAgeSeconds * 1_000L) {
+                    counters.deferred++;
+                    System.out.printf("DEFER path=%s ageSeconds=%d requiredSeconds=%d%n", file, Math.max(0, ageMillis / 1_000L), options.minAgeSeconds);
+                    return;
+                }
             }
             guard.checkStopped();
             long input = Files.size(file);
@@ -136,6 +144,7 @@ public final class LinearRecompressorMain {
               --min-free-gib N       reserve free space, default 5
               --max-files N          stop after N .linear files
               --progress-every N     periodic progress interval, default 100
+              --min-age-seconds N    defer files modified more recently than N seconds
               --continue-on-error    continue after corrupt/unreadable files
             """);
     }
@@ -148,6 +157,7 @@ public final class LinearRecompressorMain {
         long minFreeBytes = 5L << 30;
         long maxFiles = Long.MAX_VALUE;
         long progressEvery = 100;
+        long minAgeSeconds;
         boolean continueOnError;
         boolean assumeOffline;
         boolean help;
@@ -177,6 +187,7 @@ public final class LinearRecompressorMain {
                     case "--min-free-gib" -> result.minFreeBytes = Long.parseLong(requireValue(args, ++i, arg)) << 30;
                     case "--max-files" -> result.maxFiles = Long.parseLong(requireValue(args, ++i, arg));
                     case "--progress-every" -> result.progressEvery = Long.parseLong(requireValue(args, ++i, arg));
+                    case "--min-age-seconds" -> result.minAgeSeconds = Long.parseLong(requireValue(args, ++i, arg));
                     case "--continue-on-error" -> result.continueOnError = true;
                     case "--assume-offline" -> result.assumeOffline = true;
                     default -> {
@@ -189,7 +200,7 @@ public final class LinearRecompressorMain {
             if (result.mode != Mode.VERIFY && (result.level < 1 || result.level > 22)) throw new IllegalArgumentException("--level must be 1..22");
             if (result.mode == Mode.APPLY && result.checkpoint == null) throw new IllegalArgumentException("apply requires --checkpoint");
             if (result.mode == Mode.APPLY && result.lockFiles.isEmpty() && !result.assumeOffline) throw new IllegalArgumentException("apply requires --lock-file or explicit --assume-offline");
-            if (result.maxFiles < 1 || result.progressEvery < 1 || result.minFreeBytes < 0) throw new IllegalArgumentException("numeric options must be positive");
+            if (result.maxFiles < 1 || result.progressEvery < 1 || result.minFreeBytes < 0 || result.minAgeSeconds < 0) throw new IllegalArgumentException("numeric options must be positive");
             return result;
         }
 
@@ -339,6 +350,7 @@ public final class LinearRecompressorMain {
         long seen;
         long completed;
         long skipped;
+        long deferred;
         long failed;
         long inputBytes;
         long outputBytes;

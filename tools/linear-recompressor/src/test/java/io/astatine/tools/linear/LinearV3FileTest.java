@@ -147,4 +147,20 @@ class LinearV3FileTest {
         assertEquals(mtime, Files.getLastModifiedTime(file));
         assertEquals(checkpointSize, Files.size(checkpoint));
     }
+
+    @Test
+    void liveAgeGateDefersRecentFileUntilLaterPass() throws Exception {
+        Path file = LinearFixture.write(directory.resolve("recent.linear"), 3);
+        Path checkpoint = directory.resolve("recent-checkpoint.tsv");
+        String[] deferred = {"apply", "--level", "9", "--min-free-gib", "0", "--min-age-seconds", "600", "--assume-offline", "--checkpoint", checkpoint.toString(), file.toString()};
+
+        assertEquals(0, LinearRecompressorMain.run(deferred));
+        LinearV3File.verify(file, 3);
+        assertEquals(0, Files.size(checkpoint));
+
+        Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis() - 700_000));
+        assertEquals(0, LinearRecompressorMain.run(deferred));
+        LinearV3File.verify(file, 9);
+        assertTrue(Files.size(checkpoint) > 0);
+    }
 }
