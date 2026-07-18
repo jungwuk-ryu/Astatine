@@ -23,16 +23,30 @@ class LinearV3FileTest {
 
     @Test
     void rewritesLevelAndPreservesLogicalContent() throws Exception {
-        Path file = LinearFixture.write(directory.resolve("r.4.-7.linear"), 3);
-        LinearV3File.Verification before = LinearV3File.verify(file, 3);
+        Path file = LinearFixture.writeBeneficial(directory.resolve("r.4.-7.linear"), 1);
+        LinearV3File.Verification before = LinearV3File.verify(file, 1);
 
         LinearV3File.RewriteResult result = LinearV3File.rewrite(file, 9, 0, true, () -> {});
 
         LinearV3File.Verification after = LinearV3File.verify(file, 9);
         assertTrue(before.logicallyEquals(after));
-        assertEquals(3, after.chunkCount());
+        assertEquals(before.chunkCount(), after.chunkCount());
+        assertTrue(result.replaced());
         assertFalse(result.reusedTemporary());
         assertFalse(Files.exists(directory.resolve("r.4.-7.linear.recompress-l9.tmp")));
+    }
+
+    @Test
+    void keepsOriginalWhenVerifiedCandidateIsNotSmaller() throws Exception {
+        Path file = LinearFixture.write(directory.resolve("not-smaller.linear"), 3);
+        byte[] original = Files.readAllBytes(file);
+
+        LinearV3File.RewriteResult result = LinearV3File.rewrite(file, 9, 0, true, () -> {});
+
+        assertFalse(result.replaced());
+        assertTrue(result.outputBytes() >= original.length);
+        assertArrayEquals(original, Files.readAllBytes(file));
+        assertFalse(Files.exists(directory.resolve("not-smaller.linear.recompress-l9.tmp")));
     }
 
     @Test
@@ -52,7 +66,7 @@ class LinearV3FileTest {
 
     @Test
     void applyRepairsStaleExistenceBitmapFromValidatedBuckets() throws Exception {
-        Path file = LinearFixture.write(directory.resolve("stale-bitmap.linear"), 3);
+        Path file = LinearFixture.writeBeneficial(directory.resolve("stale-bitmap.linear"), 1);
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE)) {
             channel.write(ByteBuffer.wrap(new byte[]{0}), 26);
         }
@@ -60,13 +74,13 @@ class LinearV3FileTest {
 
         LinearV3File.rewrite(file, 9, 0, true, () -> {});
 
-        assertEquals(3, LinearV3File.verify(file, 9).chunkCount());
+        assertEquals(61, LinearV3File.verify(file, 9).chunkCount());
     }
 
     @Test
     void reusesOnlyVerifiedCompleteTemporaryFile() throws Exception {
-        Path source = LinearFixture.write(directory.resolve("source.linear"), 3);
-        Path prepared = LinearFixture.write(directory.resolve("prepared.linear"), 3);
+        Path source = LinearFixture.writeBeneficial(directory.resolve("source.linear"), 1);
+        Path prepared = LinearFixture.writeBeneficial(directory.resolve("prepared.linear"), 1);
         LinearV3File.rewrite(prepared, 9, 0, true, () -> {});
         Path temporary = directory.resolve("source.linear.recompress-l9.tmp");
         Files.copy(prepared, temporary);
@@ -79,7 +93,7 @@ class LinearV3FileTest {
 
     @Test
     void rebuildsInvalidLeftoverTemporaryFile() throws Exception {
-        Path source = LinearFixture.write(directory.resolve("invalid-temp.linear"), 3);
+        Path source = LinearFixture.writeBeneficial(directory.resolve("invalid-temp.linear"), 1);
         Path temporary = directory.resolve("invalid-temp.linear.recompress-l9.tmp");
         Files.writeString(temporary, "partial-crash-output");
 
@@ -92,7 +106,7 @@ class LinearV3FileTest {
 
     @Test
     void completedTemporarySurvivesPreMoveStopFailureAndResumes() throws Exception {
-        Path source = LinearFixture.write(directory.resolve("stop.linear"), 3);
+        Path source = LinearFixture.writeBeneficial(directory.resolve("stop.linear"), 1);
         byte[] original = Files.readAllBytes(source);
 
         assertThrows(IOException.class, () -> LinearV3File.rewrite(source, 9, 0, true, () -> {
@@ -163,12 +177,12 @@ class LinearV3FileTest {
 
     @Test
     void liveAgeGateDefersRecentFileUntilLaterPass() throws Exception {
-        Path file = LinearFixture.write(directory.resolve("recent.linear"), 3);
+        Path file = LinearFixture.writeBeneficial(directory.resolve("recent.linear"), 1);
         Path checkpoint = directory.resolve("recent-checkpoint.tsv");
         String[] deferred = {"apply", "--level", "9", "--min-free-gib", "0", "--min-age-seconds", "600", "--assume-offline", "--checkpoint", checkpoint.toString(), file.toString()};
 
         assertEquals(0, LinearRecompressorMain.run(deferred));
-        LinearV3File.verify(file, 3);
+        LinearV3File.verify(file, 1);
         assertEquals(0, Files.size(checkpoint));
 
         Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis() - 700_000));

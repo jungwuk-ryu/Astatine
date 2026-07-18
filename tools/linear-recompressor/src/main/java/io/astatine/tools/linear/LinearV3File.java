@@ -64,7 +64,21 @@ final class LinearV3File {
         }
     }
 
-    record RewriteResult(long outputBytes, boolean reusedTemporary) {}
+    record SourceIdentity(long size, long mtime, String fileKey) {
+        static SourceIdentity from(BasicFileAttributes attributes) {
+            return new SourceIdentity(attributes.size(), attributes.lastModifiedTime().toMillis(), String.valueOf(attributes.fileKey()));
+        }
+
+        static SourceIdentity read(Path path) throws IOException {
+            return from(Files.readAttributes(path, BasicFileAttributes.class));
+        }
+    }
+
+    record RewriteResult(long outputBytes, boolean reusedTemporary, boolean replaced, SourceIdentity sourceIdentity) {
+        boolean isSmaller() {
+            return outputBytes < sourceIdentity.size();
+        }
+    }
 
     static Verification verify(Path path, Integer requiredLevel) throws IOException {
         Parsed parsed = parse(path);
@@ -95,6 +109,7 @@ final class LinearV3File {
         Path absolute = source.toAbsolutePath().normalize();
         Parsed parsed = parse(absolute);
         BasicFileAttributes original = Files.readAttributes(absolute, BasicFileAttributes.class);
+        SourceIdentity sourceIdentity = SourceIdentity.from(original);
         ensureFreeSpace(absolute, original.size(), minFreeBytes);
         Path temporary = absolute.resolveSibling(absolute.getFileName() + ".recompress-l" + level + ".tmp");
 
@@ -127,7 +142,15 @@ final class LinearV3File {
         long outputSize = Files.size(temporary);
         if (!replace) {
             Files.delete(temporary);
-            return new RewriteResult(outputSize, reused);
+            return new RewriteResult(outputSize, reused, false, sourceIdentity);
+        }
+
+        if (outputSize >= original.size()) {
+            stopCheck.check();
+            requireUnchanged(absolute, original);
+            Files.delete(temporary);
+            forceDirectory(absolute.getParent());
+            return new RewriteResult(outputSize, reused, false, sourceIdentity);
         }
 
         copyAttributes(absolute, temporary);
@@ -139,7 +162,7 @@ final class LinearV3File {
             throw new IOException("Atomic replacement is not supported for " + absolute + "; source was not changed", exception);
         }
         forceDirectory(absolute.getParent());
-        return new RewriteResult(outputSize, reused);
+        return new RewriteResult(outputSize, reused, true, sourceIdentity);
     }
 
     private static WriteResult writeTemporary(Parsed source, Path temporary, int level) throws IOException {

@@ -15,12 +15,24 @@ final class LinearFixture {
     private LinearFixture() {}
 
     static Path write(Path path, int level) throws IOException {
+        return write(path, level, false);
+    }
+
+    static Path writeBeneficial(Path path, int level) throws IOException {
+        return write(path, level, true);
+    }
+
+    private static Path write(Path path, int level, boolean largePayload) throws IOException {
         int grid = 2;
         int bucketSize = 32 / grid;
         boolean[] exists = new boolean[1024];
-        exists[0] = true;
-        exists[17] = true;
-        exists[700] = true;
+        if (largePayload) {
+            for (int index = 0; index < exists.length; index += 17) exists[index] = true;
+        } else {
+            exists[0] = true;
+            exists[17] = true;
+            exists[700] = true;
+        }
 
         List<byte[]> buckets = new ArrayList<>();
         for (int bx = 0; bx < grid; bx++) {
@@ -33,7 +45,10 @@ final class LinearFixture {
                             int index = (bx * bucketSize + cx) + (bz * bucketSize + cz) * 32;
                             if (exists[index]) {
                                 hasData = true;
-                                byte[] value = ("fixture-chunk-" + index + "-" + "x".repeat(index % 53)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                                String payload = largePayload
+                                    ? ("fixture-pattern-" + (index % 7) + "-").repeat(4_096) + "tail-" + index
+                                    : "fixture-chunk-" + index + "-" + "x".repeat(index % 53);
+                                byte[] value = payload.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                                 data.writeInt(value.length + Long.BYTES);
                                 data.writeLong(1_700_000_000L + index);
                                 data.write(value);

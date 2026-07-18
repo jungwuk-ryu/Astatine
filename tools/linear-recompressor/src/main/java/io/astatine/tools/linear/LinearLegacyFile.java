@@ -64,6 +64,7 @@ final class LinearLegacyFile {
     static LinearV3File.RewriteResult rewrite(Path source, int level, long minFreeBytes, boolean replace, LinearV3File.StopCheck stopCheck) throws IOException {
         Path absolute = source.toAbsolutePath().normalize();
         BasicFileAttributes original = Files.readAttributes(absolute, BasicFileAttributes.class);
+        LinearV3File.SourceIdentity sourceIdentity = LinearV3File.SourceIdentity.from(original);
         long required = Math.addExact(minFreeBytes, Math.addExact(original.size(), (long) MAX_LEGACY_DECOMPRESSED_SIZE + (64L << 20)));
         long usable = Files.getFileStore(absolute).getUsableSpace();
         if (usable < required) throw new IOException("Insufficient free space: usable=" + usable + " required=" + required + " for " + absolute);
@@ -90,7 +91,14 @@ final class LinearLegacyFile {
         long outputSize = Files.size(temporary);
         if (!replace) {
             Files.delete(temporary);
-            return new LinearV3File.RewriteResult(outputSize, reused);
+            return new LinearV3File.RewriteResult(outputSize, reused, false, sourceIdentity);
+        }
+        if (outputSize >= original.size()) {
+            stopCheck.check();
+            requireUnchanged(absolute, original);
+            Files.delete(temporary);
+            forceDirectory(absolute.getParent());
+            return new LinearV3File.RewriteResult(outputSize, reused, false, sourceIdentity);
         }
         copyAttributes(absolute, temporary);
         stopCheck.check();
@@ -101,7 +109,7 @@ final class LinearLegacyFile {
             throw new IOException("Atomic replacement is not supported for " + absolute + "; source was not changed", exception);
         }
         forceDirectory(absolute.getParent());
-        return new LinearV3File.RewriteResult(outputSize, reused);
+        return new LinearV3File.RewriteResult(outputSize, reused, true, sourceIdentity);
     }
 
     private static LegacyData readLegacy(Path source) throws IOException {
