@@ -84,7 +84,7 @@ final class LinearV3File {
                 continue;
             }
             nonEmptyBuckets++;
-            BucketResult result = readBucket(parsed, i, null);
+            BucketResult result = readBucket(parsed, i, null, true);
             chunks += result.chunkCount();
             digests.add(result.digest());
         }
@@ -158,7 +158,6 @@ final class LinearV3File {
                 BucketMeta inputMeta = source.buckets().get(i);
                 levels.add(inputMeta.level());
                 if (inputMeta.size() == 0) {
-                    validateEmptyBitmap(source, i);
                     sourceDigests.add(emptyBucketDigest(source, i));
                     outputMetadata.add(new BucketMeta(0, level, 0, 0));
                     continue;
@@ -168,7 +167,7 @@ final class LinearV3File {
                 HashingOutputStream hashing = new HashingOutputStream(new NonClosingOutputStream(Channels.newOutputStream(output)));
                 BucketResult result;
                 try (ZstdOutputStream zstd = new ZstdOutputStream(hashing, level)) {
-                    result = readBucket(source, i, zstd);
+                    result = readBucket(source, i, zstd, false);
                 }
                 long compressedSize = output.position() - frameStart;
                 if (compressedSize <= 0 || compressedSize > MAX_BUCKET_SIZE) {
@@ -181,6 +180,8 @@ final class LinearV3File {
             writeFully(output, longBuffer(SUPERBLOCK));
             long finalPosition = output.position();
             if (finalPosition > MAX_FILE_SIZE) throw new IOException("Output exceeds Linear file limit: " + finalPosition + " for " + source.path());
+            output.position(26);
+            writeFully(output, ByteBuffer.wrap(serializeExistence(source.actualExistence())));
             output.position(metadataOffset);
             ByteBuffer metadata = ByteBuffer.allocate(Math.multiplyExact(source.bucketCount(), 13)).order(ByteOrder.BIG_ENDIAN);
             for (BucketMeta bucket : outputMetadata) metadata.putInt(bucket.size()).put((byte) bucket.level()).putLong(bucket.hash());
@@ -201,7 +202,7 @@ final class LinearV3File {
         return new WriteResult(verification);
     }
 
-    private static BucketResult readBucket(Parsed parsed, int bucketIndex, OutputStream recompressed) throws IOException {
+    private static BucketResult readBucket(Parsed parsed, int bucketIndex, OutputStream recompressed, boolean validateBitmap) throws IOException {
         BucketMeta meta = parsed.buckets().get(bucketIndex);
         LimitedInputStream limited = new LimitedInputStream(new PositionalInputStream(parsed.path(), meta.offset(), meta.size()), meta.size());
         HashingInputStream hashing = new HashingInputStream(limited);
@@ -225,7 +226,8 @@ final class LinearV3File {
                     decompressed += 12;
                     int chunkIndex = (bx * bucketSize + cx) + (bz * bucketSize + cz) * 32;
                     boolean exists = chunkSize > 0;
-                    if (parsed.existence()[chunkIndex] != exists) {
+                    parsed.actualExistence()[chunkIndex] = exists;
+                    if (validateBitmap && parsed.existence()[chunkIndex] != exists) {
                         throw new IOException("Existence bitmap mismatch for chunk index " + chunkIndex + " in " + parsed.path());
                     }
                     if (chunkSize < 0 || (chunkSize > 0 && chunkSize < Long.BYTES)) {
@@ -298,7 +300,7 @@ final class LinearV3File {
                 footer.flip();
                 if (footer.getLong() != SUPERBLOCK) throw new IOException("Invalid Linear footer: " + absolute);
             }
-            return new Parsed(absolute, grid, bitmapToBooleans(bitmap), recording.recorded(), List.copyOf(buckets));
+            return new Parsed(absolute, grid, bitmapToBooleans(bitmap), new boolean[1024], recording.recorded(), List.copyOf(buckets));
         }
     }
 
@@ -331,6 +333,14 @@ final class LinearV3File {
         boolean[] result = new boolean[1024];
         for (int i = 0; i < bitmap.length; i++) {
             for (int bit = 0; bit < 8; bit++) result[i * 8 + bit] = ((bitmap[i] >> (7 - bit)) & 1) == 1;
+        }
+        return result;
+    }
+
+    private static byte[] serializeExistence(boolean[] existence) {
+        byte[] result = new byte[128];
+        for (int i = 0; i < existence.length; i++) {
+            if (existence[i]) result[i / 8] |= (byte) (1 << (7 - (i % 8)));
         }
         return result;
     }
@@ -400,7 +410,7 @@ final class LinearV3File {
         }
     }
 
-    private record Parsed(Path path, int gridSize, boolean[] existence, byte[] headerPrefix, List<BucketMeta> buckets) {
+    private record Parsed(Path path, int gridSize, boolean[] existence, boolean[] actualExistence, byte[] headerPrefix, List<BucketMeta> buckets) {
         int bucketCount() { return buckets.size(); }
     }
 

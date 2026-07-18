@@ -41,6 +41,8 @@ successful replacement.
 Legacy Linear versions 1 and 2 are read using the same layout accepted by the
 deployed ShreddedPaper reader and are converted to bucketed version 3. Version
 3 inputs are recompressed without changing their logical bucket contents.
+Read-only `verify` reports stale v3 existence bitmaps; `apply` reconstructs the
+bitmap from the validated bucket entries and verifies the repaired output.
 
 Useful options are `--max-files N`, `--continue-on-error`, `--min-free-gib N`
 (default: 5), `--min-age-seconds N`, and `--progress-every N` (default: 100). Only version 3 is

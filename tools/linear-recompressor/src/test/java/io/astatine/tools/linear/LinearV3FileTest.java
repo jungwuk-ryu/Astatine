@@ -51,6 +51,19 @@ class LinearV3FileTest {
     }
 
     @Test
+    void applyRepairsStaleExistenceBitmapFromValidatedBuckets() throws Exception {
+        Path file = LinearFixture.write(directory.resolve("stale-bitmap.linear"), 3);
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE)) {
+            channel.write(ByteBuffer.wrap(new byte[]{0}), 26);
+        }
+        assertThrows(IOException.class, () -> LinearV3File.verify(file, null));
+
+        LinearV3File.rewrite(file, 9, 0, true, () -> {});
+
+        assertEquals(3, LinearV3File.verify(file, 9).chunkCount());
+    }
+
+    @Test
     void reusesOnlyVerifiedCompleteTemporaryFile() throws Exception {
         Path source = LinearFixture.write(directory.resolve("source.linear"), 3);
         Path prepared = LinearFixture.write(directory.resolve("prepared.linear"), 3);
