@@ -99,12 +99,17 @@ public final class LinearRecompressorMain {
             guard.checkStopped();
             long input = Files.size(file);
             long output;
+            int formatVersion = LinearLegacyFile.formatVersion(file);
             if (options.mode == Mode.VERIFY) {
-                LinearV3File.Verification verification = LinearV3File.verify(file, null);
+                LinearV3File.Verification verification = formatVersion <= 2
+                    ? LinearLegacyFile.verify(file)
+                    : LinearV3File.verify(file, null);
                 output = input;
-                System.out.printf("OK path=%s chunks=%d buckets=%d levels=%s%n", file, verification.chunkCount(), verification.nonEmptyBuckets(), verification.levels());
+                System.out.printf("OK path=%s version=%d chunks=%d buckets=%d levels=%s%n", file, formatVersion, verification.chunkCount(), verification.nonEmptyBuckets(), verification.levels());
             } else {
-                LinearV3File.RewriteResult result = LinearV3File.rewrite(file, options.level, options.minFreeBytes, options.mode == Mode.APPLY, guard::checkStopped);
+                LinearV3File.RewriteResult result = formatVersion <= 2
+                    ? LinearLegacyFile.rewrite(file, options.level, options.minFreeBytes, options.mode == Mode.APPLY, guard::checkStopped)
+                    : LinearV3File.rewrite(file, options.level, options.minFreeBytes, options.mode == Mode.APPLY, guard::checkStopped);
                 output = result.outputBytes();
                 System.out.printf(Locale.ROOT, "%s path=%s input=%d output=%d saved=%d temp=%s%n",
                     options.mode == Mode.APPLY ? "APPLIED" : "ESTIMATE", file, input, output, input - output, result.reusedTemporary());

@@ -38,9 +38,13 @@ falls back from an atomic move. A crash can leave a
 rebuilds an invalid one. The append-only checkpoint is forced after every
 successful replacement.
 
+Legacy Linear versions 1 and 2 are read using the same layout accepted by the
+deployed ShreddedPaper reader and are converted to bucketed version 3. Version
+3 inputs are recompressed without changing their logical bucket contents.
+
 Useful options are `--max-files N`, `--continue-on-error`, `--min-free-gib N`
 (default: 5), `--min-age-seconds N`, and `--progress-every N` (default: 100). Only version 3 is
-accepted; older Linear versions are rejected rather than silently converted.
+accepted; unknown Linear versions are rejected rather than guessed.
 
 For a live cold-file pass, `--min-age-seconds 600` defers files written in the
 last ten minutes. A later coordinated pass must process those deferred files;

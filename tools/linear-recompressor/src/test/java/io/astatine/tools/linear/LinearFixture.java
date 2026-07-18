@@ -83,4 +83,36 @@ final class LinearFixture {
         }
         return path;
     }
+
+    static Path writeLegacy(Path path, int version, int level) throws IOException {
+        byte[][] chunks = new byte[1024][];
+        chunks[0] = "legacy-zero".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        chunks[17] = "legacy-seventeen".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        chunks[700] = ("legacy-seven-hundred-" + "z".repeat(80)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try (DataOutputStream data = new DataOutputStream(raw)) {
+            for (byte[] chunk : chunks) {
+                data.writeInt(chunk == null ? 0 : chunk.length);
+                data.writeInt(1_700_000_000);
+            }
+            for (byte[] chunk : chunks) if (chunk != null) data.write(chunk);
+        }
+        ByteArrayOutputStream compressedBytes = new ByteArrayOutputStream();
+        try (ZstdOutputStream zstd = new ZstdOutputStream(compressedBytes, level)) {
+            zstd.write(raw.toByteArray());
+        }
+        byte[] compressed = compressedBytes.toByteArray();
+        try (DataOutputStream output = new DataOutputStream(Files.newOutputStream(path))) {
+            output.writeLong(LinearV3File.SUPERBLOCK);
+            output.writeByte(version);
+            output.writeLong(1_700_000_700L);
+            output.writeByte(level);
+            output.writeShort(3);
+            output.writeInt(compressed.length);
+            output.writeLong(LongHashFunction.xx().hashBytes(compressed));
+            output.write(compressed);
+            output.writeLong(LinearV3File.SUPERBLOCK);
+        }
+        return path;
+    }
 }
