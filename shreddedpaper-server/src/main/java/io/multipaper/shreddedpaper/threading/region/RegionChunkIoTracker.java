@@ -823,13 +823,13 @@ public final class RegionChunkIoTracker {
     }
 
     private int capFor(final RegionLoadClass loadClass, final ShreddedPaperConfiguration.Multithreading config) {
-        return Math.max(1, loadClass == RegionLoadClass.DEGRADED
+        return Math.max(1, usesDegradedPolicy(loadClass)
                 ? config.chunkIoLoadMaxInflightDegradedPerRegion
                 : config.chunkIoLoadMaxInflightNormalPerRegion);
     }
 
     private int executorCapFor(final RegionLoadClass loadClass, final ShreddedPaperConfiguration.Multithreading config) {
-        return Math.max(1, loadClass == RegionLoadClass.DEGRADED
+        return Math.max(1, usesDegradedPolicy(loadClass)
                 ? config.chunkIoExecutorMaxInflightDegradedPerRegion
                 : config.chunkIoExecutorMaxInflightNormalPerRegion);
     }
@@ -839,7 +839,7 @@ public final class RegionChunkIoTracker {
             final RegionLoadClass loadClass,
             final ShreddedPaperConfiguration.Multithreading config
     ) {
-        if (!config.chunkIoLoadDowngradeDegradedPriority || loadClass != RegionLoadClass.DEGRADED) {
+        if (!config.chunkIoLoadDowngradeDegradedPriority || !usesDegradedPolicy(loadClass)) {
             return requestedPriority;
         }
         if (requestedPriority == Priority.BLOCKING || requestedPriority == Priority.HIGHEST) {
@@ -853,13 +853,17 @@ public final class RegionChunkIoTracker {
             final RegionLoadClass loadClass,
             final ShreddedPaperConfiguration.Multithreading config
     ) {
-        if (!config.chunkIoExecutorDowngradeDegradedPriority || loadClass != RegionLoadClass.DEGRADED) {
+        if (!config.chunkIoExecutorDowngradeDegradedPriority || !usesDegradedPolicy(loadClass)) {
             return requestedPriority;
         }
         if (requestedPriority == Priority.BLOCKING || requestedPriority == Priority.HIGHEST) {
             return requestedPriority;
         }
         return Priority.min(requestedPriority, Priority.LOW);
+    }
+
+    private static boolean usesDegradedPolicy(final RegionLoadClass loadClass) {
+        return loadClass == RegionLoadClass.DEGRADED || loadClass == RegionLoadClass.QUARANTINED;
     }
 
     private void recordDowngradeIfNeeded(
