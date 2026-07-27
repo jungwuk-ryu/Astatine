@@ -234,13 +234,6 @@ dependencies {
 - [ASTATINE_YAML.md](ASTATINE_YAML.md): configuration reference.
 - [DEVELOPING_A_MULTITHREAD_PLUGIN.md](DEVELOPING_A_MULTITHREAD_PLUGIN.md):
   plugin compatibility guide.
-- [REGIONIZED_ENGINE_MILESTONES.md](REGIONIZED_ENGINE_MILESTONES.md):
-  historical implementation and release-readiness ledger.
-- [ASYNC_OWNERSHIP_AUDIT_2026-04-27.md](ASYNC_OWNERSHIP_AUDIT_2026-04-27.md):
-  ownership audit notes.
-- [BENCHMARK_PLAN_2026-04-26.md](BENCHMARK_PLAN_2026-04-26.md) and
-  [BENCHMARK_RESULTS_2026-04-27.md](BENCHMARK_RESULTS_2026-04-27.md):
-  historical benchmark plan and first comparative results.
 
 ## Licensing
 

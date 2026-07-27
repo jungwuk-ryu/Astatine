@@ -46,6 +46,10 @@ out/
 # other stuff
 run/
 
+# Generated async-audit reports
+/tools/async-audit/ASYNC_OWNERSHIP_TODO.md
+/tools/async-audit/JAVA_CALL_SITES.md
+
 /shreddedpaper-server/build.gradle.kts
 /shreddedpaper-server/src/minecraft
 /paper-server
