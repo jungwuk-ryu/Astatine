@@ -1,28 +1,16 @@
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
-@@ -8,6 +_,8 @@
+@@ -8,6 +_,9 @@
  import com.mojang.datafixers.DataFixer;
  import com.mojang.logging.LogUtils;
  import com.mojang.serialization.MapCodec;
 +import io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration;
++import io.multipaper.shreddedpaper.tracking.EntityTrackerUpdateScratch;
 +import io.multipaper.shreddedpaper.util.Int2ObjectMapWrapper;
  import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
  import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  import it.unimi.dsi.fastutil.longs.Long2ByteMap;
-@@ -20,6 +_,7 @@
- import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
- import it.unimi.dsi.fastutil.longs.LongSet;
- import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
-+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
- import java.io.IOException;
- import java.io.Writer;
- import java.nio.file.Path;
-@@ -32,11 +_,14 @@
- import java.util.Optional;
- import java.util.Queue;
- import java.util.Set;
-+import java.util.TreeSet;
- import java.util.concurrent.CancellationException;
+@@ -36,7 +_,9 @@
  import java.util.concurrent.CompletableFuture;
  import java.util.concurrent.CompletionException;
  import java.util.concurrent.CompletionStage;
@@ -32,14 +20,6 @@
  import java.util.concurrent.atomic.AtomicInteger;
  import java.util.function.BooleanSupplier;
  import java.util.function.Consumer;
-@@ -105,6 +_,7 @@
- import net.minecraft.world.level.storage.LevelStorageSource;
- import net.minecraft.world.phys.Vec3;
- import org.apache.commons.lang3.mutable.MutableBoolean;
-+import org.jetbrains.annotations.NotNull;
- import org.jspecify.annotations.Nullable;
- import org.slf4j.Logger;
- 
 @@ -139,7 +_,8 @@
      public final ChunkMap.DistanceManager distanceManager;
      private final String storageName;
@@ -345,7 +325,7 @@
  
          // Paper start - optimise entity tracker
          private long lastChunkUpdate = -1L;
-@@ -1238,21 +_,35 @@
+@@ -1238,22 +_,22 @@
              this.lastChunkUpdate = currChunkUpdate;
              this.lastTrackedChunk = chunk;
  
@@ -364,93 +344,76 @@
 +                if (fullTrackerUpdate || !this.seenBy.contains(player.connection)) this.updatePlayer(player); // ShreddedPaper - trackerFullUpdateFrequency
 +                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
              }
+-
 +
+-            if (lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk) {
+-                // need to purge any players possible not in the chunk list
+-                for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
+-                    final ServerPlayer player = conn.getPlayer();
+-                    if (!players.contains(player)) {
+-                        this.removePlayer(player);
+-                    }
+-                }
+-            }
 +            this.removeInvalidTrackedPlayers(players); // Astatine - prevent stale tracker visibility leaks
-+
-+            if (!fullTrackerUpdate) return; // ShreddedPaper - trackerFullUpdateFrequency
- 
-             if (lastChunkUpdate != currChunkUpdate || lastTrackedChunk != chunk) {
-                 // need to purge any players possible not in the chunk list
-+                this.seenByLock.lock(); try { // ShreededPaper - seenBy thread safety
-                 for (final ServerPlayerConnection conn : new java.util.ArrayList<>(this.seenBy)) {
-                     final ServerPlayer player = conn.getPlayer();
-                     if (!players.contains(player)) {
-                         this.removePlayer(player);
-                     }
-                 }
-+                } finally { this.seenByLock.unlock(); } // ShreededPaper - seenBy thread safety
-             }
          }
  
-@@ -1304,6 +_,75 @@
+         @Override
+@@ -1304,6 +_,61 @@
              this.lastSectionPos = SectionPos.of(entity);
          }
  
 +        // ShreddedPaper start - maximum trackers per entity
-+        private record DistancedServerPlayer(ServerPlayer serverPlayer, double distanceSqr, boolean hasBypassPerm) implements Comparable<DistancedServerPlayer> {
-+            DistancedServerPlayer(ServerPlayer serverPlayer, Entity entity) {
-+                this(serverPlayer, distanceBetween(serverPlayer, entity), serverPlayer.hasMaximumTrackerBypassPermission);
-+            }
-+
-+            private static double distanceBetween(ServerPlayer serverPlayer, Entity entity) {
-+                double vec3d_dx = serverPlayer.getX() - entity.getX();
-+                double vec3d_dz = serverPlayer.getZ() - entity.getZ();
-+                return vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz;
-+            }
-+
-+            @Override
-+            public int compareTo(@NotNull ChunkMap.TrackedEntity.DistancedServerPlayer o) {
-+                int compareResult = Double.compare(hasBypassPerm ? 0 : this.distanceSqr, o.hasBypassPerm ? 0 : o.distanceSqr);
-+                return compareResult == 0 ? Integer.compare(this.serverPlayer.getId(), o.serverPlayer.getId()) : compareResult;
-+            }
-+        }
-+
 +        public void updatePlayersLimitedAndOrdered(ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players, boolean hasTrackerCandidatesChanged, boolean fullTrackerUpdate) {
 +            if (!hasTrackerCandidatesChanged && !fullTrackerUpdate) {
 +                this.removeInvalidTrackedPlayers(players); // Astatine - prevent stale tracker visibility leaks
 +                return;
 +            }
 +
-+            TreeSet<DistancedServerPlayer> playerSet = new TreeSet<>();
-+            final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
-+
-+            for (int index = 0, len = players.size(); index < len; ++index) {
-+                ServerPlayer player = playersRaw[index];
-+                if (player == null || player == this.entity) continue;
-+                DistancedServerPlayer distancedPlayer = new DistancedServerPlayer(player, this.entity);
-+                if (this.canTrack(player, distancedPlayer.distanceSqr)) {
-+                    playerSet.add(distancedPlayer);
-+                }
-+            }
-+
-+            seenByLock.lock();
++            final int maximumTrackers = Math.max(0, ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity);
++            final EntityTrackerUpdateScratch.Scratch scratch = EntityTrackerUpdateScratch.acquire(maximumTrackers);
 +            try {
-+                Set<ServerPlayer> canBeSeenBy = new ReferenceOpenHashSet<>(Math.min(ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity, playerSet.size()));
-+                java.util.Iterator<DistancedServerPlayer> playerSetIterator = playerSet.iterator();
-+                int count = 0;
-+                while (playerSetIterator.hasNext() && count++ < ShreddedPaperConfiguration.get().optimizations.maximumTrackersPerEntity) { // ShreddedPaper - maximum trackers per entity
-+                    DistancedServerPlayer distancedPlayer = playerSetIterator.next();
-+                    ServerPlayer player = distancedPlayer.serverPlayer();
-+                    canBeSeenBy.add(player);
-+                    if (this.seenBy.add(player.connection)) {
-+                        // Paper start - entity tracking events
-+                        if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
-+                            this.serverEntity.addPairing(player);
-+                        }
-+                        // Paper end - entity tracking events
-+                        this.serverEntity.onPlayerAdd(); // Paper - fix desync when a player is added to the tracker
++                final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
++                for (int index = 0, len = players.size(); index < len; ++index) {
++                    final ServerPlayer player = playersRaw[index];
++                    if (player == null || player == this.entity) continue;
++                    final double vec3dDx = player.getX() - this.entity.getX();
++                    final double vec3dDz = player.getZ() - this.entity.getZ();
++                    final double distanceSqr = vec3dDx * vec3dDx + vec3dDz * vec3dDz;
++                    if (this.canTrack(player, distanceSqr)) {
++                        scratch.offer(player, player.hasMaximumTrackerBypassPermission ? 0.0 : distanceSqr, player.getId());
 +                    }
 +                }
++                scratch.finishSelection();
 +
-+                if (this.seenBy.size() != canBeSeenBy.size()) {
-+                    for (ServerPlayerConnection conn : this.seenBy.toArray(new ServerPlayerConnection[0])) { // avoid CME
-+                        if (!canBeSeenBy.contains(conn.getPlayer()) && this.seenBy.remove(conn)) {
-+                            this.serverEntity.removePairing(conn.getPlayer());
++                seenByLock.lock();
++                try {
++                    for (int index = 0; index < scratch.selectedSize(); ++index) {
++                        final ServerPlayer player = scratch.selectedAt(index);
++                        if (this.seenBy.add(player.connection)) {
++                            // Paper start - entity tracking events
++                            if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
++                                this.serverEntity.addPairing(player);
++                            }
++                            // Paper end - entity tracking events
++                            this.serverEntity.onPlayerAdd(); // Paper - fix desync when a player is added to the tracker
 +                        }
 +                    }
++
++                    if (this.seenBy.size() != scratch.selectedSize()) {
++                        scratch.snapshot(this.seenBy);
++                        for (int index = 0; index < scratch.snapshotSize(); ++index) {
++                            final ServerPlayerConnection conn = scratch.snapshotAt(index);
++                            if (!scratch.isSelected(conn.getPlayer()) && this.seenBy.remove(conn)) {
++                                this.serverEntity.removePairing(conn.getPlayer());
++                            }
++                        }
++                    }
++                } finally {
++                    seenByLock.unlock();
 +                }
 +            } finally {
-+                seenByLock.unlock();
++                EntityTrackerUpdateScratch.release(scratch);
 +            }
 +        }
 +        // ShreddedPaper end - maximum trackers per entity
@@ -472,7 +435,7 @@
          }
  
          @Override
-@@ -1331,58 +_,97 @@
+@@ -1331,58 +_,102 @@
  
          @Override
          public void sendToTrackingPlayersFiltered(Packet<? super ClientGamePacketListener> packet, Predicate<ServerPlayer> filter) {
@@ -542,22 +505,27 @@
 +        }
 +
 +        private void removeInvalidTrackedPlayers(ca.spottedleaf.moonrise.common.list.ReferenceList<ServerPlayer> players) {
-+            final ServerPlayerConnection[] trackedConnections;
-+            this.seenByLock.lock();
++            final EntityTrackerUpdateScratch.Scratch scratch = EntityTrackerUpdateScratch.acquire(0);
 +            try {
-+                if (this.seenBy.isEmpty()) {
-+                    return;
++                this.seenByLock.lock();
++                try {
++                    if (this.seenBy.isEmpty()) {
++                        return;
++                    }
++                    scratch.snapshot(this.seenBy);
++                } finally {
++                    this.seenByLock.unlock();
 +                }
-+                trackedConnections = this.seenBy.toArray(new ServerPlayerConnection[0]);
-+            } finally {
-+                this.seenByLock.unlock();
-+            }
 +
-+            for (final ServerPlayerConnection conn : trackedConnections) {
-+                final ServerPlayer player = conn.getPlayer();
-+                if (!players.contains(player) || !this.canTrack(player)) {
-+                    this.removePlayer(player);
++                for (int index = 0; index < scratch.snapshotSize(); ++index) {
++                    final ServerPlayerConnection conn = scratch.snapshotAt(index);
++                    final ServerPlayer player = conn.getPlayer();
++                    if (!players.contains(player) || !this.canTrack(player)) {
++                        this.removePlayer(player);
++                    }
 +                }
++            } finally {
++                EntityTrackerUpdateScratch.release(scratch);
 +            }
          }
  
