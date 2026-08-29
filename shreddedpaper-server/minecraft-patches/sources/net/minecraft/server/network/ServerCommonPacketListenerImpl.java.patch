@@ -1,6 +1,6 @@
 --- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
-@@ -1,7 +_,11 @@
+@@ -1,7 +_,12 @@
  package net.minecraft.server.network;
  
 +import ca.spottedleaf.moonrise.common.util.TickThread;
@@ -8,6 +8,7 @@
  import com.mojang.logging.LogUtils;
 +import io.multipaper.shreddedpaper.ShreddedPaper;
 +import io.multipaper.shreddedpaper.region.RegionPos;
++import io.multipaper.shreddedpaper.threading.ShreddedPaperTickThread;
 +import io.multipaper.shreddedpaper.threading.SynchronousPluginExecution;
  import io.netty.channel.ChannelFutureListener;
  import net.minecraft.CrashReport;
@@ -21,11 +22,19 @@
          Profiler.get().push("keepAlive");
          long millis = Util.getMillis();
          // Paper start - improve keepalives
-@@ -391,7 +_,7 @@
+@@ -391,7 +_,15 @@
          if (this.processedDisconnect) {
              return;
          }
 -        if (!this.cserver.isPrimaryThread()) {
++        // ShreddedPaper start - region workers must never wait for another owner while holding region locks
++        if (this instanceof ServerGamePacketListenerImpl serverGamePacketListener
++                && ShreddedPaperTickThread.isShreddedPaperTickThread()
++                && !TickThread.isTickThreadFor(serverGamePacketListener.player)) {
++            serverGamePacketListener.disconnectAsync(disconnectionDetails);
++            return;
++        }
++        // ShreddedPaper end - region workers must never wait for another owner while holding region locks
 +        if (this instanceof ServerGamePacketListenerImpl serverGamePacketListener ? !TickThread.isTickThreadFor(serverGamePacketListener.player) : !this.cserver.isPrimaryThread()) { // ShreddedPaper
              org.bukkit.craftbukkit.util.Waitable waitable = new org.bukkit.craftbukkit.util.Waitable() {
                  @Override

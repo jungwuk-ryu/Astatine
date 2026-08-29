@@ -1,0 +1,107 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Sat, 29 Aug 2026 23:29:46 +0900
+Subject: [PATCH] Fix shared natural spawn state races
+
+---
+ .../world/level/LocalMobCapCalculator.java    |  4 +--
+ net/minecraft/world/level/NaturalSpawner.java | 36 +++++++------------
+ .../world/level/PotentialCalculator.java      |  6 ++--
+ 3 files changed, 17 insertions(+), 29 deletions(-)
+
+diff --git a/net/minecraft/world/level/LocalMobCapCalculator.java b/net/minecraft/world/level/LocalMobCapCalculator.java
+index c4497f913e3c9f8460f57b37639133196624cc81..9876cb8253f04c7e2eae68c1a06a0be472c70a46 100644
+--- a/net/minecraft/world/level/LocalMobCapCalculator.java
++++ b/net/minecraft/world/level/LocalMobCapCalculator.java
+@@ -30,2 +30,2 @@ public class LocalMobCapCalculator {
+-    public void addMob(ChunkPos pos, MobCategory category) {
++    public synchronized void addMob(ChunkPos pos, MobCategory category) { // ShreddedPaper - shared by independent region spawners
+         for (ServerPlayer serverPlayer : this.getPlayersNear(pos)) {
+@@ -40,2 +40,2 @@ public class LocalMobCapCalculator {
+-    public boolean canSpawn(MobCategory category, ChunkPos pos) {
++    public synchronized boolean canSpawn(MobCategory category, ChunkPos pos) { // ShreddedPaper - shared by independent region spawners
+         for (ServerPlayer serverPlayer : this.getPlayersNear(pos)) {
+diff --git a/net/minecraft/world/level/NaturalSpawner.java b/net/minecraft/world/level/NaturalSpawner.java
+index 595662356bd868a34ca9d9c09f35dc8e8dc5fc30..afcb7903019cae0043e317e4b9454845ba97f0db 100644
+--- a/net/minecraft/world/level/NaturalSpawner.java
++++ b/net/minecraft/world/level/NaturalSpawner.java
+@@ -607,8 +607,4 @@ public final class NaturalSpawner {
+         private final PotentialCalculator spawnPotential;
+-        private final Object2IntMap<MobCategory> unmodifiableMobCategoryCounts;
+         private final LocalMobCapCalculator localMobCapCalculator;
+-        private @Nullable BlockPos lastCheckedPos;
+-        private @Nullable EntityType<?> lastCheckedType;
+-        private double lastCharge;
+-
++
+         SpawnState(
+@@ -623,3 +619,2 @@ public final class NaturalSpawner {
+             this.localMobCapCalculator = localMobCapCalculator;
+-            this.unmodifiableMobCategoryCounts = Object2IntMaps.unmodifiable(mobCategoryCounts);
+         }
+@@ -627,7 +622,4 @@ public final class NaturalSpawner {
+         private boolean canSpawn(EntityType<?> entityType, BlockPos pos, ChunkAccess chunk) {
+-            this.lastCheckedPos = pos;
+-            this.lastCheckedType = entityType;
+             MobSpawnSettings.MobSpawnCost mobSpawnCost = NaturalSpawner.getRoughBiome(pos, chunk).getMobSettings().getMobSpawnCost(entityType);
+             if (mobSpawnCost == null) {
+-                this.lastCharge = 0.0;
+                 return true;
+@@ -635,3 +627,2 @@ public final class NaturalSpawner {
+                 double charge = mobSpawnCost.charge();
+-                this.lastCharge = charge;
+                 double potentialEnergyChange = this.spawnPotential.getPotentialEnergyChange(pos, charge);
+@@ -644,17 +635,10 @@ public final class NaturalSpawner {
+             BlockPos blockPos = mob.blockPosition();
+-            double d;
+-            if (blockPos.equals(this.lastCheckedPos) && type == this.lastCheckedType) {
+-                d = this.lastCharge;
+-            } else {
+-                MobSpawnSettings.MobSpawnCost mobSpawnCost = NaturalSpawner.getRoughBiome(blockPos, chunk).getMobSettings().getMobSpawnCost(type);
+-                if (mobSpawnCost != null) {
+-                    d = mobSpawnCost.charge();
+-                } else {
+-                    d = 0.0;
+-                }
+-            }
++            MobSpawnSettings.MobSpawnCost mobSpawnCost = NaturalSpawner.getRoughBiome(blockPos, chunk).getMobSettings().getMobSpawnCost(type);
++            double charge = mobSpawnCost == null ? 0.0 : mobSpawnCost.charge();
+-
++
+-            this.spawnPotential.addCharge(blockPos, d);
++            this.spawnPotential.addCharge(blockPos, charge);
+             MobCategory category = type.getCategory();
+-            this.mobCategoryCounts.addTo(category, 1);
++            synchronized (this.mobCategoryCounts) {
++                this.mobCategoryCounts.addTo(category, 1);
++            }
+             if (this.localMobCapCalculator != null) this.localMobCapCalculator.addMob(new ChunkPos(blockPos), category); // Paper - Optional per player mob spawns
+@@ -667,3 +651,5 @@ public final class NaturalSpawner {
+         public Object2IntMap<MobCategory> getMobCategoryCounts() {
+-            return this.unmodifiableMobCategoryCounts;
++            synchronized (this.mobCategoryCounts) {
++                return Object2IntMaps.unmodifiable(new Object2IntOpenHashMap<>(this.mobCategoryCounts));
++            }
+         }
+@@ -674,3 +660,5 @@ public final class NaturalSpawner {
+             // CraftBukkit end
+-            return this.mobCategoryCounts.getInt(category) < i;
++            synchronized (this.mobCategoryCounts) {
++                return this.mobCategoryCounts.getInt(category) < i;
++            }
+         }
+diff --git a/net/minecraft/world/level/PotentialCalculator.java b/net/minecraft/world/level/PotentialCalculator.java
+index b825d96de5b8a0c5f1c9ad07026ce81c99117f41..e3f6e3a5ba2180a56967c6e238345d4639b0635b 100644
+--- a/net/minecraft/world/level/PotentialCalculator.java
++++ b/net/minecraft/world/level/PotentialCalculator.java
+@@ -10,4 +10,4 @@ public class PotentialCalculator {
+-    public void addCharge(BlockPos pos, double charge) {
++    public synchronized void addCharge(BlockPos pos, double charge) {
+         if (charge != 0.0) {
+-            this.charges.add(new PotentialCalculator.PointCharge(pos, charge)); // ShreddedPaper - doesn't need a lock, if a value isn't added it's not a big deal
++            this.charges.add(new PotentialCalculator.PointCharge(pos, charge)); // ShreddedPaper - shared spawn state is updated by independent regions
+         }
+@@ -16,2 +16,2 @@ public class PotentialCalculator {
+-    public double getPotentialEnergyChange(BlockPos pos, double charge) {
++    public synchronized double getPotentialEnergyChange(BlockPos pos, double charge) {
+         if (charge == 0.0) {
