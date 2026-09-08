@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Tue, 8 Sep 2026 09:48:32 +0900
+Subject: [PATCH] perf: index player contact candidates in crowded sections
+
+---
+ .../level/entity/ChunkEntitySlices.java       | 24 +++++++++++++++++++
+ net/minecraft/world/entity/player/Player.java |  2 +-
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/ca/spottedleaf/moonrise/patches/chunk_system/level/entity/ChunkEntitySlices.java b/ca/spottedleaf/moonrise/patches/chunk_system/level/entity/ChunkEntitySlices.java
+index 2dfd412..10fae2f 100644
+--- a/ca/spottedleaf/moonrise/patches/chunk_system/level/entity/ChunkEntitySlices.java
++++ b/ca/spottedleaf/moonrise/patches/chunk_system/level/entity/ChunkEntitySlices.java
+@@ -8,2 +8,3 @@ import com.google.common.collect.ImmutableList;
+ import com.mojang.logging.LogUtils;
++import io.multipaper.shreddedpaper.entity.PlayerTouchQuery;
+ import it.unimi.dsi.fastutil.objects.Reference2ObjectMap;
+@@ -51,2 +52,3 @@ public final class ChunkEntitySlices {
+     private final EntityCollectionBySection hardCollidingEntities;
++    private EntityCollectionBySection playerTouchEntities; // Astatine - omit no-op player contacts
+     private final Reference2ObjectOpenHashMap<Class<? extends Entity>, EntityCollectionBySection> entitiesByClass;
+@@ -268,2 +270,9 @@ public final class ChunkEntitySlices {
+
++        if (PlayerTouchQuery.isCandidate(entity)) {
++            if (this.playerTouchEntities == null) {
++                this.playerTouchEntities = new EntityCollectionBySection(this);
++            }
++            this.playerTouchEntities.addEntity(entity, sectionIndex);
++        }
++
+         if (((ChunkSystemEntity)entity).moonrise$isHardColliding()) {
+@@ -302,2 +311,9 @@ public final class ChunkEntitySlices {
+
++        if (this.playerTouchEntities != null && PlayerTouchQuery.isCandidate(entity)) {
++            this.playerTouchEntities.removeEntity(entity, sectionIndex);
++            if (this.playerTouchEntities.count == 0) {
++                this.playerTouchEntities = null;
++            }
++        }
++
+         if (((ChunkSystemEntity)entity).moonrise$isHardColliding()) {
+@@ -326,2 +342,10 @@ public final class ChunkEntitySlices {
+     public void getEntities(final Entity except, final AABB box, final List<Entity> into, final Predicate<? super Entity> predicate) {
++        // Player.aiStep keeps the normal query, ordering, spectator filter and platform hooks,
++        // but must not walk every other player in a crowded section for an empty playerTouch.
++        if (predicate == PlayerTouchQuery.PREDICATE) {
++            if (this.playerTouchEntities != null) {
++                this.playerTouchEntities.getEntities(except, box, into, predicate);
++            }
++            return;
++        }
+         this.allEntities.getEntities(except, box, into, predicate);
+diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
+index bbc5f85..608f4c7 100644
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -549,3 +549,3 @@ public abstract class Player extends Avatar implements ContainerUser {
+
+-            List<Entity> entities = this.level().getEntities(this, aabb);
++            List<Entity> entities = this.level().getEntities(this, aabb, io.multipaper.shreddedpaper.entity.PlayerTouchQuery.PREDICATE); // Astatine - indexed player contacts
+             List<Entity> list = Lists.newArrayList();

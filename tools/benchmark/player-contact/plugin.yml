@@ -1,0 +1,12 @@
+name: PlayerContactBenchmark
+version: '1.0'
+main: io.multipaper.benchmark.PlayerContactBenchmark
+api-version: '1.21.11'
+folia-supported: true
+commands:
+  contactbench:
+    description: Measure crowded section contact queries on an isolated test server
+    permission: contactbench.run
+permissions:
+  contactbench.run:
+    default: op
