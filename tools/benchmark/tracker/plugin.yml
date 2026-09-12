@@ -1,0 +1,12 @@
+name: TrackerBenchmark
+version: '1.0'
+main: io.multipaper.benchmark.TrackerBenchmark
+api-version: '1.21.11'
+folia-supported: true
+commands:
+  trackerbench:
+    description: Measure tracker validation on an empty isolated server
+    permission: trackerbench.run
+permissions:
+  trackerbench.run:
+    default: op

@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Astatine <noreply@astatine.io>
+Date: Sat, 12 Sep 2026 06:00:00 +0000
+Subject: [PATCH] Validate unlimited tracker viewers in one pass
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 9c2826e..f5013a0 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -1272,15 +1272,33 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             // ShreddedPaper end - trackerFullUpdateFrequency
+
+             final ServerPlayer[] playersRaw = players.getRawDataUnchecked();
+-
++            boolean trackerMembershipChanged = false;
++            int trackedCandidates = 0;
+             for (int i = 0, len = players.size(); i < len; ++i) {
+                 try { // ShreddedPaper - concurrent modification
+                 final ServerPlayer player = playersRaw[i];
+-                if (fullTrackerUpdate || !this.seenBy.contains(player.connection)) this.updatePlayer(player); // ShreddedPaper - trackerFullUpdateFrequency
+-                } catch (IndexOutOfBoundsException | NullPointerException ignored) {} // ShreddedPaper - concurrent modification
++                final boolean tracked = this.seenBy.contains(player.connection);
++                if (tracked) ++trackedCandidates;
++                // Validate existing and prospective viewers in the same pass. Visibility,
++                // distance and sent-chunk state are still read on every tick.
++                if (tracked != this.canTrack(player)) {
++                    trackerMembershipChanged = true;
++                    this.updatePlayer(player);
++                }
++                } catch (IndexOutOfBoundsException | NullPointerException ignored) {
++                    trackerMembershipChanged = true;
++                } // ShreddedPaper - concurrent modification
+             }
+
+-            this.removeInvalidTrackedPlayers(players); // Astatine - prevent stale tracker visibility leaks
++            // A stable pass already validated every viewer, without copying seenBy or
++            // looking every viewer up in players again. Pairing callbacks can invalidate
++            // earlier viewers, so retain the snapshot sweep whenever membership changes.
++            // Compare counts to catch viewers added through an external updatePlayer call
++            // that are outside the candidates, and reread the stamp for mid-pass changes.
++            if (trackerMembershipChanged || trackedCandidates != this.seenBy.size()
++                || lastChunkUpdate != chunk.getUpdateCount() || lastTrackedChunk != chunk) {
++                this.removeInvalidTrackedPlayers(players);
++            }
+         }
+
+         @Override

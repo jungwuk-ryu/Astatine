@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "minecraft-protocol": "1.68.0",
+    "minecraft-data": "3.116.0"
+  }
+}
