@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Sat, 19 Sep 2026 12:00:00 +0900
+Subject: [PATCH] fix: order player saves before shutdown and reconnect
+
+---
+diff --git a/net/minecraft/world/level/storage/PlayerDataStorage.java b/net/minecraft/world/level/storage/PlayerDataStorage.java
+index 78ee209..8a9201d 100644
+--- a/net/minecraft/world/level/storage/PlayerDataStorage.java
++++ b/net/minecraft/world/level/storage/PlayerDataStorage.java
+@@ -11,3 +11,2 @@ import java.time.ZonedDateTime;
+ import java.util.Optional;
+-import java.util.concurrent.Executor;
+ 
+@@ -30,4 +29,3 @@ public class PlayerDataStorage {
+ 
+-    private static final Executor IO_WORKER = Util.ioPool(); // ShreddedPaper
+-    private static final Object[] SHREDDEDPAPER_PLAYER_SAVE_LOCKS = java.util.stream.IntStream.range(0, 256).mapToObj(i -> new Object()).toArray(Object[]::new); // ShreddedPaper
++    private static final io.multipaper.shreddedpaper.util.PlayerDataSaveQueue SAVE_QUEUE = new io.multipaper.shreddedpaper.util.PlayerDataSaveQueue(Util.ioPool());
+ 
+@@ -49,20 +47,18 @@ public class PlayerDataStorage {
+                 Path path1 = null;
+-                synchronized (SHREDDEDPAPER_PLAYER_SAVE_LOCKS[Math.floorMod(playerUuid.hashCode(), SHREDDEDPAPER_PLAYER_SAVE_LOCKS.length)]) {
+-                    try {
+-                        Path path = this.playerDir.toPath();
+-                        path1 = Files.createTempFile(path, playerUuid + "-", ".dat");
+-                        NbtIo.writeCompressed(compoundTag, path1);
+-                        Path path2 = path.resolve(playerUuid + ".dat");
+-                        Path path3 = path.resolve(playerUuid + ".dat_old");
+-                        Util.safeReplaceFile(path2, path1, path3);
+-                    } catch (Exception e) {
+-                        LOGGER.warn("Failed to save player data for {}", playerName, e);
+-                        throw new RuntimeException(e);
+-                    } finally {
+-                        if (path1 != null) {
+-                            try {
+-                                Files.deleteIfExists(path1);
+-                            } catch (Exception e) {
+-                                LOGGER.warn("Failed to delete temporary player data save for {}", playerName, e);
+-                            }
++                try {
++                    Path path = this.playerDir.toPath();
++                    path1 = Files.createTempFile(path, playerUuid + "-", ".dat");
++                    NbtIo.writeCompressed(compoundTag, path1);
++                    Path path2 = path.resolve(playerUuid + ".dat");
++                    Path path3 = path.resolve(playerUuid + ".dat_old");
++                    Util.safeReplaceFile(path2, path1, path3);
++                } catch (Exception e) {
++                    LOGGER.warn("Failed to save player data for {}", playerName, e);
++                    throw new RuntimeException(e);
++                } finally {
++                    if (path1 != null) {
++                        try {
++                            Files.deleteIfExists(path1);
++                        } catch (Exception e) {
++                            LOGGER.warn("Failed to delete temporary player data save for {}", playerName, e);
+                         }
+@@ -71,3 +67,3 @@ public class PlayerDataStorage {
+             }; // ShreddedPaper - write async
+-            if (ShreddedPaperConfiguration.get().optimizations.writePlayerSavesAsync && !TickThread.isShutdownThread()) IO_WORKER.execute(r); else r.run(); // ShreddedPaper - write async
++            SAVE_QUEUE.submit(playerUuid, r, ShreddedPaperConfiguration.get().optimizations.writePlayerSavesAsync && !TickThread.isShutdownThread());
+         } catch (Exception var11) {
+@@ -92,2 +88,3 @@ public class PlayerDataStorage {
+     private Optional<CompoundTag> load(NameAndId nameAndId, String suffix) {
++        SAVE_QUEUE.await(nameAndId.id().toString());
+         File file = new File(this.playerDir, nameAndId.id() + suffix);
