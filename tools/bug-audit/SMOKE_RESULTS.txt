@@ -1,0 +1,19 @@
+Date: 2026-09-19 Asia/Seoul
+Final server code: a2efc49 plus the preserved existing working-tree ownership change.
+Disposable loopback server, two region worker threads, no clients.
+
+SMOKE_WORKDIR=/tmp/astatine-bug-smoke-7mndem1u
+SMOKE_JAR_SHA256=b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97
+[17:16:28 INFO]: Done (24.390s)! For help, type "help"
+[17:16:34 INFO]: [WorldClockSmoke] AUDIT_CLOCK target=5.0 ticks=10 seconds=2.002803679 observed=4.993000614515049
+[17:16:37 INFO]: [WorldClockSmoke] AUDIT_CLOCK target=40.0 ticks=80 seconds=2.000513883 observed=39.98972498007903
+[17:16:38 INFO]: [WorldClockSmoke] AUDIT_UNLOAD callbacks_before=112 callbacks_after=0
+[17:16:38 INFO]: [WorldClockSmoke] AUDIT_CLOSED_WORLD_REJECTED
+[17:16:39 INFO]: [WorldClockSmoke] AUDIT_RELOAD callbacks=17
+[17:16:39 INFO]: [WorldClockSmoke] AUDIT_SMOKE_PASS
+SMOKE_PROCESS_EXIT=0
+
+Console error/exception scan: no matches.
+Paperclip ZIP integrity: passed.
+Eight key classes in the server build JAR exactly match compilation output.
+The smoke-loaded server JAR exactly matches the final bundler server entry.

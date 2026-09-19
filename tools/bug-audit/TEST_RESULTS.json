@@ -1,0 +1,112 @@
+{
+  "total": {
+    "tests": 9063,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 22
+  },
+  "report_files": 135,
+  "audit": [
+    {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.FluidTickLimitRegressionTest"
+    },
+    {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.IndependentRegionLifecycleTest"
+    },
+    {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.PlayerDataSaveQueueTest"
+    },
+    {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.PlayerDataStorageRegressionTest"
+    },
+    {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.RaidConcurrencyRegressionTest"
+    },
+    {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.RegionSchedulerApiRegressionTest"
+    },
+    {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "name": "io.multipaper.shreddedpaper.audit.RegionStorageRegressionTest"
+    }
+  ],
+  "full_suite_revision": "291b29e",
+  "targeted_after_closed_world_registration_guard": [
+    {
+      "name": "io.multipaper.shreddedpaper.audit.RegionSchedulerApiRegressionTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "io.multipaper.shreddedpaper.audit.IndependentRegionLifecycleTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "distinct_audit_cases_verified": 23,
+  "final_targeted_revision": "4958141",
+  "final_production_code_revision": "a2efc49",
+  "final_targeted": [
+    {
+      "name": "io.multipaper.shreddedpaper.audit.IndependentRegionLifecycleTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "io.multipaper.shreddedpaper.audit.RegionSchedulerApiRegressionTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "io.multipaper.shreddedpaper.audit.RegionStorageRegressionTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "full_suite_note": "Full suite at 291b29e; Slow-tag tests excluded by repository defaults. Follow-up changes verified with the separately listed targeted tests.",
+  "artifact": {
+    "paperclip_sha256": "b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97",
+    "zip_integrity": "pass",
+    "key_classes_compilation_to_server_jar_byte_equal": 8,
+    "smoke_server_to_bundler_server_byte_equal": true,
+    "includes_preexisting_uncommitted_ownership_change": true,
+    "production_deployment": false
+  }
+}

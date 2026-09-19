@@ -1,0 +1,27 @@
+Pre-fix evidence excerpts. Baseline: 696da21 plus the then-current working tree.
+
+CONFIRMED negative-period: fixed-rate call accepted -2 and returned a one-shot task
+CONFIRMED buffered-clear: flushed file cannot be reopened: Invalid sector data: org.bxteam.divinemc.region.type.BufferedRegionFile$Sector@1ee3181d in /tmp/junit-7180379614278002535/r.0.0.b_linear
+CONFIRMED one-shot-cancel: executed once, reports CANCELLED and a repeating-task cancellation result
+CONFIRMED fluid-limit: max-fluid-ticks=3, dispatcher passed max-block-ticks=17
+CONFIRMED raid-id: 41712 duplicate IDs in 360000 concurrent allocations
+CONFIRMED buffered-write-failure: prior readable chunk replaced by an unwritten sector
+CONFIRMED player-save-order: newest snapshot 2 was replaced by older snapshot 1
+CONFIRMED linear-bitmap: header says absent while untouched chunk bytes remain readable
+CONFIRMED raid-cooldown: region mutation throws ConcurrentModificationException in global Raids.tick
+
+lifecycle-before.log
+IndependentRegionLifecycleTestSuite > JUnit Jupiter > IndependentRegionLifecycleTest > aClosedWorldDoesNotRunOrRequeueItsRegion() FAILED
+But found these interactions on mock 'shreddedPaperChunkTicker':
+IndependentRegionLifecycleTestSuite > JUnit Jupiter > IndependentRegionLifecycleTest > regionCadenceFollowsTheConfiguredTickRate() FAILED
+org.opentest4j.AssertionFailedError: expected: <200000000> but was: <50000000>
+> Task :shreddedpaper-server:test FAILED
+BUILD FAILED in 31s
+
+resource-failure-before.log
+RegionStorageRegressionTestSuite > JUnit Jupiter > RegionStorageRegressionTest > bufferedCloseFailureStillClosesTheChannel(Path) FAILED
+org.opentest4j.AssertionFailedError: failed close must still release the channel ==> expected: <false> but was: <true>
+RegionStorageRegressionTestSuite > JUnit Jupiter > RegionStorageRegressionTest > bufferedFailedOpenClosesItsFileDescriptor(Path) FAILED
+org.opentest4j.AssertionFailedError: failed constructors must not leave channels open ==> expected: <0> but was: <20>
+> Task :shreddedpaper-server:test FAILED
+BUILD FAILED in 42s
