@@ -304,7 +304,7 @@ public class ShreddedPaperChunkTicker {
                 level.blockTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickBlock);
             }
 
-            level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxBlockTicks, level::tickFluid);
+            level.fluidTicks.tick(cell, level.getGameTime(), level.paperConfig().environment.maxFluidTicks, level::tickFluid);
             fluidPhase = false;
 
             index++;
