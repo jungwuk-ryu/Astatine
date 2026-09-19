@@ -1,0 +1,5 @@
+name: WorldClockSmoke
+version: '1.0'
+main: io.multipaper.audit.WorldClockSmoke
+api-version: '1.21'
+folia-supported: true
