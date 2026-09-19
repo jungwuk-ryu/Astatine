@@ -34,21 +34,24 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
 
     @Override
     public @NotNull ScheduledTask runDelayed(@NotNull Plugin plugin, @NotNull World world, int chunkX, int chunkZ, @NotNull Consumer<ScheduledTask> task, long delayTicks) {
-        return runAtFixedRate(plugin, world, chunkX, chunkZ, task, delayTicks, -1);
+        return schedule(plugin, world, chunkX, chunkZ, task, delayTicks, -1);
     }
 
     @Override
     public @NotNull ScheduledTask runAtFixedRate(@NotNull Plugin plugin, @NotNull World world, int chunkX, int chunkZ, @NotNull Consumer<ScheduledTask> task, long initialDelayTicks, long periodTicks) {
+        if (periodTicks <= 0) {
+            throw new IllegalArgumentException("Period ticks may not be <= 0");
+        }
+        return schedule(plugin, world, chunkX, chunkZ, task, initialDelayTicks, periodTicks);
+    }
+
+    private ScheduledTask schedule(Plugin plugin, World world, int chunkX, int chunkZ, Consumer<ScheduledTask> task, long initialDelayTicks, long periodTicks) {
         Validate.notNull(plugin, "Plugin may not be null");
         Validate.notNull(world, "World may not be null");
         Validate.notNull(task, "Task may not be null");
         if (initialDelayTicks <= 0) {
             throw new IllegalArgumentException("Initial delay ticks may not be <= 0");
         }
-        if (periodTicks == 0) {
-            throw new IllegalArgumentException("Period ticks may not be <= 0");
-        }
-
         if (!plugin.isEnabled()) {
             throw new IllegalPluginAccessException("Plugin attempted to register task while disabled");
         }
@@ -97,25 +100,27 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
 
         @Override
         public @NotNull CancelledState cancel() {
-            if (executionState.compareAndSet(ExecutionState.IDLE, ExecutionState.CANCELLED)) {
-                return CancelledState.CANCELLED_BY_CALLER;
-            }
-            if (executionState.compareAndSet(ExecutionState.RUNNING, ExecutionState.CANCELLED_RUNNING)) {
-                if (isRepeatingTask()) {
-                    return CancelledState.NEXT_RUNS_CANCELLED;
-                } else {
-                    return CancelledState.RUNNING;
+            for (;;) {
+                final ExecutionState state = executionState.get();
+                switch (state) {
+                    case IDLE -> {
+                        if (executionState.compareAndSet(state, ExecutionState.CANCELLED)) {
+                            return CancelledState.CANCELLED_BY_CALLER;
+                        }
+                    }
+                    case RUNNING -> {
+                        if (!isRepeatingTask()) {
+                            return CancelledState.RUNNING;
+                        }
+                        if (executionState.compareAndSet(state, ExecutionState.CANCELLED_RUNNING)) {
+                            return CancelledState.NEXT_RUNS_CANCELLED;
+                        }
+                    }
+                    case CANCELLED -> { return CancelledState.CANCELLED_ALREADY; }
+                    case CANCELLED_RUNNING -> { return CancelledState.NEXT_RUNS_CANCELLED_ALREADY; }
+                    case FINISHED -> { return CancelledState.ALREADY_EXECUTED; }
                 }
             }
-            return switch (executionState.get()) {
-                case IDLE, RUNNING -> {
-                    executionState.set(ExecutionState.CANCELLED);
-                    yield CancelledState.CANCELLED_BY_CALLER;
-                }
-                case CANCELLED -> CancelledState.CANCELLED_ALREADY;
-                case CANCELLED_RUNNING -> CancelledState.NEXT_RUNS_CANCELLED_ALREADY;
-                case FINISHED -> CancelledState.ALREADY_EXECUTED;
-            };
         }
 
         @Override
@@ -161,4 +166,3 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
         }
     }
 }
-
