@@ -1,0 +1,15 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Sat, 19 Sep 2026 12:00:00 +0900
+Subject: [PATCH] fix: publish configured tick period to region workers
+
+---
+diff --git a/net/minecraft/world/TickRateManager.java b/net/minecraft/world/TickRateManager.java
+index 3dfda3c..65f5509 100644
+--- a/net/minecraft/world/TickRateManager.java
++++ b/net/minecraft/world/TickRateManager.java
+@@ -9,3 +9,3 @@ public class TickRateManager {
+     protected float tickrate = 20.0F;
+-    protected long nanosecondsPerTick = TimeUtil.NANOSECONDS_PER_SECOND / 20L;
++    protected volatile long nanosecondsPerTick = TimeUtil.NANOSECONDS_PER_SECOND / 20L; // Astatine - read by independent region workers
+     protected int frozenTicksToRun = 0;

@@ -40,6 +40,11 @@ public final class RegionRuntimeState {
         return getOrCreate(level, owner, CreationReason.REGION);
     }
 
+    /** Called only after the world has stopped ticking and its chunk I/O has closed. */
+    public static void forgetClosedWorld(final ServerLevel level) {
+        STATES.entrySet().removeIf(entry -> entry.getValue().level == level);
+    }
+
     public static RegionRuntimeState getOrCreate(final ServerLevel level, final RegionOwner owner, final CreationReason reason) {
         final RegionRuntimeKey key = new RegionRuntimeKey(level.uuid, owner.id());
         return STATES.computeIfAbsent(key, ignored -> new RegionRuntimeState(level, owner, reason));

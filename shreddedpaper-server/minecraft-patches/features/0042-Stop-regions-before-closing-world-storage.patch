@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Sat, 19 Sep 2026 12:00:00 +0900
+Subject: [PATCH] fix: stop regions before closing world storage
+
+---
+diff --git a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkHolderManager.java b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkHolderManager.java
+index 329c5ac..3c7e7b6 100644
+--- a/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkHolderManager.java
++++ b/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkHolderManager.java
+@@ -203,2 +203,3 @@ public final class ChunkHolderManager {
+         TickThread.ensureTickThread("Closing world off-main");
++        io.multipaper.shreddedpaper.threading.region.RegionTickScheduler.stopWorld(this.world);
+         if (halt) {
+@@ -237,2 +238,3 @@ public final class ChunkHolderManager {
+         this.taskScheduler.setShutdown(true);
++        io.multipaper.shreddedpaper.threading.region.RegionRuntimeState.forgetClosedWorld(this.world);
+     }

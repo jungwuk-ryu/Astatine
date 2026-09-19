@@ -16,6 +16,23 @@ public class ShreddedPaperRegionScheduler {
     private static final Logger LOGGER = LogUtils.getClassLogger();
 
     private final ShreddedPaperRegionLocker locker = new ShreddedPaperRegionLocker();
+    private final java.util.concurrent.locks.ReentrantReadWriteLock tickLifecycleLock = new java.util.concurrent.locks.ReentrantReadWriteLock(true);
+    private volatile boolean independentTickingClosed;
+
+    public java.util.concurrent.locks.ReentrantReadWriteLock tickLifecycleLock() {
+        return this.tickLifecycleLock;
+    }
+
+    public boolean isIndependentTickingClosed() {
+        return this.independentTickingClosed;
+    }
+
+    public void closeIndependentTicking() {
+        if (!this.tickLifecycleLock.isWriteLockedByCurrentThread()) {
+            throw new IllegalStateException("Closing region ticking requires the world lifecycle lock");
+        }
+        this.independentTickingClosed = true;
+    }
 
     public static CompletableFuture<Void> schedule(ServerLevel level, RegionPos regionPos, Runnable runnable) {
         return level.chunkScheduler.schedule(regionPos, runnable);

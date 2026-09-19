@@ -54,6 +54,14 @@
  
          String name = creator.name();
          ChunkGenerator chunkGenerator = creator.generator();
+@@ -1364,6 +_,7 @@
+             return false;
+         }
+ 
++        io.multipaper.shreddedpaper.threading.region.RegionTickScheduler.stopWorld(handle);
+         try {
+             if (save) {
+                 handle.save(null, true, false); // Paper - Fix saving in unloadWorld
 @@ -2941,6 +_,7 @@
          if (!io.papermc.paper.configuration.GlobalConfiguration.get().misc.loadPermissionsYmlBeforePlugins) loadCustomPermissions();
          DefaultPermissions.registerCorePermissions();

@@ -89,13 +89,48 @@ public final class RegionTickScheduler {
         }
     }
 
+    /** Drain active ticks before world saving closes its chunk and entity stores. */
+    public static void stopWorld(final ServerLevel level) {
+        if (ShreddedPaperTickThread.isShreddedPaperTickThread() || level.chunkScheduler.tickLifecycleLock().getReadHoldCount() != 0) {
+            throw new IllegalStateException("Worlds must be unloaded from the global scheduler");
+        }
+        final var lock = level.chunkScheduler.tickLifecycleLock().writeLock();
+        try {
+            if (!lock.tryLock(60L, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for region ticks to finish before world unload");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while stopping world region ticks", interrupted);
+        }
+        try {
+            level.chunkScheduler.closeIndependentTicking();
+            final RegionTickScheduler scheduler = global;
+            if (scheduler != null) {
+                for (final RegionHandle handle : scheduler.regions.values()) {
+                    if (handle.level == level) {
+                        handle.retire();
+                        scheduler.normalQueue.remove(handle);
+                        scheduler.degradedQueue.remove(handle);
+                    }
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static boolean worldClosed(final ServerLevel level) {
+        return level.chunkScheduler.isIndependentTickingClosed() || level.moonrise$getChunkTaskScheduler().hasShutdown();
+    }
+
     public void registerRegion(
             final ServerLevel level,
             final LevelChunkRegion region,
             final ShreddedPaperChunkTicker ticker,
             final ShreddedPaperChunkTicker.ScheduledTickContext tickContext
     ) {
-        this.registerRegion(level, region, ticker, tickContext, System.nanoTime() + TIME_BETWEEN_TICKS_NANOS);
+        this.registerRegion(level, region, ticker, tickContext, System.nanoTime() + tickIntervalNanos(level));
     }
 
     public void registerRegionForCurrentTick(
@@ -127,6 +162,20 @@ public final class RegionTickScheduler {
             final ShreddedPaperChunkTicker.ScheduledTickContext tickContext,
             final long firstStart
     ) {
+        final var lock = level.chunkScheduler.tickLifecycleLock().readLock();
+        lock.lock();
+        try {
+            if (!worldClosed(level)) {
+                this.registerOpenRegion(level, region, ticker, tickContext, firstStart);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void registerOpenRegion(final ServerLevel level, final LevelChunkRegion region,
+            final ShreddedPaperChunkTicker ticker, final ShreddedPaperChunkTicker.ScheduledTickContext tickContext,
+            final long firstStart) {
         if (!this.running.get()) {
             return;
         }
@@ -145,6 +194,10 @@ public final class RegionTickScheduler {
             this.enqueue(created);
             return created;
         });
+    }
+
+    private static long tickIntervalNanos(final ServerLevel level) {
+        return Math.max(1L, level.tickRateManager().nanosecondsPerTick());
     }
 
     public List<RegionTickSnapshot> snapshots() {
@@ -451,6 +504,20 @@ public final class RegionTickScheduler {
         }
 
         private void runOneTick() {
+            final var lock = this.level.chunkScheduler.tickLifecycleLock().readLock();
+            lock.lock();
+            try {
+                if (this.retired.get() || worldClosed(this.level)) {
+                    this.retire();
+                    return;
+                }
+                this.runOneTickWhileWorldOpen();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private void runOneTickWhileWorldOpen() {
             if (!this.ticking.compareAndSet(false, true)) {
                 return;
             }
@@ -583,8 +650,9 @@ public final class RegionTickScheduler {
                     return;
                 }
 
-                final long periodsAhead = Math.max(1L, ((actualStart - this.idealStartNanos) / TIME_BETWEEN_TICKS_NANOS) + 1L);
-                this.idealStartNanos += periodsAhead * TIME_BETWEEN_TICKS_NANOS;
+                final long tickInterval = tickIntervalNanos(this.level);
+                final long periodsAhead = Math.max(1L, ((actualStart - this.idealStartNanos) / tickInterval) + 1L);
+                this.idealStartNanos += periodsAhead * tickInterval;
                 this.scheduledStartNanos = Math.max(tickEnd, this.idealStartNanos);
                 final ShreddedPaperChunkTicker.ScheduledTickContext next = this.nextContext.getAndSet(null);
                 if (next != null) {
