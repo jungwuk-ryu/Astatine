@@ -37,6 +37,22 @@ class RegionSchedulerApiRegressionTest {
     }
 
     @Test
+    void unloadedWorldRejectsNewTasksWithoutEnqueuing() throws Exception {
+        SchedulerFixture fixture = schedulerFixture();
+        var scheduler = fixture.world.getHandle().chunkScheduler;
+        var lock = scheduler.tickLifecycleLock().writeLock();
+        lock.lock();
+        try {
+            scheduler.closeIndependentTicking();
+        } finally {
+            lock.unlock();
+        }
+        assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                () -> fixture.api.run(fixture.plugin, fixture.world, 0, 0, ignored -> {}));
+        assertNull(fixture.queued.get());
+    }
+
+    @Test
     void runningOneShotCannotBeCancelledAndFinishesNormally() throws Exception {
         SchedulerFixture fixture = schedulerFixture();
         AtomicReference<ScheduledTask.CancelledState> first = new AtomicReference<>();
@@ -86,6 +102,7 @@ class RegionSchedulerApiRegressionTest {
         when(plugin.isEnabled()).thenReturn(true);
         CraftWorld world = mock(CraftWorld.class);
         ServerLevel level = mock(ServerLevel.class);
+        setField(level, "chunkScheduler", new io.multipaper.shreddedpaper.threading.ShreddedPaperRegionScheduler());
         ServerChunkCache chunks = mock(ServerChunkCache.class);
         LevelChunkRegionMap regions = mock(LevelChunkRegionMap.class);
         when(world.getHandle()).thenReturn(level);

@@ -56,7 +56,17 @@ public class ShreddedPaperRegionSchedulerApiImpl implements RegionScheduler {
             throw new IllegalPluginAccessException("Plugin attempted to register task while disabled");
         }
 
-        return new RegionScheduledTask(plugin, world, chunkX, chunkZ, task, initialDelayTicks, periodTicks);
+        final ServerLevel level = ((CraftWorld) world).getHandle();
+        final var lifecycleLock = level.chunkScheduler.tickLifecycleLock().readLock();
+        lifecycleLock.lock();
+        try {
+            if (level.chunkScheduler.isIndependentTickingClosed()) {
+                throw new RejectedExecutionException("Cannot schedule a region task for an unloaded world");
+            }
+            return new RegionScheduledTask(plugin, world, chunkX, chunkZ, task, initialDelayTicks, periodTicks);
+        } finally {
+            lifecycleLock.unlock();
+        }
     }
 
     private class RegionScheduledTask implements ScheduledTask, Runnable {
