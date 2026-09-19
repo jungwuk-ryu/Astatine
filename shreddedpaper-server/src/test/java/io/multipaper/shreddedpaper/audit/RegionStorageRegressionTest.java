@@ -18,6 +18,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.*;
@@ -107,8 +109,9 @@ class RegionStorageRegressionTest {
         }
     }
 
-    @Test
-    void bufferedWriteFailurePreservesThePreviouslyDurableSector(@TempDir Path dir) throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void bufferedWriteFailurePreservesThePreviouslyDurableSector(boolean partialWrite, @TempDir Path dir) throws Exception {
         Path path = dir.resolve("r.0.0.b_linear");
         ChunkPos pos = new ChunkPos(0, 0);
         BufferedRegionFile writer = new BufferedRegionFile(path, 1);
@@ -119,7 +122,22 @@ class RegionStorageRegressionTest {
             writer.write(pos, ByteBuffer.wrap(new byte[] {11, 12, 13}));
             writer.flush();
             FileChannel failing = mock(FileChannel.class, delegatesTo(real));
-            doThrow(new IOException("injected write failure")).when(failing).write(any(ByteBuffer.class), anyLong());
+            var first = new java.util.concurrent.atomic.AtomicBoolean(true);
+            doAnswer(invocation -> {
+                if (partialWrite && first.getAndSet(false)) {
+                    ByteBuffer data = invocation.getArgument(0);
+                    int limit = data.limit();
+                    try {
+                        data.limit(data.position() + 2);
+                        int written = real.write(data, invocation.getArgument(1));
+                        assertEquals(2, written);
+                        return written;
+                    } finally {
+                        data.limit(limit);
+                    }
+                }
+                throw new IOException("injected write failure");
+            }).when(failing).write(any(ByteBuffer.class), anyLong());
             channelField.set(writer, failing);
             assertThrows(IOException.class, () -> writer.write(pos, ByteBuffer.wrap(new byte[] {21, 22, 23, 24})));
             channelField.set(writer, real);
