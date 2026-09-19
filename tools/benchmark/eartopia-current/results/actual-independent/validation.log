@@ -1,0 +1,20 @@
+[33;1m[16:54:35 WARN]: [org.bxteam.divinemc.config.DivineConfig] Disabling async pathfinding while ShreddedPaper independent region ticking is enabled; pathfinding needs a region-safe snapshot before it can run off-thread.
+[m[16:54:36 INFO]: [STDOUT]: PASS: FIFO, reprioritization, priority snapshots, cleanup, boundaries
+[16:54:36 INFO]: [STDOUT]: PASS: exhaustive priority/permutation cases=24576
+[16:54:36 INFO]: [STDOUT]: PASS: exhaustive five-operation traces=100000
+Elapsed seconds=1.104
+[16:54:37 INFO]: [STDOUT]: PASS: seeded randomized operations=5000000
+[16:54:37 INFO]: [STDOUT]: PASS: assertion checks=85756065
+[16:54:37 INFO]: [STDOUT]: SCOPE: real Minecraft Node/WireNode queue contract; no world/GameTests.
+[33;1m[16:54:47 WARN]: [org.bxteam.divinemc.config.DivineConfig] Disabling async pathfinding while ShreddedPaper independent region ticking is enabled; pathfinding needs a region-safe snapshot before it can run off-thread.
+[mPASS: 256 matched synthetic trace cycles: singleton_64
+PASS: 256 matched synthetic trace cycles: same_64
+PASS: 256 matched synthetic trace cycles: ascending_16
+PASS: 256 matched synthetic trace cycles: descending_16
+PASS: 256 matched synthetic trace cycles: mixed_256
+PASS: 256 matched synthetic trace cycles: sparse_256
+PASS: 256 matched synthetic trace cycles: reprioritize_128
+PASS: 256 matched synthetic trace cycles: duplicates_128
+PASS: 256 matched synthetic trace cycles: interleaved_256
+PASS: 256 matched synthetic trace cycles: fanout_24
+PASS: 256 matched synthetic trace cycles: clear_256

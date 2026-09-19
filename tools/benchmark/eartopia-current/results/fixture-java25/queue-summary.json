@@ -1,0 +1,211 @@
+[
+  {
+    "workload": "singleton_64",
+    "ac_ns_per_cycle": 1302.857064,
+    "ec_ns_per_cycle": 652.421202,
+    "speedup_ratio_of_medians": 1.9969569658467354,
+    "time_reduction_pct": 49.923808219072605,
+    "paired_ratio_min": 1.958805844100167,
+    "paired_ratio_max": 2.03161842217384,
+    "ac_fork_medians": [
+      1203.928746,
+      1302.857064,
+      1325.470933
+    ],
+    "ec_fork_medians": [
+      595.462396,
+      665.12823,
+      652.421202
+    ]
+  },
+  {
+    "workload": "same_64",
+    "ac_ns_per_cycle": 666.423048,
+    "ec_ns_per_cycle": 587.905766,
+    "speedup_ratio_of_medians": 1.1335541961668736,
+    "time_reduction_pct": 11.78189773532563,
+    "paired_ratio_min": 1.110671843145094,
+    "paired_ratio_max": 1.1854697050207192,
+    "ac_fork_medians": [
+      607.300934,
+      696.944475,
+      666.423048
+    ],
+    "ec_fork_medians": [
+      542.939198,
+      587.905766,
+      600.017955
+    ]
+  },
+  {
+    "workload": "ascending_16",
+    "ac_ns_per_cycle": 247.178129,
+    "ec_ns_per_cycle": 224.113707,
+    "speedup_ratio_of_medians": 1.1029139284193805,
+    "time_reduction_pct": 9.331093367083465,
+    "paired_ratio_min": 0.9491152896246665,
+    "paired_ratio_max": 1.1029139284193805,
+    "ac_fork_medians": [
+      201.815233,
+      247.178129,
+      252.865561
+    ],
+    "ec_fork_medians": [
+      203.385128,
+      224.113707,
+      266.422387
+    ]
+  },
+  {
+    "workload": "descending_16",
+    "ac_ns_per_cycle": 194.523332,
+    "ec_ns_per_cycle": 187.895445,
+    "speedup_ratio_of_medians": 1.0352743356817404,
+    "time_reduction_pct": 3.407245255288971,
+    "paired_ratio_min": 0.9959248811299353,
+    "paired_ratio_max": 1.0352743356817404,
+    "ac_fork_medians": [
+      179.98615,
+      194.523332,
+      198.62122
+    ],
+    "ec_fork_medians": [
+      173.883598,
+      187.895445,
+      199.433937
+    ]
+  },
+  {
+    "workload": "mixed_256",
+    "ac_ns_per_cycle": 4635.990547,
+    "ec_ns_per_cycle": 3245.609972,
+    "speedup_ratio_of_medians": 1.428388064799796,
+    "time_reduction_pct": 29.991014021798,
+    "paired_ratio_min": 1.319217948532973,
+    "paired_ratio_max": 1.4785835256778757,
+    "ac_fork_medians": [
+      4281.666929,
+      4797.479333,
+      4635.990547
+    ],
+    "ec_fork_medians": [
+      3245.609972,
+      3299.016377,
+      3135.426891
+    ]
+  },
+  {
+    "workload": "sparse_256",
+    "ac_ns_per_cycle": 3434.233894,
+    "ec_ns_per_cycle": 2634.799414,
+    "speedup_ratio_of_medians": 1.3034137914834074,
+    "time_reduction_pct": 23.27839351293759,
+    "paired_ratio_min": 1.2386960265962774,
+    "paired_ratio_max": 1.3555746042086572,
+    "ac_fork_medians": [
+      3263.715565,
+      3837.36005,
+      3434.233894
+    ],
+    "ec_fork_medians": [
+      2634.799414,
+      2913.084941,
+      2533.415633
+    ]
+  },
+  {
+    "workload": "reprioritize_128",
+    "ac_ns_per_cycle": 3360.267116,
+    "ec_ns_per_cycle": 2295.218888,
+    "speedup_ratio_of_medians": 1.4640290447104407,
+    "time_reduction_pct": 31.695344186441165,
+    "paired_ratio_min": 0.9568863285606863,
+    "paired_ratio_max": 1.4640290447104407,
+    "ac_fork_medians": [
+      3126.531025,
+      3478.172792,
+      3360.267116
+    ],
+    "ec_fork_medians": [
+      2225.936627,
+      3634.886076,
+      2295.218888
+    ]
+  },
+  {
+    "workload": "duplicates_128",
+    "ac_ns_per_cycle": 2169.631819,
+    "ec_ns_per_cycle": 2003.500016,
+    "speedup_ratio_of_medians": 1.0829207894550874,
+    "time_reduction_pct": 7.657142633378767,
+    "paired_ratio_min": 1.0829207894550874,
+    "paired_ratio_max": 1.1529351744015492,
+    "ac_fork_medians": [
+      2053.592371,
+      2702.276128,
+      2169.631819
+    ],
+    "ec_fork_medians": [
+      1881.268973,
+      2343.823129,
+      2003.500016
+    ]
+  },
+  {
+    "workload": "interleaved_256",
+    "ac_ns_per_cycle": 8029.246727,
+    "ec_ns_per_cycle": 8333.47558,
+    "speedup_ratio_of_medians": 0.9634931607971424,
+    "time_reduction_pct": -3.789008649802339,
+    "paired_ratio_min": 0.9634931607971424,
+    "paired_ratio_max": 1.1100485452623419,
+    "ac_fork_medians": [
+      7794.934076,
+      9821.203242,
+      8029.246727
+    ],
+    "ec_fork_medians": [
+      7510.297535,
+      8847.543906,
+      8333.47558
+    ]
+  },
+  {
+    "workload": "fanout_24",
+    "ac_ns_per_cycle": 5148.836504,
+    "ec_ns_per_cycle": 4143.809683,
+    "speedup_ratio_of_medians": 1.2425369159986104,
+    "time_reduction_pct": 19.519493777268316,
+    "paired_ratio_min": 0.9868621749544079,
+    "paired_ratio_max": 1.7016667623342678,
+    "ac_fork_medians": [
+      5103.559114,
+      5148.836504,
+      7051.383207
+    ],
+    "ec_fork_medians": [
+      4020.628247,
+      5217.38155,
+      4143.809683
+    ]
+  },
+  {
+    "workload": "clear_256",
+    "ac_ns_per_cycle": 2682.79429,
+    "ec_ns_per_cycle": 2012.63945,
+    "speedup_ratio_of_medians": 1.3329731214401068,
+    "time_reduction_pct": 24.979732605588634,
+    "paired_ratio_min": 1.2971746350296374,
+    "paired_ratio_max": 1.3818295267727592,
+    "ac_fork_medians": [
+      2682.79429,
+      2610.744844,
+      3008.785147
+    ],
+    "ec_fork_medians": [
+      1967.516066,
+      2012.63945,
+      2177.392427
+    ]
+  }
+]

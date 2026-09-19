@@ -1,0 +1,27 @@
+{
+  "archive_sha256": "844bd63b8b879a0f61accef061f8363deca6b159727e78bf16125bdb7b13a0b0",
+  "submitted_source_lock": {
+    "project": "Eartopia Current",
+    "version": "0.1.0-experimental",
+    "target": "Paper 1.21.11 / Java 21",
+    "paper_repository": "PaperMC/Paper",
+    "paper_commit": "c5eb0790f199da6c38d0a650e1e5cd5415b28185",
+    "paper_branch_at_inspection": "ver/1.21.11",
+    "upstream_feature_path": "paper-server/patches/features/0016-Add-Alternate-Current-redstone-implementation.patch",
+    "upstream_feature_git_blob": "68867b6dfbd7b089240de95b716bd86c6ed20d68",
+    "upstream_priority_queue_git_blob": "d71b4d0e4c44a2620b41b89475412db53bea20ed",
+    "upstream_wire_handler_git_blob": "259b301b2c8b64cb7974a235afb260e0e991af54",
+    "upstream_level_helper_git_blob": "ff663d3089627e75221aa128aff4bf5cc459addb",
+    "paper_server_build_executed": false,
+    "minecraft_runtime_tests_executed": false,
+    "github_push_performed": false
+  },
+  "review_base_commit": "696da21fb8ffb9ab08e4e4e409db73e13bdcddee",
+  "source_sha256": {
+    "Node.java": "5f2750b72c2dcc47ec4dfbe6543196eb1cac2de0b07aabd860828e29c9836c85",
+    "WireNode.java": "2b17612ff891548c9b48c937fd577a42102d60d95d5efc063ba7f39dea5aaa5e",
+    "PriorityQueue.java": "f2e3f6c21a0a33750dfdef9d0cca75836a134962f52f9f2665933b6c60923155"
+  },
+  "baseline-server_sha256": "2fb80305b01623dce200a04b3ef4bc51286008ce2607c748d67ebfc667740033",
+  "baseline-api_sha256": "d84c73f11dab818fc20af7396c5584112a27b8132d649224ab538cbc5120e77b"
+}

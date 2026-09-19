@@ -1,0 +1,42 @@
+{
+  "decision": "defer production adoption; retain existing Alternate Current",
+  "archive_integrity": {
+    "matching_files": 55,
+    "mismatched_files": 0,
+    "missing": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/paper-build.yml",
+      ".gitignore"
+    ]
+  },
+  "fixture_tests": {
+    "random_operations": 5000000,
+    "exhaustive_traces": 100000,
+    "priority_permutations": 24576,
+    "benchmark_input_cycles": 2816,
+    "python_tests": 5,
+    "passed": true
+  },
+  "actual_node_tests": {
+    "random_operations": 5000000,
+    "exhaustive_traces": 100000,
+    "priority_permutations": 24576,
+    "benchmark_input_cycles": 2816,
+    "passed": true
+  },
+  "current_source_git_apply_check": "passed",
+  "patched_java25_class_compilation": {
+    "passed": true,
+    "classes": [
+      "BucketedPriorityQueue",
+      "EartopiaCurrent",
+      "WireHandler",
+      "LevelHelper",
+      "PriorityQueue"
+    ]
+  },
+  "full_server_build": false,
+  "minecraft_circuit_tests": false,
+  "production_deployed": false,
+  "mspt_measured": false
+}

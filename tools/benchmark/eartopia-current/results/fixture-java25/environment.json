@@ -1,0 +1,20 @@
+{
+  "scope": "Isolated queue kernels using fixture Node, NOT Minecraft MSPT",
+  "platform": "Linux-6.17.0-1016-oracle-aarch64-with-glibc2.39",
+  "python": "3.12.3",
+  "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)",
+  "cpu_affinity": 0,
+  "processor": "aarch64",
+  "cpuinfo": "processor\t: 0\nBogoMIPS\t: 50.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm lrcpc dcpop asimddp\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x3\nCPU part\t: 0xd0c\nCPU revision\t: 1",
+  "forks": 3,
+  "warmup_ms": 1500,
+  "samples": 5,
+  "sample_ms": 250,
+  "jvm_flags": [
+    "-Xms256m",
+    "-Xmx256m",
+    "-XX:+UseG1GC"
+  ],
+  "order": "workload order reversed in odd forks; engine order alternates by fork + workload index",
+  "baseline_git_blob": "d71b4d0e4c44a2620b41b89475412db53bea20ed"
+}

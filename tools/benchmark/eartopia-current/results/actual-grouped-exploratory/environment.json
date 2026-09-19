@@ -1,0 +1,19 @@
+{
+  "scope": "Real Minecraft Node and WireNode queue kernels; not full engine or MSPT",
+  "cpu": 2,
+  "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)\n",
+  "forks": 3,
+  "warmup_ms": 1500,
+  "samples": 5,
+  "sample_ms": 250,
+  "jvm_flags": [
+    "--enable-preview",
+    "-Xms256m",
+    "-Xmx512m",
+    "-XX:+UseG1GC"
+  ],
+  "object_mix": "Alternating actual WireNode and Node with neighborWire; 256 nodes preallocated",
+  "baseline_sha256": "f2e3f6c21a0a33750dfdef9d0cca75836a134962f52f9f2665933b6c60923155",
+  "order": "All 11 workloads in each of six JVMs; reverse workload order in fork 1; alternate engine order per fork",
+  "interpretation": "Exploratory only: JIT profile is shared across workloads. The independent-jvm run is the adoption comparison."
+}
