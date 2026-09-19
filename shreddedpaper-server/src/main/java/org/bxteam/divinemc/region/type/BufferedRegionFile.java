@@ -90,7 +90,16 @@ public class BufferedRegionFile implements IRegionFile {
             this.sectors[i] = new Sector(i, this.headerSize(), 0);
         }
 
-        this.readHeaders();
+        try {
+            this.readHeaders();
+        } catch (IOException | RuntimeException | Error failure) {
+            try {
+                this.channel.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
 
         if (DivineConfig.MiscCategory.regionFileType == EnumRegionFileExtension.B_LINEAR) initializeFlusherIfNeeded();
         addToFlusherManagement();
@@ -356,10 +365,13 @@ public class BufferedRegionFile implements IRegionFile {
 
     private void closeInternal() throws IOException {
         this.closed = true;
-        this.writeHeaders();
-        this.channel.force(true);
-        this.compact();
-        this.channel.close();
+        try {
+            this.writeHeaders();
+            this.channel.force(true);
+            this.compact();
+        } finally {
+            this.channel.close();
+        }
     }
 
     private void compact() throws IOException {
@@ -844,19 +856,21 @@ public class BufferedRegionFile implements IRegionFile {
             if (newData.remaining() <= 0 || newData.remaining() > MAX_STORED_CHUNK_SECTION_SIZE) {
                 throw new IOException("Invalid stored sector size " + newData.remaining() + " in " + BufferedRegionFile.this.filePath);
             }
-            this.hasData = true;
-            this.length = newData.remaining();
-            this.offset = currentAcquiredIndex;
-
-            if (Long.MAX_VALUE - BufferedRegionFile.this.currentAcquiredIndex < this.length) {
+            final long newLength = newData.remaining();
+            final long newOffset = BufferedRegionFile.this.currentAcquiredIndex;
+            if (Long.MAX_VALUE - newOffset < newLength) {
                 throw new IOException("Region file offset overflow in " + BufferedRegionFile.this.filePath);
             }
-            BufferedRegionFile.this.currentAcquiredIndex += this.length;
 
-            long offset = this.offset;
+            long offset = newOffset;
             while (newData.hasRemaining()) {
                 offset += channel.write(newData, offset);
             }
+            // Publish only a complete append. A failed write must retain the previous readable sector.
+            this.offset = newOffset;
+            this.length = newLength;
+            this.hasData = true;
+            BufferedRegionFile.this.currentAcquiredIndex = newOffset + newLength;
         }
 
         private @NotNull ByteBuffer getEncoded() {
@@ -873,10 +887,18 @@ public class BufferedRegionFile implements IRegionFile {
         public void restoreFrom(@NotNull ByteBuffer buffer) throws IOException {
             this.offset = buffer.getLong();
             this.length = buffer.getLong();
-            this.hasData = buffer.get() == 1;
+            final byte presence = buffer.get();
+            if (presence != 0 && presence != 1) {
+                throw new IOException("Invalid sector presence flag " + presence + " in " + BufferedRegionFile.this.filePath);
+            }
+            this.hasData = presence == 1;
 
-            if (this.length < 0 || this.offset < 0 || (!this.hasData && this.length != 0)) {
+            if (this.length < 0 || this.offset < 0) {
                 throw new IOException("Invalid sector data: " + this + " in " + BufferedRegionFile.this.filePath);
+            }
+            // Older writers left the previous offset/length behind when clearing a sector.
+            if (!this.hasData) {
+                this.clear();
             }
         }
 
@@ -898,6 +920,8 @@ public class BufferedRegionFile implements IRegionFile {
 
         public void clear() {
             this.hasData = false;
+            this.offset = 0;
+            this.length = 0;
         }
 
         public boolean hasData() {

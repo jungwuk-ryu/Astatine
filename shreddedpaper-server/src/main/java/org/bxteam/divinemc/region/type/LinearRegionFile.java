@@ -59,6 +59,8 @@ public class LinearRegionFile implements IRegionFile {
 
     private final byte[][] buffer = new byte[1024][];
     private final int[] bufferUncompressedSize = new int[1024];
+    // Unopened buckets have no entries in bufferUncompressedSize yet.
+    private boolean[] chunkExistenceBitmap = new boolean[1024];
     private final long[] chunkTimestamps = new long[1024];
     private final Object markedToSaveLock = new Object();
     private final LZ4Compressor compressor;
@@ -184,6 +186,7 @@ public class LinearRegionFile implements IRegionFile {
                             this.buffer[chunkIndex] = finalCompressed;
                             this.bufferUncompressedSize[chunkIndex] = chunkData.length;
                         }
+                        this.chunkExistenceBitmap[chunkIndex] = chunkSize > 0;
                     }
                 }
             } catch (IOException ex) {
@@ -301,7 +304,7 @@ public class LinearRegionFile implements IRegionFile {
         buffer.getInt(); // Skip region_x (Int)
         buffer.getInt(); // Skip region_z (Int)
 
-        boolean[] chunkExistenceBitmap = deserializeExistenceBitmap(buffer);
+        this.chunkExistenceBitmap = deserializeExistenceBitmap(buffer);
 
         while (true) {
             requireRemaining(buffer, Byte.BYTES, "linear v2 feature length");
@@ -517,11 +520,13 @@ public class LinearRegionFile implements IRegionFile {
         dataStream.writeInt(regionX);
         dataStream.writeInt(regionZ);
 
-        boolean[] chunkExistenceBitmap = new boolean[1024];
         for (int i = 0; i < 1024; i++) {
-            chunkExistenceBitmap[i] = (this.bufferUncompressedSize[i] > 0);
+            int bucket = chunkToBucketIdx(i & 31, i >> 5);
+            if (bucketBuffers == null || bucketBuffers[bucket] == null) {
+                this.chunkExistenceBitmap[i] = (this.bufferUncompressedSize[i] > 0);
+            }
         }
-        writeSerializedExistenceBitmap(dataStream, chunkExistenceBitmap);
+        writeSerializedExistenceBitmap(dataStream, this.chunkExistenceBitmap);
 
         writeNBTFeatures(dataStream);
 
