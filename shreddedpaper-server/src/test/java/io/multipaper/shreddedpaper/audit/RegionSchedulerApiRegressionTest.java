@@ -37,6 +37,48 @@ class RegionSchedulerApiRegressionTest {
     }
 
     @Test
+    void worldCloseWaitsForAnInFlightTaskRegistration() throws Exception {
+        SchedulerFixture fixture = schedulerFixture();
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var lifecycle = fixture.world.getHandle().chunkScheduler.tickLifecycleLock();
+        var regions = fixture.world.getHandle().getChunkSource().tickingRegions;
+        when(regions.scheduleTask(any(RegionPos.class), any(Runnable.class), anyLong(), eq(RegionTaskClass.PLUGIN)))
+                .thenAnswer(call -> {
+                    entered.countDown();
+                    assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                    fixture.queued.set(call.getArgument(1));
+                    return true;
+                });
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var admitted = executor.submit(() -> fixture.api.run(fixture.plugin, fixture.world, 0, 0, ignored -> {}));
+            try {
+                assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                var close = executor.submit(() -> {
+                    lifecycle.writeLock().lock();
+                    try {
+                        fixture.world.getHandle().chunkScheduler.closeIndependentTicking();
+                    } finally {
+                        lifecycle.writeLock().unlock();
+                    }
+                });
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                while (!lifecycle.hasQueuedThreads() && System.nanoTime() < deadline) Thread.onSpinWait();
+                assertTrue(lifecycle.hasQueuedThreads(), "world close must wait for admitted work");
+                assertFalse(close.isDone());
+                release.countDown();
+                assertNotNull(admitted.get(5, java.util.concurrent.TimeUnit.SECONDS));
+                close.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                        () -> fixture.api.run(fixture.plugin, fixture.world, 0, 0, ignored -> {}));
+                verify(regions, times(1)).scheduleTask(any(RegionPos.class), any(Runnable.class), anyLong(), eq(RegionTaskClass.PLUGIN));
+            } finally {
+                release.countDown();
+            }
+        }
+    }
+
+    @Test
     void unloadedWorldRejectsNewTasksWithoutEnqueuing() throws Exception {
         SchedulerFixture fixture = schedulerFixture();
         var scheduler = fixture.world.getHandle().chunkScheduler;
