@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: jungwuk-ryu <vojougae35@gmail.com>
+Date: Tue, 22 Sep 2026 22:00:00 +0900
+Subject: [PATCH] perf: avoid locking published saved data
+
+---
+diff --git a/net/minecraft/world/level/storage/DimensionDataStorage.java b/net/minecraft/world/level/storage/DimensionDataStorage.java
+index 57830f1..213713c 100644
+--- a/net/minecraft/world/level/storage/DimensionDataStorage.java
++++ b/net/minecraft/world/level/storage/DimensionDataStorage.java
+@@ -58,6 +58,12 @@ public class DimensionDataStorage implements AutoCloseable {
+ 
+     public <T extends SavedData> T computeIfAbsent(SavedDataType<T> type) {
+         // ShreddedPaper start - thread-safe
++        // Astatine - a published cache hit needs no per-key compute lock. Replacements
++        // still become visible on the next read; misses retain atomic initialization.
++        final Optional<SavedData> cached = this.cache.get(type);
++        if (cached != null && cached.isPresent()) {
++            return (T) cached.get();
++        }
+         return (T) this.cache.compute(type, (key, optional) -> {
+             if (optional == null) {
+                 optional = Optional.ofNullable(this.readSavedData(type));

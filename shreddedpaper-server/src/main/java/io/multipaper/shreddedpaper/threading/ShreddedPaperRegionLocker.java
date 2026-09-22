@@ -38,6 +38,7 @@ public class ShreddedPaperRegionLocker {
     private final ThreadLocal<Set<RegionPos>> readOnlyLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<RegionPos>> writeLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
     private final ThreadLocal<Set<ReadOnlyRegionLock>> activeReadLocks = ThreadLocal.withInitial(ObjectOpenHashSet::new);
+    private final ThreadLocal<OwnedRegionCount> ownedRegionCount = ThreadLocal.withInitial(OwnedRegionCount::new);
     private final ThreadLocal<Set<RegionPos>> unmodifiableLocalLocks = ThreadLocal.withInitial(() -> Collections.unmodifiableSet(localLocks.get()));
     private final ThreadLocal<CurrentThreadWritePromotion> currentThreadWritePromotion = ThreadLocal.withInitial(CurrentThreadWritePromotion::new);
 
@@ -123,26 +124,39 @@ public class ShreddedPaperRegionLocker {
         return Collections.unmodifiableSet(lockedRegions.entrySet());
     }
 
+    /** Best-effort diagnostics only; never use this snapshot to authorize access. */
+    @Nullable
+    public LockedRegion observedConflictingLock(final long[] sortedRegionKeys) {
+        for (final long key : sortedRegionKeys) {
+            final LockedRegion lock = this.lockedRegions.get(new RegionPos(key));
+            if (lock != null && lock.owner() != Thread.currentThread()) return lock;
+        }
+        return null;
+    }
+
     public int releaseCurrentThreadLocks() {
-        final List<ReadOnlyRegionLock> activeLocks = new ArrayList<>(this.activeReadLocks.get());
         int released = 0;
-        for (final ReadOnlyRegionLock lock : activeLocks) {
-            released += lock.readLocks.size();
-            lock.unlock();
+        final Set<ReadOnlyRegionLock> active = this.activeReadLocks.get();
+        if (!active.isEmpty()) {
+            // unlock() mutates the registry; only exceptional cleanup needs this snapshot.
+            for (final ReadOnlyRegionLock lock : new ArrayList<>(active)) {
+                released += lock.readLocks.size();
+                lock.unlock();
+            }
         }
 
-        // The active lock registry should cover all normal paths. Keep this as a
-        // last-resort cleanup so a worker never returns to the scheduler queue
-        // while still owning region entries.
-        final Thread current = Thread.currentThread();
-        final List<LockedRegion> leakedRegions = this.lockedRegions.entrySet().stream()
-                .filter(entry -> entry.getValue().owner() == current)
-                .map(Map.Entry::getValue)
-                .toList();
-        for (final LockedRegion lockedRegion : leakedRegions) {
-            if (this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion)) {
-                released++;
-                lockedRegion.complete();
+        // Count map ownership separately from the active-lock registry. A missing
+        // registry entry still triggers recovery, but a normal empty worker never
+        // scans the locks of every other region in the world.
+        final OwnedRegionCount owned = this.ownedRegionCount.get();
+        if (owned.value != 0) {
+            final Thread current = Thread.currentThread();
+            for (final LockedRegion lockedRegion : this.lockedRegions.values()) {
+                if (lockedRegion.owner() == current && this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion)) {
+                    owned.value--;
+                    released++;
+                    lockedRegion.complete();
+                }
             }
         }
 
@@ -152,6 +166,10 @@ public class ShreddedPaperRegionLocker {
         this.activeReadLocks.get().clear();
         this.currentThreadWritePromotion.get().forceClose();
         return released;
+    }
+
+    private static final class OwnedRegionCount {
+        int value;
     }
 
     public RegionLock lockRegion(RegionPos regionPos) {
@@ -518,6 +536,7 @@ public class ShreddedPaperRegionLocker {
                     ShreddedPaperRegionLocker.this.readOnlyLocks.get().add(regionPos);
                     LockedRegion newLockedRegion = new LockedRegion(regionPos, this.thread);
                     this.readLocks.add(newLockedRegion);
+                    ShreddedPaperRegionLocker.this.ownedRegionCount.get().value++;
                     return newLockedRegion;
                 } else {
                     // This region is already locked, it could be already locked by us or someone else
@@ -546,7 +565,9 @@ public class ShreddedPaperRegionLocker {
             this.unlocked = true;
 
             for (LockedRegion lockedRegion : this.readLocks) {
-                ShreddedPaperRegionLocker.this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion);
+                if (ShreddedPaperRegionLocker.this.lockedRegions.remove(lockedRegion.regionPos(), lockedRegion)) {
+                    ShreddedPaperRegionLocker.this.ownedRegionCount.get().value--;
+                }
                 ShreddedPaperRegionLocker.this.localLocks.get().remove(lockedRegion.regionPos());
                 ShreddedPaperRegionLocker.this.readOnlyLocks.get().remove(lockedRegion.regionPos());
             }

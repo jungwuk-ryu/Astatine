@@ -383,6 +383,9 @@ public final class RegionTickScheduler {
                     TimeUnit.NANOSECONDS.toMillis(SHUTDOWN_JOIN_TIMEOUT_NANOS), liveWorkers);
         }
         RegionChunkExecutorLimiter.shutdownEmergencyExecutors();
+        for (final RegionHandle handle : this.regions.values()) {
+            handle.lockWait.finish(System.nanoTime(), "shutdown");
+        }
         this.normalQueue.clear();
         this.degradedQueue.clear();
         this.regions.clear();
@@ -484,6 +487,7 @@ public final class RegionTickScheduler {
         private volatile long runningTickStartNanos;
         private List<LevelChunkRegion> pendingSplitRegions = List.of();
         private long lockContentionBackoffNanos = TimeUnit.MILLISECONDS.toNanos(1L);
+        private final RegionLockWait lockWait = new RegionLockWait();
 
         private RegionHandle(
                 final RegionKey key,
@@ -572,6 +576,7 @@ public final class RegionTickScheduler {
                             requeueAfterLayoutChange = true;
                         }
                     } else if ((ownerLock = this.level.chunkScheduler.getRegionLocker().internalTryTakeExactLockNow(ownerCells, isolationCells)) != null) {
+                        this.lockWait.finish(System.nanoTime(), "acquired");
                         if (this.retireIfDetached(region)) {
                             return;
                         }
@@ -592,8 +597,12 @@ public final class RegionTickScheduler {
                                     scheduledStart
                             );
                         }
+                    } else {
+                        this.lockWait.failed(this.level.getWorld().getName(), this.state.regionPos(), scheduledStart,
+                            System.nanoTime(), this.level.chunkScheduler.getRegionLocker(), isolationCells);
                     }
                 } catch (final Throwable throwable) {
+                    this.lockWait.finish(System.nanoTime(), "failed");
                     failure = throwable;
                     MinecraftServer.getServer().moonrise$setChunkSystemCrash(new RuntimeException(
                             "Independent region tick failed for " + this.level.getWorld().getName() + " " + this.state.regionPos(),
@@ -677,6 +686,7 @@ public final class RegionTickScheduler {
         }
 
         private void retire() {
+            this.lockWait.finish(System.nanoTime(), "retired");
             RegionTickScheduler.this.regions.remove(this.key, this);
             this.retired.set(true);
             this.ticking.set(false);
@@ -684,6 +694,7 @@ public final class RegionTickScheduler {
         }
 
         private void requeueAfterOwnerLayoutChange() {
+            this.lockWait.finish(System.nanoTime(), "layout-changed");
             if (this.retired.get()) {
                 return;
             }
