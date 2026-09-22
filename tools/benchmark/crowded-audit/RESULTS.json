@@ -1,0 +1,1548 @@
+{
+  "date": "2026-09-22",
+  "source_head": "56699f6034e70c048c5b5c22e9b1e8b418bec0ac",
+  "paperclip_sha256": "b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97",
+  "runtime_sha256": "dd2a65641dc057d34c0c735d13edb0fb0e13671fa2e8b5497ae1ae364e70f560",
+  "source_diff_sha256": "9626ae9af28d665a7d73ba2a8b6d3ed8d5d021151cebdac1091d32c2e8b44057",
+  "artifact_scope": "Existing build includes pre-existing uncommitted ownership optimization; 21 selected region/ownership class files match local build output byte-for-byte. Not a fresh clean-HEAD rebuild.",
+  "matching_classes": {
+    "io/multipaper/shreddedpaper/threading/region/RegionTickScheduler$RegionTickSnapshot.class": {
+      "byte_equal": true,
+      "runtime_sha256": "74ab5637538fcf0fe5151fb31e55188175f1405fe17e2dce5fe9380d9444f457"
+    },
+    "io/multipaper/shreddedpaper/threading/region/RegionTickScheduler$LongRunningRegionTick.class": {
+      "byte_equal": true,
+      "runtime_sha256": "6e6a58455e15f83fec881d8b46daf044057ff08e2a9b98c948a4388ba0597db4"
+    },
+    "io/multipaper/shreddedpaper/threading/region/RegionTickScheduler.class": {
+      "byte_equal": true,
+      "runtime_sha256": "9e1cd020b907c6392d6d9ced643e41e572716b8a22c72be479705e479b813a23"
+    },
+    "io/multipaper/shreddedpaper/threading/region/RegionTickScheduler$RegionHandle.class": {
+      "byte_equal": true,
+      "runtime_sha256": "b156c3d87e89a64275bd7d3b742d482f5c9ba06ff843d7555426a7d5eef82a5f"
+    },
+    "io/multipaper/shreddedpaper/threading/region/RegionTickScheduler$RegionKey.class": {
+      "byte_equal": true,
+      "runtime_sha256": "aafe5f99c1f6f56527435ebd0838ea6c6d242d2c4a774928284134fb57b4e68d"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$LockedRegion.class": {
+      "byte_equal": true,
+      "runtime_sha256": "7fd2e47f46382113da1a49f95c22c051b972806f404549021db3410e41434b14"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$WriteRegionLock.class": {
+      "byte_equal": true,
+      "runtime_sha256": "4d9c994301b78fdada6fa6d3566fe4624ab1600a8b79be65f5078ebeb6ba0ef0"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$ScopedWriteAccess.class": {
+      "byte_equal": true,
+      "runtime_sha256": "7303fe4dfa8fe30eeb608b1be075e81f40285ba11c812458dd5bb4719054070d"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$RegionLock.class": {
+      "byte_equal": true,
+      "runtime_sha256": "27ad2f2c53d447ba1d3d6490634224f115410ca342edf0595fb14ca3ae5916a0"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker.class": {
+      "byte_equal": true,
+      "runtime_sha256": "63dfcd9d1f732571e730f452282300432b98215d7af8ff51106be04d5d123fb1"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$CurrentThreadWritePromotion.class": {
+      "byte_equal": true,
+      "runtime_sha256": "f8a2022c794fb8a79fb461e09275706290067f04fd6cc6c1891fcf3f8c48f3fe"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$ReadOnlyRegionLock.class": {
+      "byte_equal": true,
+      "runtime_sha256": "89effee7e35fe802ff20c933888aa89ce25a207e23d99d599db02d2b9a7b3403"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperChunkTicker$ScheduledTickContext.class": {
+      "byte_equal": true,
+      "runtime_sha256": "f34f99c57ab5725487ee7271f2ec4fb1d36fca8f68caa6a17fa94450aca357a2"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperChunkTicker.class": {
+      "byte_equal": true,
+      "runtime_sha256": "e7a5e32a026cc02ab464d1199a90d97f4b48b22e72f59d327744d45124155a37"
+    },
+    "io/multipaper/shreddedpaper/threading/ShreddedPaperPlayerTicker.class": {
+      "byte_equal": true,
+      "runtime_sha256": "ddc7e903966288d039c7bcf145c380bd2413de1e226a3a6e6520b862510cd25b"
+    },
+    "io/multipaper/shreddedpaper/region/RegionOwner.class": {
+      "byte_equal": true,
+      "runtime_sha256": "d27430f79a5f83da0457c920f6ac7dc909fd63a2eda0d76687ebbb8f0b2bfd51"
+    },
+    "io/multipaper/shreddedpaper/region/LevelChunkRegionMap$RuntimeStateParity.class": {
+      "byte_equal": true,
+      "runtime_sha256": "02a4d7f6a584c091b4fdb95789e9d853502e71db3a8f0547d8a4056ed9073e57"
+    },
+    "io/multipaper/shreddedpaper/region/LevelChunkRegionMap$RegionActionResult.class": {
+      "byte_equal": true,
+      "runtime_sha256": "c09e5e5726cdd92c6b82f06e66cdc77b943ff23fb1dab44a739134769308fac9"
+    },
+    "io/multipaper/shreddedpaper/region/LevelChunkRegionMap.class": {
+      "byte_equal": true,
+      "runtime_sha256": "dfbfc67e8a02cb2b03360bd019995fd269edc18eff808197c97caa4976db35f0"
+    },
+    "io/multipaper/shreddedpaper/ShreddedPaper.class": {
+      "byte_equal": true,
+      "runtime_sha256": "565f2ac60f70d08f79d487a34d2c597797b0157d859ebf9a88087b4e32e74a67"
+    },
+    "io/multipaper/shreddedpaper/ShreddedPaper$RunSyncRetry.class": {
+      "byte_equal": true,
+      "runtime_sha256": "42be513fc2eedce98c366bb40b8e13955b80ba08fbe2d90cfda1aef9cc016f07"
+    }
+  },
+  "environment": {
+    "java": "openjdk 25.0.2 2026-01-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)\n",
+    "jvm_args": [
+      "--enable-preview",
+      "-Dterminal.jline=false",
+      "-Dterminal.ansi=false",
+      "-Xms1G",
+      "-Xmx3G",
+      "-XX:ActiveProcessorCount=2",
+      "-jar",
+      "server.jar",
+      "--nogui"
+    ],
+    "host": {
+      "arch": "arm64",
+      "cpus": 8,
+      "freeMemory": 10215514112,
+      "load": [
+        5.65,
+        5.79,
+        4.93
+      ]
+    },
+    "region_workers": 2,
+    "netty_event_loops": 4,
+    "region_cell_chunks": 8,
+    "view_distance": 2,
+    "simulation_distance": 2,
+    "compression": false,
+    "client_workers": 4,
+    "plugins": "No added user plugins; bundled server features remain enabled."
+  },
+  "config_hashes": {
+    "bukkit.yml": "74bf5ed1d592088ecfa03b08b349fb378a23221ef3204df48d020cd83e0cf288",
+    "spigot.yml": "c33261940075cc24cf219aea27efdaa076fb46a12247bdf7441a307a0b117424",
+    "purpur.yml": "6c2e24415b51cfc6261fd14de3c6a26d2bb46aa50ec8ca311fc1c1a7baa87ed2",
+    "shreddedpaper.yml": "9d419070a113bdbf957ab06080bd4fd41a5645cb115dfaf7bc200add0262900c",
+    "server.properties": "0f7ff8a4978bddd1e927d67718a710288d314b9bb5c56ac02cacee15b2d3aa6e",
+    "eula.txt": "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+    "config/paper-global.yml": "0f771a3224966fcf3bbf99cd698dd0599095ed52247bdf5c215f19a524baa9bc",
+    "config/paper-world-defaults.yml": "6b920f8304a86dfd2d4e8150d7fb823c37e642540e99791ff8c23c61ffb7cd8d"
+  },
+  "acceptance": {
+    "samples": 190,
+    "faults": 0,
+    "allClientsSeeEveryOtherPlayer": true,
+    "players": 80,
+    "cows": 80,
+    "cow_check_before": "Test passed. Count: 80",
+    "cow_check_after": "Test passed. Count: 80",
+    "client_loop_max_ms": 133.627903,
+    "server_exit": {
+      "code": 0,
+      "signal": null
+    }
+  },
+  "phases": {
+    "players": {
+      "seconds": 45,
+      "execution_samples_total": 2233,
+      "execution_samples": {
+        "network": {
+          "count": 1436,
+          "percent": 64.308
+        },
+        "main": {
+          "count": 41,
+          "percent": 1.836
+        },
+        "region": {
+          "count": 702,
+          "percent": 31.438
+        },
+        "other": {
+          "count": 54,
+          "percent": 2.418
+        }
+      },
+      "region_categories": {
+        "tracking_and_broadcast": 160,
+        "player_tick": 399,
+        "other": 48,
+        "entity_tick_other": 74,
+        "entity_push_query": 12,
+        "lock_cleanup": 7,
+        "lock_acquisition": 2
+      },
+      "region_ticks": {
+        "world:0,0": {
+          "events": 898,
+          "mspt_p50": 9.532422,
+          "mspt_p95": 20.062282,
+          "mspt_p99": 25.002753,
+          "mspt_max": 61.785363,
+          "schedule_lag_p99_ms": 2.273215,
+          "threads": {
+            "AstatineRegionNormal-4": 553,
+            "AstatineRegionDegraded-5": 345
+          }
+        }
+      },
+      "thread_allocation_bytes_per_second": {
+        "other": 1242517.196770308,
+        "network": 7302354.998438684,
+        "region": 10274980.773520095
+      },
+      "gc": {
+        "pauses": 1,
+        "total_ms": 40.562363,
+        "max_ms": 40.562363
+      },
+      "waits_at_least_1ms": {
+        "main:jdk.ThreadPark": {
+          "count": 1152,
+          "total_ms": 43875.54243199995,
+          "max_ms": 177.283823
+        },
+        "region:scheduler_idle": {
+          "count": 33192,
+          "total_ms": 79679.7485469991,
+          "max_ms": 157.295061
+        }
+      },
+      "region_application_park_or_monitor_events": 0,
+      "network_top_inclusive_stacks_overlap": [
+        [
+          "io.netty.channel.SingleThreadIoEventLoop.run",
+          1436
+        ],
+        [
+          "java.lang.Thread.runWith",
+          1436
+        ],
+        [
+          "java.lang.Thread.run",
+          1436
+        ],
+        [
+          "io.netty.util.concurrent.SingleThreadEventExecutor$5.run",
+          1436
+        ],
+        [
+          "io.netty.util.internal.ThreadExecutorMap$2.run",
+          1436
+        ],
+        [
+          "io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks",
+          1368
+        ],
+        [
+          "io.netty.util.concurrent.AbstractEventExecutor.runTask",
+          1328
+        ],
+        [
+          "io.netty.util.concurrent.AbstractEventExecutor.safeExecute",
+          1328
+        ],
+        [
+          "net.minecraft.network.Connection.doSendPacket",
+          1310
+        ],
+        [
+          "net.minecraft.network.Connection$$Lambda.0x0000007c02384c60.run",
+          1291
+        ],
+        [
+          "net.minecraft.network.Connection.lambda$sendPacket$1",
+          1285
+        ],
+        [
+          "io.netty.channel.AbstractChannelHandlerContext.write",
+          1214
+        ],
+        [
+          "io.netty.channel.Channel.writeAndFlush",
+          1194
+        ],
+        [
+          "io.netty.channel.DefaultChannelPipeline.writeAndFlush",
+          1194
+        ],
+        [
+          "io.netty.channel.AbstractChannelHandlerContext.writeAndFlush",
+          1192
+        ],
+        [
+          "net.minecraft.network.Connection$2.write",
+          985
+        ],
+        [
+          "io.netty.channel.ChannelOutboundHandlerAdapter.write",
+          983
+        ],
+        [
+          "io.netty.handler.codec.MessageToMessageEncoder.write",
+          963
+        ]
+      ],
+      "region_top_leaf_samples": [
+        [
+          "it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet.contains",
+          35
+        ],
+        [
+          "net.minecraft.server.level.ChunkMap$TrackedEntity.canTrack",
+          21
+        ],
+        [
+          "net.minecraft.server.level.ChunkMap$TrackedEntity.moonrise$tick",
+          16
+        ],
+        [
+          "net.minecraft.core.NonNullList.size",
+          13
+        ],
+        [
+          "it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap.get",
+          13
+        ],
+        [
+          "java.util.HashMap.putVal",
+          11
+        ],
+        [
+          "net.minecraft.server.level.ServerPlayer.doTick",
+          11
+        ],
+        [
+          "java.util.concurrent.atomic.AtomicLong.getAndSet",
+          10
+        ],
+        [
+          "java.util.concurrent.atomic.AtomicLongFieldUpdater$CASUpdater.compareAndSet",
+          10
+        ],
+        [
+          "net.minecraft.world.level.biome.BiomeManager.getBiome",
+          9
+        ],
+        [
+          "net.minecraft.network.syncher.SynchedEntityData$DataItem.getValue",
+          8
+        ],
+        [
+          "net.minecraft.world.entity.Entity.move",
+          8
+        ],
+        [
+          "net.minecraft.advancements.criterion.SimpleCriterionTrigger.trigger",
+          8
+        ],
+        [
+          "net.minecraft.world.inventory.AbstractContainerMenu.synchronizeSlotToRemote",
+          8
+        ],
+        [
+          "net.minecraft.world.entity.InsideBlockEffectApplier$StepBasedCollector.flushStep",
+          8
+        ]
+      ]
+    },
+    "mixed": {
+      "seconds": 60,
+      "execution_samples_total": 5644,
+      "execution_samples": {
+        "region": {
+          "count": 1639,
+          "percent": 29.04
+        },
+        "network": {
+          "count": 3890,
+          "percent": 68.923
+        },
+        "other": {
+          "count": 61,
+          "percent": 1.081
+        },
+        "main": {
+          "count": 54,
+          "percent": 0.957
+        }
+      },
+      "region_categories": {
+        "pathfinding": 30,
+        "mob_goals_and_navigation": 153,
+        "entity_tick_other": 451,
+        "tracking_and_broadcast": 437,
+        "player_tick": 436,
+        "entity_push_query": 57,
+        "other": 67,
+        "layout_merge_split": 3,
+        "lock_acquisition": 2,
+        "lock_cleanup": 3
+      },
+      "region_ticks": {
+        "world:0,0": {
+          "events": 1198,
+          "mspt_p50": 14.677653,
+          "mspt_p95": 25.936511,
+          "mspt_p99": 32.868458,
+          "mspt_max": 85.382638,
+          "schedule_lag_p99_ms": 3.682977,
+          "threads": {
+            "AstatineRegionNormal-4": 628,
+            "AstatineRegionDegraded-5": 570
+          }
+        }
+      },
+      "thread_allocation_bytes_per_second": {
+        "other": 1297740.0590698991,
+        "network": 15318323.349296669,
+        "region": 19652324.31710858
+      },
+      "gc": {
+        "pauses": 5,
+        "total_ms": 224.271415,
+        "max_ms": 66.306114
+      },
+      "waits_at_least_1ms": {
+        "main:jdk.ThreadPark": {
+          "count": 1590,
+          "total_ms": 58570.37445100007,
+          "max_ms": 110.60867
+        },
+        "region:scheduler_idle": {
+          "count": 42617,
+          "total_ms": 99816.16747699896,
+          "max_ms": 98.620693
+        }
+      },
+      "region_application_park_or_monitor_events": 0,
+      "network_top_inclusive_stacks_overlap": [
+        [
+          "io.netty.channel.SingleThreadIoEventLoop.run",
+          3890
+        ],
+        [
+          "io.netty.util.internal.ThreadExecutorMap$2.run",
+          3890
+        ],
+        [
+          "java.lang.Thread.run",
+          3890
+        ],
+        [
+          "java.lang.Thread.runWith",
+          3890
+        ],
+        [
+          "io.netty.util.concurrent.SingleThreadEventExecutor$5.run",
+          3890
+        ],
+        [
+          "io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks",
+          3867
+        ],
+        [
+          "io.netty.util.concurrent.AbstractEventExecutor.safeExecute",
+          3705
+        ],
+        [
+          "io.netty.util.concurrent.AbstractEventExecutor.runTask",
+          3705
+        ],
+        [
+          "net.minecraft.network.Connection.doSendPacket",
+          3649
+        ],
+        [
+          "net.minecraft.network.Connection$$Lambda.0x0000007c02384c60.run",
+          3621
+        ],
+        [
+          "net.minecraft.network.Connection.lambda$sendPacket$1",
+          3597
+        ],
+        [
+          "io.netty.channel.AbstractChannelHandlerContext.write",
+          3403
+        ],
+        [
+          "io.netty.channel.DefaultChannelPipeline.writeAndFlush",
+          3376
+        ],
+        [
+          "io.netty.channel.Channel.writeAndFlush",
+          3376
+        ],
+        [
+          "io.netty.channel.AbstractChannelHandlerContext.writeAndFlush",
+          3367
+        ],
+        [
+          "net.minecraft.network.Connection$2.write",
+          2800
+        ],
+        [
+          "io.netty.channel.ChannelOutboundHandlerAdapter.write",
+          2789
+        ],
+        [
+          "io.netty.handler.codec.MessageToMessageEncoder.write",
+          2732
+        ]
+      ],
+      "region_top_leaf_samples": [
+        [
+          "it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet.contains",
+          95
+        ],
+        [
+          "net.minecraft.server.level.ChunkMap$TrackedEntity.canTrack",
+          42
+        ],
+        [
+          "net.minecraft.network.Connection.send",
+          31
+        ],
+        [
+          "java.util.EnumMap.get",
+          29
+        ],
+        [
+          "net.minecraft.world.entity.Entity.setTicksFrozen",
+          28
+        ],
+        [
+          "net.minecraft.server.level.ChunkMap$TrackedEntity.moonrise$tick",
+          25
+        ],
+        [
+          "net.minecraft.network.syncher.SynchedEntityData$DataItem.getValue",
+          22
+        ],
+        [
+          "java.util.concurrent.atomic.AtomicLong.getAndSet",
+          22
+        ],
+        [
+          "org.bukkit.craftbukkit.entity.CraftEntity.isVisibleByDefault",
+          22
+        ],
+        [
+          "java.util.concurrent.atomic.AtomicLongFieldUpdater$CASUpdater.compareAndSet",
+          22
+        ],
+        [
+          "net.minecraft.world.phys.AABB.intersects",
+          18
+        ],
+        [
+          "net.minecraft.world.entity.Entity.setSharedFlag",
+          18
+        ],
+        [
+          "net.minecraft.server.level.ServerPlayerGameMode.getGameModeForPlayer",
+          17
+        ],
+        [
+          "java.lang.ThreadLocal.get",
+          17
+        ],
+        [
+          "net.minecraft.world.entity.InsideBlockEffectApplier$StepBasedCollector.flushStep",
+          17
+        ]
+      ]
+    }
+  },
+  "method_probes": {
+    "fresh_jvm_forks": 3,
+    "warmup_operations": 20000,
+    "samples_per_fork": 9,
+    "operations_per_sample": 5000,
+    "results": [
+      {
+        "case": "halo_geometry",
+        "cell_distance": 1,
+        "second_acquired": false
+      },
+      {
+        "case": "halo_geometry",
+        "cell_distance": 2,
+        "second_acquired": false
+      },
+      {
+        "case": "halo_geometry",
+        "cell_distance": 3,
+        "second_acquired": true
+      },
+      {
+        "case": "acquire_release",
+        "cells": 1,
+        "median_of_fork_cpu_medians_ns": 2190.96,
+        "fork_cpu_medians_ns": [
+          2062.048,
+          2531.68,
+          2190.96
+        ],
+        "fork_allocation_medians_bytes": [
+          1744.0,
+          1776.0,
+          1767.872
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            4483.48,
+            2573.16,
+            2414.352,
+            2262.376,
+            2062.048,
+            2040.456,
+            1909.104,
+            1929.368,
+            1904.048
+          ],
+          [
+            3128.272,
+            2950.4,
+            2843.232,
+            2531.68,
+            2573.344,
+            2486.952,
+            2404.296,
+            2367.216,
+            2251.16
+          ],
+          [
+            2502.512,
+            2203.704,
+            2205.832,
+            2190.96,
+            2132.2,
+            2325.784,
+            2061.744,
+            2038.256,
+            2012.528
+          ]
+        ]
+      },
+      {
+        "case": "acquire_release",
+        "cells": 4,
+        "median_of_fork_cpu_medians_ns": 3472.848,
+        "fork_cpu_medians_ns": [
+          3183.152,
+          3610.0,
+          3472.848
+        ],
+        "fork_allocation_medians_bytes": [
+          3104.0,
+          3104.0,
+          3104.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            3212.96,
+            3183.152,
+            3154.576,
+            3196.256,
+            3181.464,
+            3168.832,
+            3136.936,
+            3188.216,
+            3192.912
+          ],
+          [
+            3828.096,
+            3851.776,
+            3810.792,
+            3708.64,
+            3578.272,
+            3610.0,
+            3533.12,
+            3533.728,
+            3556.912
+          ],
+          [
+            3476.848,
+            3478.912,
+            3472.848,
+            3461.032,
+            3477.192,
+            3539.416,
+            3394.256,
+            3295.992,
+            3176.216
+          ]
+        ]
+      },
+      {
+        "case": "acquire_release",
+        "cells": 16,
+        "median_of_fork_cpu_medians_ns": 9499.632,
+        "fork_cpu_medians_ns": [
+          9244.656,
+          10855.584,
+          9499.632
+        ],
+        "fork_allocation_medians_bytes": [
+          7616.0,
+          7616.0,
+          7616.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            10339.024,
+            9514.128,
+            9203.632,
+            9402.784,
+            9179.368,
+            9153.952,
+            9262.864,
+            9144.784,
+            9244.656
+          ],
+          [
+            10855.584,
+            10435.592,
+            10451.224,
+            10928.072,
+            10916.344,
+            10978.504,
+            10978.792,
+            10523.928,
+            10265.448
+          ],
+          [
+            9418.856,
+            9012.856,
+            9009.456,
+            9499.632,
+            9797.944,
+            9773.784,
+            9827.648,
+            9678.416,
+            9391.472
+          ]
+        ]
+      },
+      {
+        "case": "acquire_release",
+        "cells": 64,
+        "median_of_fork_cpu_medians_ns": 30709.504,
+        "fork_cpu_medians_ns": [
+          30709.504,
+          33991.592,
+          30155.84
+        ],
+        "fork_allocation_medians_bytes": [
+          27928.0,
+          27928.0,
+          27928.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            30709.504,
+            32229.48,
+            30882.72,
+            29816.624,
+            29727.928,
+            31730.824,
+            32253.488,
+            30270.152,
+            30175.072
+          ],
+          [
+            33801.648,
+            35365.488,
+            36447.624,
+            33991.592,
+            33952.536,
+            35680.448,
+            35842.312,
+            33814.088,
+            33885.176
+          ],
+          [
+            30155.84,
+            29086.072,
+            29108.28,
+            32263.152,
+            31205.92,
+            29281.088,
+            29141.912,
+            30944.864,
+            31276.04
+          ]
+        ]
+      },
+      {
+        "case": "empty_current_thread_cleanup",
+        "cells": 0,
+        "median_of_fork_cpu_medians_ns": 614.672,
+        "fork_cpu_medians_ns": [
+          1131.92,
+          614.672,
+          584.92
+        ],
+        "fork_allocation_medians_bytes": [
+          568.0,
+          568.0,
+          568.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            1139.232,
+            1117.728,
+            1124.104,
+            1218.208,
+            1136.848,
+            1120.928,
+            1159.464,
+            1131.92,
+            1106.472
+          ],
+          [
+            1020.288,
+            992.24,
+            789.624,
+            673.552,
+            614.672,
+            604.688,
+            568.496,
+            569.104,
+            566.04
+          ],
+          [
+            956.072,
+            901.504,
+            717.352,
+            597.592,
+            577.76,
+            565.032,
+            584.92,
+            575.336,
+            578.472
+          ]
+        ]
+      },
+      {
+        "case": "empty_current_thread_cleanup",
+        "cells": 64,
+        "median_of_fork_cpu_medians_ns": 1561.872,
+        "fork_cpu_medians_ns": [
+          1561.872,
+          2285.472,
+          1205.688
+        ],
+        "fork_allocation_medians_bytes": [
+          2104.0,
+          1976.0,
+          1976.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            1568.672,
+            1561.352,
+            1565.896,
+            1561.936,
+            1561.872,
+            1620.488,
+            1437.792,
+            1423.456,
+            1435.232
+          ],
+          [
+            2739.848,
+            2721.664,
+            2341.752,
+            2269.512,
+            2270.816,
+            2300.352,
+            2285.472,
+            2081.008,
+            2060.32
+          ],
+          [
+            6549.992,
+            5174.272,
+            1186.28,
+            1167.688,
+            1183.616,
+            1220.16,
+            1205.688,
+            1204.056,
+            1212.352
+          ]
+        ]
+      },
+      {
+        "case": "empty_current_thread_cleanup",
+        "cells": 512,
+        "median_of_fork_cpu_medians_ns": 10473.592,
+        "fork_cpu_medians_ns": [
+          10473.592,
+          10600.08,
+          9995.768
+        ],
+        "fork_allocation_medians_bytes": [
+          12728.0,
+          12728.0,
+          12728.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            10473.592,
+            9685.992,
+            9810.424,
+            9813.856,
+            10026.312,
+            10639.536,
+            11901.992,
+            11980.872,
+            12130.84
+          ],
+          [
+            9410.32,
+            10600.08,
+            11369.816,
+            11353.48,
+            11275.848,
+            11364.2,
+            9516.584,
+            9526.808,
+            9598.576
+          ],
+          [
+            11731.896,
+            11696.024,
+            11760.736,
+            9995.768,
+            9910.832,
+            9708.776,
+            9697.32,
+            9773.608,
+            10607.248
+          ]
+        ]
+      },
+      {
+        "case": "empty_effect_collector",
+        "cells": 0,
+        "median_of_fork_cpu_medians_ns": 569.36,
+        "fork_cpu_medians_ns": [
+          576.072,
+          441.8,
+          569.36
+        ],
+        "fork_allocation_medians_bytes": [
+          192.0,
+          192.0,
+          192.0
+        ],
+        "fork_cpu_samples_ns": [
+          [
+            599.296,
+            579.672,
+            574.728,
+            576.072,
+            580.224,
+            586.112,
+            575.68,
+            575.504,
+            564.688
+          ],
+          [
+            456.16,
+            443.888,
+            435.096,
+            444.216,
+            437.128,
+            441.8,
+            441.096,
+            434.936,
+            442.632
+          ],
+          [
+            571.584,
+            571.088,
+            570.248,
+            563.072,
+            568.04,
+            567.504,
+            569.36,
+            569.368,
+            566.96
+          ]
+        ]
+      }
+    ]
+  },
+  "excluded_attempts": [
+    {
+      "directory": "run/crowded-audit-20260922",
+      "reason": "Interrupted after asynchronous summon acknowledgement; incomplete acceptance."
+    },
+    {
+      "directory": "run/crowded-audit-20260922-final",
+      "players": 80,
+      "cows": 240,
+      "client_workers": 1,
+      "reason": "Keepalive timeout and client polling stalls; acceptance failed; Minecraft network JFR diagnostics enabled."
+    },
+    {
+      "directory": "run/crowded-audit-20260922-sharded",
+      "players": 80,
+      "cows": 240,
+      "client_workers": 4,
+      "reason": "Keepalive timeout persisted; acceptance failed; Minecraft network JFR diagnostics enabled. Extra recording with setting warnings is invalid."
+    }
+  ],
+  "limits": [
+    "Two accepted runs with sequential player-only and mixed-load phases; no implementation A/B or optimization speedup. Cross-run host load and owner layout differ.",
+    "Execution samples are not precise CPU percentages, critical-path latency, or TPS capacity. Network loops and the sequential owner have different parallelism.",
+    "Allocation rates use thread counter deltas; sampled allocation weights are used only to locate candidate sites.",
+    "No region application waits >=1ms were recorded in the 80-cow run; the accepted 240-cow run recorded one 3.596ms world-border storage monitor wait. Failed try-lock backoff and shorter contention are not excluded.",
+    "Uncontended method probes do not prove live lock contention or overall TPS gains.",
+    "Shared host, loopback offline clients, no added plugins, no compression or encryption, peaceful cows. No native-client FPS evidence."
+  ],
+  "raw_evidence": {
+    "directory": "run/crowded-audit-20260922-control",
+    "files_sha256": {
+      "manifest.json": "bf403257ee6d7dd3e288949cf07bb9b6ca0afe8d2b2227ff4a2ee0551fb8e108",
+      "clients.json": "cbb4480d27839029c88d241e3ff3f8d89b556aa3e2e40448ff7f45e1d2199fbd",
+      "players.jfr": "e6bb730f7b6c1354ab96b35efe3399478bbaf267bb851a4d042c512ee5e002a9",
+      "mixed.jfr": "90612d3c144e9c3320ae4b1fae9ce58dddef674ecd88e684ddd46d470b480985",
+      "players-summary.json": "1e01864181635cfeec12d04c1d0969d4554af53a97a0f461afc4bb805f4f3f82",
+      "mixed-summary.json": "a636e43e4e58211caac86d7077324333a4f61d528f9d26253c97309c551b9534",
+      "class-fingerprints.json": "9fda61cc285473fbc54083828b6e83ef8eb004845d6996092d643c9297616ef7",
+      "lock-probe-1.json": "49fc6611ab4522f750cd02ea43b05812308ddd57fd73d8d499b7632b5d8cc985",
+      "lock-probe-2.json": "2151cdfd560179f622706aee1fb2be3e959e93465717076c1ce61dcb0574aea5",
+      "lock-probe-3.json": "a938af21346c81eb741eda0db127f90d8cd9cd323f91fe849869495c73223610"
+    }
+  },
+  "crowded_240_control": {
+    "same_artifact_and_source_diff": true,
+    "source_head": "56699f6034e70c048c5b5c22e9b1e8b418bec0ac",
+    "host": {
+      "arch": "arm64",
+      "cpus": 8,
+      "freeMemory": 9658957824,
+      "load": [
+        9.29,
+        10.78,
+        10.24
+      ]
+    },
+    "config_hashes": {
+      "bukkit.yml": "74bf5ed1d592088ecfa03b08b349fb378a23221ef3204df48d020cd83e0cf288",
+      "spigot.yml": "c33261940075cc24cf219aea27efdaa076fb46a12247bdf7441a307a0b117424",
+      "purpur.yml": "6c2e24415b51cfc6261fd14de3c6a26d2bb46aa50ec8ca311fc1c1a7baa87ed2",
+      "shreddedpaper.yml": "9d419070a113bdbf957ab06080bd4fd41a5645cb115dfaf7bc200add0262900c",
+      "server.properties": "0f7ff8a4978bddd1e927d67718a710288d314b9bb5c56ac02cacee15b2d3aa6e",
+      "eula.txt": "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+      "config/paper-global.yml": "0f771a3224966fcf3bbf99cd698dd0599095ed52247bdf5c215f19a524baa9bc",
+      "config/paper-world-defaults.yml": "6b920f8304a86dfd2d4e8150d7fb823c37e642540e99791ff8c23c61ffb7cd8d"
+    },
+    "acceptance": {
+      "samples": 190,
+      "faults": 0,
+      "allClientsSeeEveryOtherPlayer": true,
+      "players": 80,
+      "cows": 240,
+      "cow_check_before": "Test passed. Count: 240",
+      "cow_check_after": "Test passed. Count: 240",
+      "client_loop_max_ms": 463.208447,
+      "server_exit": {
+        "code": 0,
+        "signal": null
+      }
+    },
+    "phases": {
+      "players": {
+        "seconds": 45,
+        "execution_samples_total": 1567,
+        "execution_samples": {
+          "network": {
+            "count": 939,
+            "percent": 59.923
+          },
+          "region": {
+            "count": 514,
+            "percent": 32.802
+          },
+          "other": {
+            "count": 69,
+            "percent": 4.403
+          },
+          "main": {
+            "count": 45,
+            "percent": 2.872
+          }
+        },
+        "region_categories": {
+          "player_tick": 273,
+          "other": 42,
+          "tracking_and_broadcast": 129,
+          "entity_tick_other": 59,
+          "entity_push_query": 5,
+          "lock_acquisition": 2,
+          "lock_cleanup": 1,
+          "layout_merge_split": 3
+        },
+        "region_ticks": {
+          "world:-1,-1": {
+            "events": 899,
+            "mspt_p50": 5.552429,
+            "mspt_p95": 13.117856,
+            "mspt_p99": 16.812168,
+            "mspt_max": 35.510773,
+            "schedule_lag_p99_ms": 2.75465,
+            "threads": {
+              "AstatineRegionNormal-4": 677,
+              "AstatineRegionDegraded-5": 222
+            }
+          }
+        },
+        "thread_allocation_bytes_per_second": {
+          "other": 1195033.253097976,
+          "network": 7620881.875724347,
+          "region": 10387994.116073817
+        },
+        "gc": {
+          "pauses": 3,
+          "total_ms": 80.269888,
+          "max_ms": 55.391695
+        },
+        "waits_at_least_1ms": {},
+        "region_application_park_or_monitor_events": 0,
+        "network_top_inclusive_stacks_overlap": [
+          [
+            "io.netty.util.internal.ThreadExecutorMap$2.run",
+            939
+          ],
+          [
+            "java.lang.Thread.runWith",
+            939
+          ],
+          [
+            "java.lang.Thread.run",
+            939
+          ],
+          [
+            "io.netty.channel.SingleThreadIoEventLoop.run",
+            939
+          ],
+          [
+            "io.netty.util.concurrent.SingleThreadEventExecutor$5.run",
+            939
+          ],
+          [
+            "io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks",
+            897
+          ],
+          [
+            "io.netty.util.concurrent.AbstractEventExecutor.safeExecute",
+            857
+          ],
+          [
+            "io.netty.util.concurrent.AbstractEventExecutor.runTask",
+            857
+          ],
+          [
+            "net.minecraft.network.Connection.doSendPacket",
+            839
+          ],
+          [
+            "net.minecraft.network.Connection$$Lambda.0x0000300002359908.run",
+            820
+          ],
+          [
+            "net.minecraft.network.Connection.lambda$sendPacket$1",
+            818
+          ],
+          [
+            "io.netty.channel.AbstractChannelHandlerContext.write",
+            786
+          ],
+          [
+            "io.netty.channel.AbstractChannelHandlerContext.writeAndFlush",
+            766
+          ],
+          [
+            "io.netty.channel.Channel.writeAndFlush",
+            766
+          ],
+          [
+            "io.netty.channel.DefaultChannelPipeline.writeAndFlush",
+            766
+          ],
+          [
+            "net.minecraft.network.Connection$2.write",
+            615
+          ],
+          [
+            "io.netty.channel.ChannelOutboundHandlerAdapter.write",
+            614
+          ],
+          [
+            "io.netty.handler.codec.MessageToMessageEncoder.write",
+            599
+          ]
+        ],
+        "region_top_leaf_samples": [
+          [
+            "it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet.contains",
+            23
+          ],
+          [
+            "net.minecraft.core.NonNullList.size",
+            14
+          ],
+          [
+            "net.minecraft.network.syncher.SynchedEntityData$DataItem.getValue",
+            12
+          ],
+          [
+            "net.minecraft.server.level.ChunkMap$TrackedEntity.canTrack",
+            9
+          ],
+          [
+            "net.minecraft.network.Connection.getPlayer",
+            9
+          ],
+          [
+            "net.minecraft.network.Connection.send",
+            9
+          ],
+          [
+            "net.minecraft.network.Connection.isConnected",
+            9
+          ],
+          [
+            "org.bukkit.craftbukkit.entity.CraftPlayer.getHandle",
+            8
+          ],
+          [
+            "net.minecraft.server.level.ChunkMap$TrackedEntity.moonrise$tick",
+            8
+          ],
+          [
+            "net.minecraft.core.NonNullList.get",
+            8
+          ],
+          [
+            "net.minecraft.world.inventory.AbstractContainerMenu.synchronizeSlotToRemote",
+            8
+          ],
+          [
+            "net.minecraft.world.entity.player.Inventory.getItem",
+            7
+          ],
+          [
+            "net.minecraft.advancements.criterion.SimpleCriterionTrigger.trigger",
+            7
+          ],
+          [
+            "java.util.HashMap.putVal",
+            7
+          ],
+          [
+            "java.lang.invoke.VarHandleReferences$FieldInstanceReadOnly.getVolatile",
+            6
+          ]
+        ]
+      },
+      "mixed": {
+        "seconds": 60,
+        "execution_samples_total": 11019,
+        "execution_samples": {
+          "network": {
+            "count": 7691,
+            "percent": 69.798
+          },
+          "other": {
+            "count": 57,
+            "percent": 0.517
+          },
+          "region": {
+            "count": 3239,
+            "percent": 29.395
+          },
+          "main": {
+            "count": 32,
+            "percent": 0.29
+          }
+        },
+        "region_categories": {
+          "entity_tick_other": 945,
+          "entity_push_query": 320,
+          "tracking_and_broadcast": 1012,
+          "player_tick": 405,
+          "pathfinding": 50,
+          "mob_goals_and_navigation": 411,
+          "other": 83,
+          "mob_sensors_and_brain": 7,
+          "lock_cleanup": 3,
+          "layout_merge_split": 1,
+          "lock_acquisition": 2
+        },
+        "region_ticks": {
+          "world:-1,-1": {
+            "events": 1163,
+            "mspt_p50": 32.821258,
+            "mspt_p95": 55.107975,
+            "mspt_p99": 139.143217,
+            "mspt_max": 284.618741,
+            "schedule_lag_p99_ms": 3.667513,
+            "threads": {
+              "AstatineRegionNormal-4": 568,
+              "AstatineRegionDegraded-5": 595
+            }
+          }
+        },
+        "thread_allocation_bytes_per_second": {
+          "other": 1668463.9439906653,
+          "network": 77035554.85914318,
+          "region": 51717631.205200866
+        },
+        "gc": {
+          "pauses": 26,
+          "total_ms": 2352.3708579999998,
+          "max_ms": 203.857733
+        },
+        "waits_at_least_1ms": {
+          "region:jdk.JavaMonitorEnter": {
+            "count": 1,
+            "total_ms": 3.596033,
+            "max_ms": 3.596033,
+            "sites_ms": [
+              [
+                "java.util.concurrent.ConcurrentHashMap.compute -> net.minecraft.world.level.storage.DimensionDataStorage.computeIfAbsent -> net.minecraft.server.level.ServerLevel.getWorldBorder -> ca.spottedleaf.moonrise.patches.collisions.CollisionUtil.getCollisionsForBlocksOrWorldBorder -> net.minecraft.world.entity.Entity.collide -> net.minecraft.world.entity.Entity.move -> net.minecraft.world.entity.LivingEntity.handleRelativeFrictionAndCalculateMovement -> net.minecraft.world.entity.LivingEntity.travelInAir -> net.minecraft.world.entity.LivingEntity.travel",
+                3.596033
+              ]
+            ]
+          },
+          "main:jdk.JavaMonitorEnter": {
+            "count": 1,
+            "total_ms": 1.957996,
+            "max_ms": 1.957996,
+            "sites_ms": [
+              [
+                "java.util.concurrent.ConcurrentHashMap.compute -> net.minecraft.world.level.storage.DimensionDataStorage.computeIfAbsent -> net.minecraft.server.level.ServerLevel.getWorldBorder -> net.minecraft.world.level.Level.getWorldBorderAdjustedRespawnData -> net.minecraft.server.MinecraftServer.updateEffectiveRespawnData -> net.minecraft.server.MinecraftServer.tickChildren -> net.minecraft.server.MinecraftServer.tickServer -> net.minecraft.server.dedicated.DedicatedServer.tickServer -> net.minecraft.server.MinecraftServer.processPacketsAndTick",
+                1.957996
+              ]
+            ]
+          }
+        },
+        "region_application_park_or_monitor_events": 1,
+        "network_top_inclusive_stacks_overlap": [
+          [
+            "io.netty.util.internal.ThreadExecutorMap$2.run",
+            7691
+          ],
+          [
+            "java.lang.Thread.runWith",
+            7691
+          ],
+          [
+            "io.netty.util.concurrent.SingleThreadEventExecutor$5.run",
+            7691
+          ],
+          [
+            "java.lang.Thread.run",
+            7691
+          ],
+          [
+            "io.netty.channel.SingleThreadIoEventLoop.run",
+            7691
+          ],
+          [
+            "io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks",
+            7677
+          ],
+          [
+            "io.netty.util.concurrent.AbstractEventExecutor.runTask",
+            7274
+          ],
+          [
+            "io.netty.util.concurrent.AbstractEventExecutor.safeExecute",
+            7274
+          ],
+          [
+            "net.minecraft.network.Connection.doSendPacket",
+            6059
+          ],
+          [
+            "io.netty.channel.AbstractChannelHandlerContext.write",
+            5811
+          ],
+          [
+            "net.minecraft.network.Connection$2.write",
+            5354
+          ],
+          [
+            "io.netty.channel.ChannelOutboundHandlerAdapter.write",
+            5351
+          ],
+          [
+            "io.netty.handler.codec.MessageToMessageEncoder.write",
+            5260
+          ],
+          [
+            "io.netty.handler.codec.MessageToByteEncoder.write",
+            4813
+          ],
+          [
+            "net.minecraft.network.Connection$$Lambda.0x00003000029e4b70.run",
+            4163
+          ],
+          [
+            "net.minecraft.network.Connection.lambda$sendPacket$0",
+            4145
+          ],
+          [
+            "io.netty.channel.DefaultChannelPipeline.write",
+            4004
+          ],
+          [
+            "io.netty.channel.Channel.write",
+            4004
+          ]
+        ],
+        "region_top_leaf_samples": [
+          [
+            "java.util.HashMap.getNode",
+            238
+          ],
+          [
+            "net.minecraft.network.Connection.send",
+            134
+          ],
+          [
+            "it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet.contains",
+            130
+          ],
+          [
+            "net.minecraft.server.level.ChunkMap$TrackedEntity.canTrack",
+            68
+          ],
+          [
+            "net.minecraft.server.level.ServerPlayerGameMode.getGameModeForPlayer",
+            61
+          ],
+          [
+            "net.minecraft.server.network.ServerCommonPacketListenerImpl.send",
+            61
+          ],
+          [
+            "java.util.concurrent.atomic.AtomicLongFieldUpdater$CASUpdater.compareAndSet",
+            60
+          ],
+          [
+            "net.minecraft.network.Connection.getPlayer",
+            49
+          ],
+          [
+            "net.minecraft.network.Connection.isConnected",
+            47
+          ],
+          [
+            "net.minecraft.world.level.chunk.PalettedContainer.get",
+            46
+          ],
+          [
+            "net.minecraft.world.entity.Entity.setTicksFrozen",
+            46
+          ],
+          [
+            "net.minecraft.server.level.ChunkMap$TrackedEntity.moonrise$tick",
+            43
+          ],
+          [
+            "net.minecraft.network.syncher.SynchedEntityData$DataItem.getValue",
+            41
+          ],
+          [
+            "net.minecraft.world.entity.LivingEntity.getItemBySlot",
+            37
+          ],
+          [
+            "io.netty.util.internal.shaded.org.jctools.queues.atomic.BaseMpscLinkedAtomicArrayQueue.offer",
+            35
+          ]
+        ]
+      }
+    },
+    "gc_overlap": {
+      "method": "Approximate completed-tick interval as JFR tick commit timestamp minus reported wallNanos; compare stop-the-world GC phase timestamps. Commit follows work, so sub-ms attribution is not exact.",
+      "largest_ticks": [
+        {
+          "wall_ms": 284.618741,
+          "approx_gc_overlap_ms": 203.858
+        },
+        {
+          "wall_ms": 264.541219,
+          "approx_gc_overlap_ms": 182.965
+        },
+        {
+          "wall_ms": 214.452234,
+          "approx_gc_overlap_ms": 158.188
+        },
+        {
+          "wall_ms": 195.03547,
+          "approx_gc_overlap_ms": 155.138
+        },
+        {
+          "wall_ms": 192.626795,
+          "approx_gc_overlap_ms": 152.181
+        },
+        {
+          "wall_ms": 174.34999,
+          "approx_gc_overlap_ms": 145.696
+        },
+        {
+          "wall_ms": 172.808593,
+          "approx_gc_overlap_ms": 126.709
+        },
+        {
+          "wall_ms": 171.628554,
+          "approx_gc_overlap_ms": 142.169
+        },
+        {
+          "wall_ms": 169.1546,
+          "approx_gc_overlap_ms": 127.426
+        },
+        {
+          "wall_ms": 168.6228,
+          "approx_gc_overlap_ms": 132.685
+        },
+        {
+          "wall_ms": 159.307938,
+          "approx_gc_overlap_ms": 128.419
+        },
+        {
+          "wall_ms": 153.437709,
+          "approx_gc_overlap_ms": 135.426
+        }
+      ]
+    },
+    "raw_evidence": {
+      "directory": "run/crowded-audit-20260922-control240",
+      "files_sha256": {
+        "manifest.json": "dcf64337a9b3c5730a9f3384666ff52a4b6c4f3b78be6636cd675f8d01836c99",
+        "clients.json": "d89043b448f052f1340e5f21166064f974522cecddbebd8bdec18504b28b631e",
+        "players.jfr": "6004ca85b0c6f582f4cc006e596569ea28375c38cab8da8776d89d082b562b91",
+        "mixed.jfr": "dfb6a47dccc0e142e8ab453ed6d2d67a2921d7ecbc8b391164e1e042658acf24",
+        "players-summary.json": "a5f639a5e4b7dea9ff757fe8e10c7e4e3c75d297c3bced627c0aa8b9db8d1729",
+        "mixed-summary.json": "3e81145fc200f832736bc38a6c810e375d68baccb1a0d0d4085e322c0675373b",
+        "gc-overlap.json": "c96d15e3835248448ee0d7a40eb355cc5aa3702c0e7b99b73c2dbecf5c30e1fc"
+      }
+    }
+  }
+}
