@@ -1,0 +1,1127 @@
+{
+  "engineArtifact": {
+    "sourceHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+    "candidateSha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+    "existingOwnershipDiffSha256": "9626ae9af28d665a7d73ba2a8b6d3ed8d5d021151cebdac1091d32c2e8b44057",
+    "sourceNote": "Includes unchanged pre-existing ShreddedPaper.java ownership optimization, also present in baseline; not staged in task commits.",
+    "status": "deployed-verified",
+    "runtimeSha256": "116044316c6d2351a6bdf0428cd15851e4cb5906ef211a7d6462d385ca72dcbe",
+    "verifiedClasses": 22,
+    "fullTests": {
+      "api": {
+        "tests": 519,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "server": {
+        "tests": 9094,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 22
+      }
+    }
+  },
+  "implementationCommits": [
+    "a3f545e",
+    "068d6b2",
+    "aea4caf",
+    "0d67b24"
+  ],
+  "harnessCommit": "0a90c08",
+  "fullTests": {
+    "api": {
+      "tests": 519,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    "server": {
+      "tests": 9094,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 22
+    }
+  },
+  "verifiedClassFingerprints": [
+    {
+      "class": "io/multipaper/shreddedpaper/ShreddedPaper.class",
+      "sha256": "565f2ac60f70d08f79d487a34d2c597797b0157d859ebf9a88087b4e32e74a67",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/entity/BlockIntersectionScratch.class",
+      "sha256": "25829f116efd76a0db3573f4be9edf371073bc1c9d6cfb4dfa2ab4e2587faf55",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/NetworkBatchMetrics$Summary.class",
+      "sha256": "0b64a1463b14fe619a4867070fbfe8d3cce0d0fab7309ca99d74fe303b9df578",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/NetworkBatchMetrics.class",
+      "sha256": "3aaff16d4bdfcadf2233bde75e73e0749523f0e451161da0ba419b60cf272745",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/OrderedPacketBatcher$Action.class",
+      "sha256": "4425bff1373dde09eb8e630d9ab87954cd5722f531ef046e1e8d88f8a2c74480",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/OrderedPacketBatcher$FlushedPacket.class",
+      "sha256": "92acbfe95eeb9a29099713112c6c9a281546824ddbc61752b72ac6dbdb14754d",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/OrderedPacketBatcher.class",
+      "sha256": "2663dddfbc1bf09a20f8c2b8c4aad8011a78d9c46b47d732ca27036f37d71bb0",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/RegionPacketFlushScope$State.class",
+      "sha256": "61c5298a876a5ccd95d018ddd2c64e78f175c0a5910ad5ee97274b037db8afbf",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/network/RegionPacketFlushScope.class",
+      "sha256": "77af63eb59a26197a087ddeb773978036f00cb04c5232aad239c05099bb3dec8",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperChunkTicker$ScheduledTickContext.class",
+      "sha256": "3e66482972a62cf10b2d624e6b74d598d5a96c4b0e50a2034155ea86505e88a1",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperChunkTicker.class",
+      "sha256": "9d676eea7aaf49dc9b201f4278ea1a99613e7c302af4cb6fd21bd6681ee49374",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperPlayerTicker.class",
+      "sha256": "878aa21cc41595188269bf66080606692e519e129d7ed6b847a817371f9e5f6e",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$CurrentThreadWritePromotion.class",
+      "sha256": "48db031a63ccb53d31aa96a554b7c11d1297f7012a30b506d3790ef0eb442b48",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$LockedRegion.class",
+      "sha256": "95338964f93ff9761a6bcc3b53faa7919819cb09e2f5bcfb6c2f3c8eec8f84a0",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$OwnedRegionCount.class",
+      "sha256": "f4c1d5570c66369a416a9bcb18fe2c9bd921c387b2cd00235674ca18e33f9585",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$ReadOnlyRegionLock.class",
+      "sha256": "863e2607fe179c434552de119b68234713417efb493632efe2a1969f1465b1aa",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$RegionLock.class",
+      "sha256": "27ad2f2c53d447ba1d3d6490634224f115410ca342edf0595fb14ca3ae5916a0",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$ScopedWriteAccess.class",
+      "sha256": "7303fe4dfa8fe30eeb608b1be075e81f40285ba11c812458dd5bb4719054070d",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker$WriteRegionLock.class",
+      "sha256": "6d2eb2e917f6455ea282c6b2082a9bc13544c9bba86488b37943ca206eac9420",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/ShreddedPaperRegionLocker.class",
+      "sha256": "020f144a49bd3157ad27aeb3814ee5f00effc2d0af1d586e4f438c9ad4c4dff6",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/region/RegionLockWait.class",
+      "sha256": "fb5bb70a9453fae4025f08629af37d90064c2f749b2c7a6193400d61e019d07a",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    },
+    {
+      "class": "io/multipaper/shreddedpaper/threading/region/events/RegionLockWaitEvent.class",
+      "sha256": "9fee6a901990940c168870635bd305e86cc50c8aa5663d08b89eb1106bf8d8d3",
+      "matchesBuild": true,
+      "matchesExtractedRuntime": true
+    }
+  ],
+  "acceptedProfiles": [
+    {
+      "id": "production-rules-40-baseline-1",
+      "artifactSha256": "b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97",
+      "harnessCheckoutHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+      "java": "java 25.0.3 2026-04-21 LTS\nJava(TM) SE Runtime Environment Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01)\nJava HotSpot(TM) 64-Bit Server VM Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01, mixed mode, sharing)\n",
+      "jvmArgs": [
+        "--enable-preview",
+        "-Dterminal.jline=false",
+        "-Dterminal.ansi=false",
+        "-Xms1G",
+        "-Xmx3G",
+        "-XX:ActiveProcessorCount=2",
+        "-Xms2G",
+        "-Xmx4G",
+        "-XX:ActiveProcessorCount=7",
+        "-jar",
+        "server.jar",
+        "--nogui"
+      ],
+      "hostAtLaunch": {
+        "arch": "arm64",
+        "cpus": 8,
+        "freeMemory": 11150344192,
+        "load": [
+          7.19,
+          11.48,
+          11.62
+        ]
+      },
+      "players": 40,
+      "cows": 240,
+      "cramming": 24,
+      "configHashes": {
+        "bukkit.yml": "74bf5ed1d592088ecfa03b08b349fb378a23221ef3204df48d020cd83e0cf288",
+        "spigot.yml": "c33261940075cc24cf219aea27efdaa076fb46a12247bdf7441a307a0b117424",
+        "purpur.yml": "6c2e24415b51cfc6261fd14de3c6a26d2bb46aa50ec8ca311fc1c1a7baa87ed2",
+        "shreddedpaper.yml": "bb05721ebbfc917c11048389c10460d13220342596904d7b705932460a592586",
+        "server.properties": "e1f4b3065986d05ba5d3c907ed45654b510b7dc3347f0388b643cdc2439dad04",
+        "eula.txt": "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+        "config/paper-global.yml": "0f771a3224966fcf3bbf99cd698dd0599095ed52247bdf5c215f19a524baa9bc",
+        "config/paper-world-defaults.yml": "bd3ad5a61309e1c815773e00ff20411c31df9e47474d970a827d6fbe44077ce0"
+      },
+      "acceptance": {
+        "samples": 190,
+        "faults": 0,
+        "allClientsSeeEveryOtherPlayer": true
+      },
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "mobCheckBefore": "Test passed. Count: 240",
+      "mobCheckAfter": "Test passed. Count: 240",
+      "mixedTicks": {
+        "world:-1,-1": {
+          "events": 1198,
+          "mspt_p50": 19.891765,
+          "mspt_p95": 32.440583,
+          "mspt_p99": 40.519569,
+          "mspt_max": 177.68077,
+          "schedule_lag_p99_ms": 2.144228,
+          "threads": {
+            "AstatineRegionNormal-7": 138,
+            "AstatineRegionNormal-6": 119,
+            "AstatineRegionNormal-9": 113,
+            "AstatineRegionNormal-8": 150,
+            "AstatineRegionNormal-5": 120,
+            "AstatineRegionDegraded-10": 419,
+            "AstatineRegionNormal-4": 139
+          }
+        }
+      },
+      "gc": {
+        "pauses": 5,
+        "total_ms": 392.540477,
+        "max_ms": 161.14816
+      },
+      "jfrCpuLoad": {
+        "samples": 60,
+        "jvm_mean_fraction": 0.34867356435,
+        "machine_mean_fraction": 0.9912122301666667,
+        "note": "JFR reported normalized CPU load; includes JVM compiler and GC work, not sampled stack percentages."
+      },
+      "allocationBytesPerSecond": {
+        "region": 33695619.93541299,
+        "netty": 22151442.687352266,
+        "main": 264176.3158770849
+      },
+      "networkBatchDiagnostics": {},
+      "clientMaxEventLoopDelayMs": 377.749503,
+      "clientMaxTimeSinceReceivedKeepAliveMs": 2139,
+      "mixedJfrSha256": "aed7409dccab0137cf2d6c27248b123eec32f94ae61faa43e6281cb34d75fe01",
+      "rawEvidence": "run/perf-release-20260922/production-rules-40-baseline-1"
+    },
+    {
+      "id": "production-rules-40-candidate-1",
+      "artifactSha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+      "harnessCheckoutHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+      "java": "java 25.0.3 2026-04-21 LTS\nJava(TM) SE Runtime Environment Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01)\nJava HotSpot(TM) 64-Bit Server VM Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01, mixed mode, sharing)\n",
+      "jvmArgs": [
+        "--enable-preview",
+        "-Dterminal.jline=false",
+        "-Dterminal.ansi=false",
+        "-Xms1G",
+        "-Xmx3G",
+        "-XX:ActiveProcessorCount=2",
+        "-Xms2G",
+        "-Xmx4G",
+        "-XX:ActiveProcessorCount=7",
+        "-Dastatine.packet-batch-diagnostics=true",
+        "-jar",
+        "server.jar",
+        "--nogui"
+      ],
+      "hostAtLaunch": {
+        "arch": "arm64",
+        "cpus": 8,
+        "freeMemory": 11221204992,
+        "load": [
+          9.47,
+          12.29,
+          11.97
+        ]
+      },
+      "players": 40,
+      "cows": 240,
+      "cramming": 24,
+      "configHashes": {
+        "bukkit.yml": "74bf5ed1d592088ecfa03b08b349fb378a23221ef3204df48d020cd83e0cf288",
+        "spigot.yml": "c33261940075cc24cf219aea27efdaa076fb46a12247bdf7441a307a0b117424",
+        "purpur.yml": "6c2e24415b51cfc6261fd14de3c6a26d2bb46aa50ec8ca311fc1c1a7baa87ed2",
+        "shreddedpaper.yml": "bb05721ebbfc917c11048389c10460d13220342596904d7b705932460a592586",
+        "server.properties": "e1f4b3065986d05ba5d3c907ed45654b510b7dc3347f0388b643cdc2439dad04",
+        "eula.txt": "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+        "config/paper-global.yml": "0f771a3224966fcf3bbf99cd698dd0599095ed52247bdf5c215f19a524baa9bc",
+        "config/paper-world-defaults.yml": "bd3ad5a61309e1c815773e00ff20411c31df9e47474d970a827d6fbe44077ce0"
+      },
+      "acceptance": {
+        "samples": 190,
+        "faults": 0,
+        "allClientsSeeEveryOtherPlayer": true
+      },
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "mobCheckBefore": "Test passed. Count: 240",
+      "mobCheckAfter": "Test passed. Count: 240",
+      "mixedTicks": {
+        "world:0,-1": {
+          "events": 1200,
+          "mspt_p50": 15.377933,
+          "mspt_p95": 29.736907,
+          "mspt_p99": 36.694094,
+          "mspt_max": 70.451914,
+          "schedule_lag_p99_ms": 0.711149,
+          "threads": {
+            "AstatineRegionDegraded-10": 137,
+            "AstatineRegionNormal-6": 183,
+            "AstatineRegionNormal-7": 181,
+            "AstatineRegionNormal-5": 179,
+            "AstatineRegionNormal-4": 171,
+            "AstatineRegionNormal-8": 172,
+            "AstatineRegionNormal-9": 177
+          }
+        }
+      },
+      "gc": {
+        "pauses": 4,
+        "total_ms": 74.981746,
+        "max_ms": 42.798043
+      },
+      "jfrCpuLoad": {
+        "samples": 60,
+        "jvm_mean_fraction": 0.14940781508333334,
+        "machine_mean_fraction": 0.6897807941666667,
+        "note": "JFR reported normalized CPU load; includes JVM compiler and GC work, not sampled stack percentages."
+      },
+      "allocationBytesPerSecond": {
+        "region": 20078745.566075478,
+        "netty": 31635791.838911857,
+        "main": 269672.6230164022
+      },
+      "networkBatchDiagnostics": {
+        "scheduledBatches": 922230,
+        "drainedBatches": 922191,
+        "drainedPackets": 18161136,
+        "totalQueueNanos": 716737996687,
+        "seconds": 59.404,
+        "packets_per_batch": 19.69346480284453,
+        "mean_queue_ms": 0.7772120923832482,
+        "max_queue_ms": 46.537237,
+        "observed_pending_batches_start": 0,
+        "observed_pending_batches_end": 39,
+        "observed_pending_batches_max": 40,
+        "observed_pending_packets_start": 0,
+        "observed_pending_packets_end": 5217,
+        "observed_pending_packets_max": 11729
+      },
+      "clientMaxEventLoopDelayMs": 47.874047,
+      "clientMaxTimeSinceReceivedKeepAliveMs": 1050,
+      "mixedJfrSha256": "a5932381b68cb2fe6d605a11ef162ec448294aacfd769525b5fb558de1999444",
+      "rawEvidence": "run/perf-release-20260922/production-rules-40-candidate-1"
+    },
+    {
+      "id": "production-rules-40-candidate-2",
+      "artifactSha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+      "harnessCheckoutHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+      "java": "java 25.0.3 2026-04-21 LTS\nJava(TM) SE Runtime Environment Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01)\nJava HotSpot(TM) 64-Bit Server VM Oracle GraalVM 25.0.3+9.1 (build 25.0.3+9-LTS-jvmci-b01, mixed mode, sharing)\n",
+      "jvmArgs": [
+        "--enable-preview",
+        "-Dterminal.jline=false",
+        "-Dterminal.ansi=false",
+        "-Xms1G",
+        "-Xmx3G",
+        "-XX:ActiveProcessorCount=2",
+        "-Xms2G",
+        "-Xmx4G",
+        "-XX:ActiveProcessorCount=7",
+        "-jar",
+        "server.jar",
+        "--nogui"
+      ],
+      "hostAtLaunch": {
+        "arch": "arm64",
+        "cpus": 8,
+        "freeMemory": 11477753856,
+        "load": [
+          4.23,
+          7.23,
+          9.66
+        ]
+      },
+      "players": 40,
+      "cows": 240,
+      "cramming": 24,
+      "configHashes": {
+        "bukkit.yml": "74bf5ed1d592088ecfa03b08b349fb378a23221ef3204df48d020cd83e0cf288",
+        "spigot.yml": "c33261940075cc24cf219aea27efdaa076fb46a12247bdf7441a307a0b117424",
+        "purpur.yml": "6c2e24415b51cfc6261fd14de3c6a26d2bb46aa50ec8ca311fc1c1a7baa87ed2",
+        "shreddedpaper.yml": "bb05721ebbfc917c11048389c10460d13220342596904d7b705932460a592586",
+        "server.properties": "63c6ebebadc6d19f38a9817042a1b7fe14723002468d11413e35d57bc4a5cd78",
+        "eula.txt": "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+        "config/paper-global.yml": "0f771a3224966fcf3bbf99cd698dd0599095ed52247bdf5c215f19a524baa9bc",
+        "config/paper-world-defaults.yml": "bd3ad5a61309e1c815773e00ff20411c31df9e47474d970a827d6fbe44077ce0"
+      },
+      "acceptance": {
+        "samples": 190,
+        "faults": 0,
+        "allClientsSeeEveryOtherPlayer": true
+      },
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "mobCheckBefore": "Test passed. Count: 240",
+      "mobCheckAfter": "Test passed. Count: 240",
+      "mixedTicks": {
+        "world:0,0": {
+          "events": 1200,
+          "mspt_p50": 10.442221,
+          "mspt_p95": 21.645161,
+          "mspt_p99": 28.818907,
+          "mspt_max": 33.863378,
+          "schedule_lag_p99_ms": 0.944907,
+          "threads": {
+            "AstatineRegionNormal-6": 157,
+            "AstatineRegionNormal-8": 219,
+            "AstatineRegionNormal-9": 174,
+            "AstatineRegionNormal-7": 178,
+            "AstatineRegionNormal-4": 192,
+            "AstatineRegionDegraded-10": 118,
+            "AstatineRegionNormal-5": 162
+          }
+        }
+      },
+      "gc": {
+        "pauses": 5,
+        "total_ms": 71.835469,
+        "max_ms": 32.068261
+      },
+      "jfrCpuLoad": {
+        "samples": 60,
+        "jvm_mean_fraction": 0.1450061707,
+        "machine_mean_fraction": 0.47812898933333337,
+        "note": "JFR reported normalized CPU load; includes JVM compiler and GC work, not sampled stack percentages."
+      },
+      "allocationBytesPerSecond": {
+        "region": 20795411.84706157,
+        "netty": 33718275.409180306,
+        "main": 263042.7680922698
+      },
+      "networkBatchDiagnostics": {},
+      "clientMaxEventLoopDelayMs": 44.990463,
+      "clientMaxTimeSinceReceivedKeepAliveMs": 1064,
+      "mixedJfrSha256": "0f5ef6d071b8f107f4277d9cc399f6ee60afbc3a7c1d0663e1ae64863e09054a",
+      "rawEvidence": "run/perf-release-20260922/production-rules-40-candidate-2"
+    }
+  ],
+  "excludedRuns": [
+    {
+      "id": "candidate-1",
+      "artifactSha256": "e57abe1c841a98d026842e3f3a613b40ad4f949623caa1c348003f81c8ee809b",
+      "reason": "Rejected initial monitor/array batching implementation: completed functional acceptance but median/p95 regression.",
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "error": null,
+      "rawEvidence": "run/perf-release-20260922/candidate-1"
+    },
+    {
+      "id": "candidate-no-batching",
+      "artifactSha256": "e57abe1c841a98d026842e3f3a613b40ad4f949623caa1c348003f81c8ee809b",
+      "reason": "Failed connection and final mob-population acceptance; exclude post-disconnect timings.",
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "error": "Error: Wrong final mob population: Test failed\n    at file:///home/ubuntu/works/ShreddedPaper/tools/benchmark/crowded-audit/run.mjs:165:80\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+      "rawEvidence": "run/perf-release-20260922/candidate-no-batching"
+    },
+    {
+      "id": "production-rules-baseline-1",
+      "artifactSha256": "b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97",
+      "reason": "80-player compressed baseline failed keepalive/connection and final population acceptance.",
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "error": "Error: Wrong final mob population: Test failed\n    at file:///home/ubuntu/works/ShreddedPaper/tools/benchmark/crowded-audit/run.mjs:165:80\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+      "rawEvidence": "run/perf-release-20260922/production-rules-baseline-1"
+    },
+    {
+      "id": "production-rules-40-baseline-2",
+      "artifactSha256": "b9318dcdb2613054e2ada3df8daa88321aed232595e6396e909acd20cd0b6d97",
+      "reason": "40-player compression512 baseline failed connection/visibility acceptance at162/190 checks; no performance comparison against it.",
+      "serverExit": {
+        "code": 0,
+        "signal": null
+      },
+      "error": "Error: Client harness failed: {\"code\":1,\"signal\":null}\n    at file:///home/ubuntu/works/ShreddedPaper/tools/benchmark/crowded-audit/run.mjs:169:34\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+      "rawEvidence": "run/perf-release-20260922/production-rules-40-baseline-2"
+    }
+  ],
+  "installedCodeProbes": {
+    "baseline": {
+      "runtime_jar": "/home/ubuntu/works/ShreddedPaper/run/perf-release-20260922/production-rules-40-baseline-1/versions/1.21.11/shreddedpaper-1.21.11.jar",
+      "runtime_sha256": "dd2a65641dc057d34c0c735d13edb0fb0e13671fa2e8b5497ae1ae364e70f560",
+      "java": "openjdk 25.0.2 2026-01-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)\n",
+      "rows": [
+        {
+          "case": "halo_geometry",
+          "cell_distance": 1,
+          "second_acquired": false
+        },
+        {
+          "case": "halo_geometry",
+          "cell_distance": 2,
+          "second_acquired": false
+        },
+        {
+          "case": "halo_geometry",
+          "cell_distance": 3,
+          "second_acquired": true
+        },
+        {
+          "case": "moving_block_sweep",
+          "cells": 1,
+          "median_cpu_ns": 2053.528,
+          "median_bytes": 2048.0,
+          "cpu_samples": [
+            3843.944,
+            2152.328,
+            2072.48,
+            2053.528,
+            2048.032,
+            2041.92,
+            2054.28,
+            2041.296,
+            2052.392
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 1,
+          "median_cpu_ns": 2323.984,
+          "median_bytes": 1776.634,
+          "cpu_samples": [
+            4396.512,
+            2888.864,
+            2343.968,
+            2360.704,
+            2323.984,
+            2308.32,
+            2304.408,
+            2298.72,
+            2293.568
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 4,
+          "median_cpu_ns": 3677.512,
+          "median_bytes": 3104.0,
+          "cpu_samples": [
+            3760.304,
+            3843.2,
+            3677.512,
+            3618.88,
+            3692.816,
+            3640.04,
+            3785.36,
+            3611.488,
+            3601.416
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 16,
+          "median_cpu_ns": 10089.736,
+          "median_bytes": 7616.0,
+          "cpu_samples": [
+            10061.848,
+            10171.016,
+            10026.704,
+            10089.736,
+            10009.304,
+            10050.952,
+            10188.416,
+            10090.184,
+            10121.416
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 64,
+          "median_cpu_ns": 36740.072,
+          "median_bytes": 27928.0,
+          "cpu_samples": [
+            36740.072,
+            33985.752,
+            33937.216,
+            60683.632,
+            69639.84,
+            46730.304,
+            39363.888,
+            34320.288,
+            33735.768
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 0,
+          "median_cpu_ns": 1142.712,
+          "median_bytes": 568.0,
+          "cpu_samples": [
+            1154.744,
+            1134.304,
+            1133.296,
+            1183.92,
+            1154.336,
+            1140.216,
+            1144.216,
+            1142.712,
+            1140.024
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 64,
+          "median_cpu_ns": 1755.064,
+          "median_bytes": 2104.0,
+          "cpu_samples": [
+            1875.248,
+            1752.552,
+            1755.064,
+            1763.776,
+            1769.008,
+            1756.144,
+            1749.848,
+            1751.408,
+            1750.344
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 512,
+          "median_cpu_ns": 10685.008,
+          "median_bytes": 12728.0,
+          "cpu_samples": [
+            9764.792,
+            9547.272,
+            9499.504,
+            9395.592,
+            10685.008,
+            11434.848,
+            11298.592,
+            11280.488,
+            10747.984
+          ]
+        },
+        {
+          "case": "empty_effect_collector",
+          "cells": 0,
+          "median_cpu_ns": 402.504,
+          "median_bytes": 192.0,
+          "cpu_samples": [
+            410.808,
+            405.368,
+            401.4,
+            404.232,
+            402.504,
+            430.288,
+            346.984,
+            195.128,
+            171.376
+          ]
+        }
+      ],
+      "limits": "Uncontended CPU/allocations and deterministic geometry; not live contention or server throughput."
+    },
+    "candidate": {
+      "runtime_jar": "/home/ubuntu/works/ShreddedPaper/run/perf-release-20260922/production-rules-40-candidate-1/versions/1.21.11/shreddedpaper-1.21.11.jar",
+      "runtime_sha256": "116044316c6d2351a6bdf0428cd15851e4cb5906ef211a7d6462d385ca72dcbe",
+      "java": "openjdk 25.0.2 2026-01-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)\n",
+      "rows": [
+        {
+          "case": "halo_geometry",
+          "cell_distance": 1,
+          "second_acquired": false
+        },
+        {
+          "case": "halo_geometry",
+          "cell_distance": 2,
+          "second_acquired": false
+        },
+        {
+          "case": "halo_geometry",
+          "cell_distance": 3,
+          "second_acquired": true
+        },
+        {
+          "case": "moving_block_sweep",
+          "cells": 1,
+          "median_cpu_ns": 1697.624,
+          "median_bytes": 1184.0,
+          "cpu_samples": [
+            1690.856,
+            1685.024,
+            1691.944,
+            1704.264,
+            1690.024,
+            1758.896,
+            1697.624,
+            1700.624,
+            1700.92
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 1,
+          "median_cpu_ns": 2776.84,
+          "median_bytes": 1776.104,
+          "cpu_samples": [
+            5776.536,
+            3625.728,
+            2794.304,
+            2794.728,
+            2737.136,
+            2776.84,
+            2770.968,
+            2761.216,
+            2726.632
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 4,
+          "median_cpu_ns": 3997.0,
+          "median_bytes": 3104.0,
+          "cpu_samples": [
+            4227.728,
+            4087.512,
+            4057.184,
+            4008.264,
+            3993.88,
+            3997.0,
+            3929.856,
+            3880.904,
+            3895.128
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 16,
+          "median_cpu_ns": 10885.44,
+          "median_bytes": 7616.0,
+          "cpu_samples": [
+            11575.104,
+            10885.44,
+            11083.936,
+            11067.76,
+            11031.16,
+            10705.232,
+            10337.608,
+            10369.968,
+            10395.624
+          ]
+        },
+        {
+          "case": "acquire_release",
+          "cells": 64,
+          "median_cpu_ns": 36402.856,
+          "median_bytes": 27928.0,
+          "cpu_samples": [
+            35957.88,
+            38531.88,
+            36064.024,
+            35632.48,
+            37321.384,
+            37430.328,
+            35703.424,
+            36402.856,
+            39365.944
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 0,
+          "median_cpu_ns": 209.736,
+          "median_bytes": 0.0,
+          "cpu_samples": [
+            221.352,
+            209.736,
+            212.752,
+            209.68,
+            209.152,
+            210.568,
+            214.008,
+            209.144,
+            208.544
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 64,
+          "median_cpu_ns": 205.888,
+          "median_bytes": 0.0,
+          "cpu_samples": [
+            205.36,
+            205.712,
+            208.072,
+            211.648,
+            205.888,
+            205.976,
+            205.52,
+            206.752,
+            204.448
+          ]
+        },
+        {
+          "case": "empty_current_thread_cleanup",
+          "cells": 512,
+          "median_cpu_ns": 208.264,
+          "median_bytes": 0.0,
+          "cpu_samples": [
+            216.024,
+            210.328,
+            208.264,
+            209.6,
+            207.424,
+            206.784,
+            207.024,
+            209.168,
+            206.712
+          ]
+        },
+        {
+          "case": "empty_effect_collector",
+          "cells": 0,
+          "median_cpu_ns": 380.488,
+          "median_bytes": 32.0,
+          "cpu_samples": [
+            386.832,
+            387.0,
+            380.488,
+            381.928,
+            377.952,
+            392.568,
+            356.632,
+            364.256,
+            359.952
+          ]
+        }
+      ],
+      "limits": "Uncontended CPU/allocations and deterministic geometry; not live contention or server throughput."
+    }
+  },
+  "pluginNetworkSmoke": {
+    "artifacts": {
+      "run/perf-release-20260922/candidate-v2.jar": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+      "/home/ubuntu/astatine/earth/plugins/packetevents-spigot-2.12.1.jar": "a58ec1e9a3735c633af39506009eed2f22d888b2ca500effb3cba2803e79323f",
+      "/home/ubuntu/astatine/earth/plugins/ProtocolLib.jar": "d0659b9f9306241d25dab28540b639bdf0d2f5d0c8de111881bb23b16ac535ce"
+    },
+    "command": [
+      "/home/ubuntu/astatine/earth/.runtime/graalvm-jdk-25/bin/java",
+      "--enable-preview",
+      "-Dterminal.jline=false",
+      "-Dterminal.ansi=false",
+      "-Dastatine.networkPluginSmoke=true",
+      "-Dastatine.packet-batch-diagnostics=true",
+      "-XX:ActiveProcessorCount=2",
+      "-Xms512m",
+      "-Xmx2G",
+      "-jar",
+      "server.jar",
+      "--nogui"
+    ],
+    "client_exit": 0,
+    "server_exit": 0,
+    "clients": {
+      "faults": [],
+      "clients": [
+        {
+          "recipient": 0,
+          "packets": 41024,
+          "echoes": 641,
+          "dimensionChanges": 0
+        },
+        {
+          "recipient": 1,
+          "packets": 41024,
+          "echoes": 641,
+          "dimensionChanges": 0
+        },
+        {
+          "recipient": 2,
+          "packets": 40960,
+          "echoes": 640,
+          "dimensionChanges": 0
+        },
+        {
+          "recipient": 3,
+          "packets": 41152,
+          "echoes": 643,
+          "dimensionChanges": 2
+        }
+      ]
+    },
+    "serverResults": [
+      "[23:19:27 INFO]: [NetworkPluginSmoke] NETWORK_PLUGIN_SMOKE_PASS transformed=164160 echoes=2561 rtt_p50_ms=50.042467 rtt_p95_ms=52.227303 rtt_p99_ms=63.249562",
+      "NETWORK_SMOKE_PASS /home/ubuntu/works/ShreddedPaper/run/perf-release-20260922/network-smoke-v2"
+    ]
+  },
+  "worldLifecycleSmoke": [
+    "SMOKE_WORKDIR=/tmp/astatine-bug-smoke-l0xmcvsg",
+    "SMOKE_JAR_SHA256=cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+    "[23:58:00 INFO]: Done (23.911s)! For help, type \"help\"",
+    "[23:58:07 INFO]: [WorldClockSmoke] AUDIT_CLOCK target=5.0 ticks=10 seconds=2.002792881 observed=4.993027534133721",
+    "[23:58:09 INFO]: [WorldClockSmoke] AUDIT_CLOCK target=40.0 ticks=80 seconds=2.000566885 observed=39.988665512675425",
+    "[23:58:10 INFO]: [WorldClockSmoke] AUDIT_UNLOAD callbacks_before=112 callbacks_after=0",
+    "[23:58:10 INFO]: [WorldClockSmoke] AUDIT_CLOSED_WORLD_REJECTED",
+    "[23:58:11 INFO]: [WorldClockSmoke] AUDIT_RELOAD callbacks=17",
+    "[23:58:11 INFO]: [WorldClockSmoke] AUDIT_SMOKE_PASS",
+    "SMOKE_PROCESS_EXIT=0"
+  ],
+  "production": {
+    "stagedAt": "2026-09-22T14:57:15.768000+00:00",
+    "status": "deployed-verified",
+    "release": "/home/ubuntu/astatine/earth/.runtime/releases/perf-20260922-0d67b24",
+    "previousSha256": "adfa4b5f7660203b4ad846e5c390f0fd13fd9c4f89c77629db2c34e7f787c313",
+    "candidateSha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+    "sourceHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+    "artifact": {
+      "sourceHead": "0d67b2474b921df523cc0cc5315cdc1732f43f20",
+      "candidateSha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+      "existingOwnershipDiffSha256": "9626ae9af28d665a7d73ba2a8b6d3ed8d5d021151cebdac1091d32c2e8b44057",
+      "sourceNote": "Includes unchanged pre-existing ShreddedPaper.java ownership optimization, also present in baseline; not staged in task commits.",
+      "status": "deployed-verified",
+      "runtimeSha256": "116044316c6d2351a6bdf0428cd15851e4cb5906ef211a7d6462d385ca72dcbe",
+      "verifiedClasses": 22,
+      "fullTests": {
+        "api": {
+          "tests": 519,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2
+        },
+        "server": {
+          "tests": 9094,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 22
+        }
+      }
+    },
+    "installedAt": "2026-09-22T14:59:54.920513+00:00",
+    "originalPid": 3914532,
+    "logOffsetBeforeStop": 239016,
+    "restartRequestedAt": "2026-09-22T14:59:54.923175+00:00",
+    "verifiedAt": "2026-09-22T15:08:35.708660+00:00",
+    "currentPid": 3148370,
+    "readback": {
+      "pids": [
+        3148370
+      ],
+      "sha256": "cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547",
+      "summaryLines": [
+        "[00:08:04] [Server thread/INFO]: This server is running Astatine version 1.21.11-DEV-ver/1.21.11@0d67b24 (1970-01-01T00:00:00Z) (Implementing API version 1.21.11-R0.1-SNAPSHOT)",
+        "[00:08:04] [Server thread/INFO]: ℹ Server Plugins (60):",
+        "[00:08:04] [Server thread/INFO]: Paper Plugins (1):",
+        "[00:08:04] [Server thread/INFO]: Bukkit Plugins (59):",
+        "[00:08:04] [Server thread/INFO]: There are 0 out of maximum 45 players online.",
+        "[00:08:05] [Server thread/INFO]: TPS from last 5s, 1m, 5m, 15m: 20.0, 20.0, 20.0, 19.5",
+        "[00:08:05] [Server thread/INFO]: Server tick times (avg/min/max) from last 5s, 10s, 1m:",
+        "[00:08:05] [Server thread/INFO]: ◴ 0.9/0.5/5.3, 0.8/0.5/5.3, 0.7/0.4/5.3",
+        "[00:08:05] [Server thread/INFO]: No active region snapshots."
+      ],
+      "logOffset": 143446,
+      "capturedAtUnix": 1790089690.996527
+    },
+    "enabledPlugins": 60,
+    "statusPing": {
+      "version": {
+        "name": "Powered By Astatine 1.21.11",
+        "protocol": 774
+      },
+      "online": 0,
+      "max": 45,
+      "latencyMs": 2,
+      "at": "2026-09-22T15:08:06.186Z"
+    },
+    "rollbackUsed": false,
+    "runtimeSha256": "116044316c6d2351a6bdf0428cd15851e4cb5906ef211a7d6462d385ca72dcbe",
+    "operationalNotes": [
+      "Wars prepare-reload was not invoked before the original global shutdown; its emergency-close warning is retained. Post-restart RUNNING and read-only SQLite quick_check=ok, persisted war tables empty. No claim of proving absence of volatile queued work loss.",
+      "GrimAC emitted three SLF4J no-provider warning lines logged at ERROR level, then enabled. No Java exceptions observed in post-restart log.",
+      "Other plugin reloads were observed after boot; all 60 are currently enabled. No unrelated plugin binaries/configuration were changed by this task.",
+      "Post-deploy observations had zero online players; this is readiness proof, not a live crowded-server speedup measurement."
+    ],
+    "rollbackHelper": {
+      "path": "/home/ubuntu/astatine/earth/.runtime/releases/perf-20260922-0d67b24/rollback.py",
+      "sha256": "1224d198de71c2f88b537a116f471ef1eac4c73bf0ee2b3036e1175d76a8ed4c",
+      "executed": false,
+      "requiresWarsSafeToReload": true
+    }
+  },
+  "pluginHealth": {
+    "warsQuickCheck": [
+      [
+        "ok"
+      ]
+    ],
+    "warsTableCounts": {
+      "war_events": 0,
+      "runtime_state": 0,
+      "metrics": 0,
+      "nation_challenges": 0,
+      "nation_roster": 0,
+      "front_wars": 0,
+      "front_war_approvals": 0,
+      "front_war_roster": 0,
+      "front_resolution_audit": 0,
+      "season_front_control": 0,
+      "front_war_control": 0,
+      "front_player_recovery": 0,
+      "front_war_audit": 0,
+      "front_war_chests": 0
+    },
+    "pluginEnableStatesFromLog": {
+      "LuckPerms": true,
+      "ProtocolLib": true,
+      "Vault": true,
+      "FastAsyncWorldEdit": true,
+      "PlugManX": true,
+      "PlaceholderAPI": true,
+      "EartopiaI18n": true,
+      "packetevents": true,
+      "EartopiaPvpManager": true,
+      "EartopiaResourcePacks": true,
+      "EartopiaHud": true,
+      "EartopiaGui": true,
+      "CoreProtect": true,
+      "EartopiaEarth": true,
+      "MythicLib": true,
+      "EartopiaPanels": true,
+      "mcMMO": true,
+      "BetterModel": true,
+      "Towny": true,
+      "EartopiaWorldGuard": true,
+      "MMOItems": true,
+      "EartopiaFishing": true,
+      "EartopiaCustomBlocks": true,
+      "EartopiaMMOItemsLorePackets": true,
+      "EartopiaFarming": true,
+      "dynmap": true,
+      "Essentials": true,
+      "EartopiaCooking": true,
+      "EartopiaInstruments": true,
+      "Multiverse-Core": true,
+      "TownyChat": true,
+      "GrimAC": true,
+      "EartopiaCamera": true,
+      "EartopiaDialogue": true,
+      "DiscordSRV": true,
+      "EartopiaCosmetics": true,
+      "EartopiaBackgroundMusic": true,
+      "EartopiaFriends": true,
+      "EartopiaChatDecoration": true,
+      "EartopiaSkills": true,
+      "EartopiaTutorial": true,
+      "EartopiaNPC": true,
+      "EartopiaTransport": true,
+      "EartopiaWildlife": true,
+      "Dynmap-Towny": true,
+      "EartopiaTrade": true,
+      "EartopiaLoginProbe": true,
+      "VoxelSniper": true,
+      "EartopiaArt": true,
+      "EartopiaAdminBridge": true,
+      "InvSee++": true,
+      "EartopiaEvents": true,
+      "EartopiaWars": true,
+      "DHS": true,
+      "EartopiaSpawnDetails": true,
+      "EartopiaHomepageBridge": true,
+      "EartopiaMainMenu": true,
+      "EartopiaDebugWorld": true,
+      "EartopiaTab": true,
+      "Chunky": true
+    },
+    "enabledCount": 60,
+    "disabled": []
+  },
+  "warsReloadStatus": [
+    "[00:05:20] [Server thread/INFO]: [War] Reload request: RUNNING",
+    "[00:05:20] [Server thread/INFO]: [War] Verified 0 · failed 0 · rejected 0"
+  ],
+  "limitations": [
+    "One completed before/after performance pair at compression128. Candidate also passed compression512, but the corresponding baseline failed; no speedup claimed for that condition.",
+    "Shared host and JIT variability. JFR normalized CPU load includes compiler/GC work; stack sample percentages are not CPU time.",
+    "Peaceful cows and loopback synthetic clients, no native FPS/combat/hostile mob/villager/WAN proof. Plugin smoke exercises selected PacketEvents/ProtocolLib hooks only.",
+    "Production readiness observed with zero online players. World data saved before replacement; rollback artifact/configuration preserved.",
+    "Both performance artifacts include unchanged pre-existing dirty ownership optimization; it is not included in this task commits."
+  ]
+}

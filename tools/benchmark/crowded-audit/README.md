@@ -1,13 +1,14 @@
 # Crowded-area performance audit
 
 This harness profiles selected server artifacts and validates crowded-area changes.
-It profiles the selected Paperclip artifact with 80 moving loopback clients,
+By default it profiles the selected Paperclip artifact with 80 moving loopback clients,
 then adds 80 invulnerable, persistent cows with normal AI in a glass enclosure.
 An optional final argument selects 16–240 cows. Accepted runs used 80 and 240.
 Earlier 240-cow attempts with Minecraft network JFR diagnostics enabled timed out;
 those attempts are excluded. The accepted runs disabled those diagnostics.
 Player team collisions are disabled by the client harness;
-cow collisions remain enabled. Cramming damage and natural spawning are disabled.
+cow collisions remain enabled. Cramming damage is disabled by default; explicit
+release scenarios can retain the production rule. Natural spawning stays disabled.
 
 Use a disposable flat-world template prepared as described in
 [the tracker harness](../tracker/README.md). It must have cached `libraries` and
@@ -83,9 +84,10 @@ method-level probes, not a server capacity or contention benchmark. The recorded
 audit ran this command three times in fresh JVMs. Preserve raw samples; early
 JIT effects and the shared host limit timing precision.
 
-The audit does not cover online authentication, encryption, WAN delay,
+The original diagnosis does not cover online authentication, encryption, WAN delay,
 compression-enabled traffic, plugin hooks, combat, hostile mob targeting,
-villager brains, or native client frame rates. The before/after phases change
+villager brains, or native client frame rates. Separate release checks below cover
+compressed traffic and selected plugin hooks. The original before/after phases change
 the workload, not the implementation; their difference is not an optimization
 speedup. A preliminary interrupted run is excluded from the final result.
 
