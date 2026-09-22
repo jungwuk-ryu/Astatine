@@ -3,6 +3,9 @@ import io.multipaper.shreddedpaper.region.RegionPos;
 import io.multipaper.shreddedpaper.threading.ShreddedPaperRegionLocker;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.lang.management.ManagementFactory;
 import java.util.Arrays;
@@ -73,6 +76,12 @@ public final class LockProbe {
     }
 
     private static void lockCosts() {
+        final Vec3 from = new Vec3(-2.5, 63, -1.5), to = new Vec3(2.5, 64, 1.5);
+        final AABB box = new AABB(2.2, 64, 1.2, 2.8, 65.8, 1.8);
+        final BlockGetter.BlockStepVisitor visitor = (pos, step) -> { sink += pos.asLong(); return true; };
+        measure("moving_block_sweep", 1, () -> {
+            if (!BlockGetter.forEachBlockIntersectedBetween(from, to, box, visitor)) throw new AssertionError("Incomplete sweep");
+        });
         for (int width : new int[]{1, 2, 4, 8}) {
             ShreddedPaperRegionLocker locker = new ShreddedPaperRegionLocker();
             long[] write = square(0, 0, width, 0), isolation = square(0, 0, width, 1);

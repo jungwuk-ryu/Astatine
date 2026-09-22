@@ -31,14 +31,15 @@ public final class ExportJfr {
 
     public static void main(String[] args) throws Exception {
         Set<String> selected = Set.of("jdk.ExecutionSample", "jdk.ObjectAllocationSample", "jdk.ThreadPark",
-            "jdk.JavaMonitorEnter", "jdk.GCPhasePause", "jdk.ThreadAllocationStatistics");
+            "jdk.JavaMonitorEnter", "jdk.GCPhasePause", "jdk.ThreadAllocationStatistics", "jdk.CPULoad");
         try (RecordingFile input = new RecordingFile(Path.of(args[0]))) {
             while (input.hasMoreEvents()) {
                 RecordedEvent event = input.readEvent();
                 String type = event.getEventType().getName();
                 boolean tick = type.endsWith("RegionTickEvent"), scheduler = type.endsWith("RegionSchedulerEvent");
-                if (!selected.contains(type) && !tick && !scheduler) continue;
-                RecordedThread thread = type.equals("jdk.ExecutionSample") ? event.getThread("sampledThread")
+                boolean lockWait = type.endsWith("RegionLockWaitEvent"), networkBatch = type.endsWith("NetworkBatchMetrics$Summary");
+                if (!selected.contains(type) && !tick && !scheduler && !lockWait && !networkBatch) continue;
+                RecordedThread thread = type.equals("jdk.CPULoad") ? null : type.equals("jdk.ExecutionSample") ? event.getThread("sampledThread")
                     : type.equals("jdk.ThreadAllocationStatistics") ? event.getThread("thread") : event.getThread();
                 String name = thread == null || thread.getJavaName() == null ? "unknown" : thread.getJavaName();
                 if ((type.equals("jdk.ThreadPark") || type.equals("jdk.JavaMonitorEnter"))
@@ -59,10 +60,16 @@ public final class ExportJfr {
                     values.put("weight", event.getLong("weight"));
                 }
                 if (type.equals("jdk.ThreadAllocationStatistics")) values.put("allocated", event.getLong("allocated"));
-                if (tick || scheduler) {
+                if (type.equals("jdk.CPULoad")) {
+                    for (String key : List.of("jvmUser", "jvmSystem", "machineTotal")) values.put(key, event.getFloat(key));
+                }
+                if (tick || scheduler || lockWait || networkBatch) {
                     for (String key : List.of("world", "regionX", "regionZ", "loadClass", "scheduledStartNanos",
                         "actualStartNanos", "wallNanos", "scheduleLagNanos", "workerLane", "sourceQueue", "sampleCount",
-                        "workerWaitNanos", "workerBusyNanos", "wakeupLatencyNanos", "normalQueueDepth", "degradedQueueDepth")) {
+                        "workerWaitNanos", "workerBusyNanos", "wakeupLatencyNanos", "normalQueueDepth", "degradedQueueDepth",
+                        "originalScheduledNanos", "firstFailedNanos", "waitNanos", "overdueNanos", "failedAttempts", "outcome",
+                        "observedBlocker", "blockerX", "blockerZ", "scheduledBatches", "drainedBatches", "drainedPackets",
+                        "totalQueueNanos", "maxQueueNanos", "enqueuedPackets")) {
                         if (event.hasField(key)) values.put(key, event.getValue(key));
                     }
                 }

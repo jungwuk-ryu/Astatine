@@ -59,6 +59,9 @@ tick_lags = defaultdict(list)
 tick_threads = defaultdict(Counter)
 gc = []
 scheduler = []
+lock_retries = []
+network_batches = []
+cpu_load = []
 allocation_statistics = defaultdict(list)
 for event in read_events():
     kind, values = event["type"], event["values"]
@@ -99,16 +102,43 @@ for event in read_events():
         gc.append(values["durationMs"])
     elif kind == "jdk.ThreadAllocationStatistics":
         allocation_statistics[thread].append((values["time"], values["allocated"]))
+    elif kind.endswith("RegionLockWaitEvent"):
+        lock_retries.append(values)
+    elif kind == "jdk.CPULoad":
+        cpu_load.append(values)
+    elif kind.endswith("NetworkBatchMetrics$Summary"):
+        network_batches.append(values)
 
 result = {"recording": str(args.recording), "event_counts": counts, "cpu_samples": {}, "allocations": {},
           "waits": {}, "region_ticks": {}, "gc": {"pauses": len(gc), "total_ms": sum(gc), "max_ms": max(gc, default=0)},
-          "scheduler_samples": scheduler, "thread_allocation_deltas": {},
+          "scheduler_samples": scheduler, "lock_retries": lock_retries, "network_batches": {}, "thread_allocation_deltas": {},
           "limits": ["Execution samples describe sampled Java stacks, not elapsed-time fractions or a speedup.",
                      "Inclusive stack counts overlap; categories are exclusive with documented precedence.",
                      "Allocation weights are sampled estimates; large initial weights can precede the recording window. Use thread counter deltas for rates.",
                      "Park/monitor thresholds are 1 ms; failed try-lock retries are not blocking events.",
                      "Scheduler idle is reported separately from waits on application locks.",
                      "Custom tick events must be checked against the recording's event sampling policy."]}
+if cpu_load:
+    result["cpu_load"] = {"samples": len(cpu_load),
+        "jvm_mean_fraction": sum(e["jvmUser"] + e["jvmSystem"] for e in cpu_load) / len(cpu_load),
+        "machine_mean_fraction": sum(e["machineTotal"] for e in cpu_load) / len(cpu_load),
+        "note": "JFR reported normalized CPU load; includes JVM compiler and GC work, not sampled stack percentages."}
+network_batches.sort(key=lambda event: event["time"])
+if len(network_batches) > 1:
+    first, last = network_batches[0], network_batches[-1]
+    delta = {key: last[key] - first[key] for key in ("scheduledBatches", "drainedBatches", "drainedPackets", "totalQueueNanos")}
+    result["network_batches"] = {**delta, "seconds": (last["time"] - first["time"]) / 1000,
+        "packets_per_batch": delta["drainedPackets"] / max(1, delta["drainedBatches"]),
+        "mean_queue_ms": delta["totalQueueNanos"] / max(1, delta["drainedBatches"]) / 1e6,
+        "max_queue_ms": max(event["maxQueueNanos"] for event in network_batches[1:]) / 1e6,
+        "observed_pending_batches_start": max(0, first["scheduledBatches"] - first["drainedBatches"]),
+        "observed_pending_batches_end": max(0, last["scheduledBatches"] - last["drainedBatches"]),
+        "observed_pending_batches_max": max(max(0, event["scheduledBatches"] - event["drainedBatches"]) for event in network_batches[1:])}
+    if "enqueuedPackets" in last:
+        result["network_batches"].update({
+            "observed_pending_packets_start": max(0, first["enqueuedPackets"] - first["drainedPackets"]),
+            "observed_pending_packets_end": max(0, last["enqueuedPackets"] - last["drainedPackets"]),
+            "observed_pending_packets_max": max(max(0, event["enqueuedPackets"] - event["drainedPackets"]) for event in network_batches[1:])})
 for group, info in groups.items():
     result["cpu_samples"][group] = {"samples": info["samples"], "categories": info["categories"],
         "threads": info["threads"], "leaf": info["leaf"].most_common(30), "inclusive": info["inclusive"].most_common(65)}

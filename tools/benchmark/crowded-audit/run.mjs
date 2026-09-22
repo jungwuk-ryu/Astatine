@@ -14,10 +14,15 @@ const [templateArg, jarArg, outputArg] = process.argv.slice(2);
 if (!outputArg) throw new Error('Usage: node run.mjs <isolated flat-world template> <paperclip.jar> <new output directory> [16..240 cows, default 80]');
 const mobs = Number(process.argv[5] ?? 80);
 if (!Number.isInteger(mobs) || mobs < 16 || mobs > 240) throw new Error('Cow count must be 16..240');
+const players = Number(process.env.AUDIT_PLAYERS ?? 80);
+if (!Number.isInteger(players) || players < 4 || players > 80 || players % 4) throw new Error('AUDIT_PLAYERS must be 4..80 and divisible by four');
+const cramming = Number(process.env.AUDIT_CRAMMING ?? 0);
+if (!Number.isInteger(cramming) || cramming < 0 || cramming > 1024) throw new Error('Invalid cramming rule');
 const template = await fs.realpath(templateArg);
 const jar = await fs.realpath(jarArg);
 const dir = path.resolve(outputArg);
-const java = execFileSync('which', ['java'], {encoding: 'utf8'}).trim();
+const java = process.env.AUDIT_JAVA ? await fs.realpath(process.env.AUDIT_JAVA)
+    : execFileSync('which', ['java'], {encoding: 'utf8'}).trim();
 const jcmd = path.join(path.dirname(java), 'jcmd');
 const sha = data => crypto.createHash('sha256').update(data).digest('hex');
 const rcon = command => sendRconCommand(25686, 'local-tracker-benchmark', command, 15000);
@@ -37,6 +42,18 @@ for (const name of ['config', 'world', 'world_nether', 'world_the_end']) {
 for (const name of ['libraries', 'cache']) await fs.symlink(path.join(template, name), path.join(dir, name));
 await fs.mkdir(path.join(dir, 'plugins'));
 await fs.copyFile(jar, path.join(dir, 'server.jar'));
+for (const [environment, filename, key, max] of [
+    ['AUDIT_COLLISION_LIMIT', 'config/paper-world-defaults.yml', 'max-entity-collisions', 64],
+    ['AUDIT_REGION_THREADS', 'shreddedpaper.yml', 'thread-count', 16],
+]) {
+    if (process.env[environment] === undefined) continue;
+    const value = Number(process.env[environment]);
+    if (!Number.isInteger(value) || value < 1 || value > max) throw new Error(`Invalid ${environment}`);
+    const file = path.join(dir, filename), yaml = await fs.readFile(file, 'utf8');
+    const expression = new RegExp(`^(\\s*${key}: )-?\\d+$`, 'gm');
+    if ([...yaml.matchAll(expression)].length !== 1) throw new Error(`Expected exactly one ${key} setting`);
+    await fs.writeFile(file, yaml.replace(expression, (match, prefix) => `${prefix}${value}`));
+}
 let properties = await fs.readFile(path.join(dir, 'server.properties'), 'utf8');
 for (const [key, value] of Object.entries({
     'server-ip': '127.0.0.1', 'server-port': '25685', 'rcon.port': '25686',
@@ -48,14 +65,24 @@ for (const [key, value] of Object.entries({
     properties += `\n${key}=${value}\n`;
 }
 await fs.writeFile(path.join(dir, 'server.properties'), properties);
+const extraJvmArgs = JSON.parse(process.env.AUDIT_JVM_ARGS ?? '[]');
+if (!Array.isArray(extraJvmArgs) || !extraJvmArgs.every(arg => typeof arg === 'string' && /^-(?:D|X|XX:)/.test(arg))) {
+    throw new Error('AUDIT_JVM_ARGS must be a JSON array of JVM -D/-X/-XX options');
+}
+if (process.env.AUDIT_COMPRESSION !== undefined) {
+    const threshold = Number(process.env.AUDIT_COMPRESSION);
+    if (!Number.isInteger(threshold) || threshold < -1 || threshold > 1048576) throw new Error('Invalid compression threshold');
+    properties = properties.split('\n').filter(line => !line.startsWith('network-compression-threshold=')).join('\n');
+    await fs.writeFile(path.join(dir, 'server.properties'), `${properties}\nnetwork-compression-threshold=${threshold}\n`);
+}
 const args = ['--enable-preview', '-Dterminal.jline=false', '-Dterminal.ansi=false',
-    '-Xms1G', '-Xmx3G', '-XX:ActiveProcessorCount=2', '-jar', 'server.jar', '--nogui'];
+    '-Xms1G', '-Xmx3G', '-XX:ActiveProcessorCount=2', ...extraJvmArgs, '-jar', 'server.jar', '--nogui'];
 const manifest = {
     createdAt: new Date().toISOString(), sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], {cwd: repo, encoding: 'utf8'}).trim(),
     preexistingSourceDiff: execFileSync('git', ['diff', '--', 'shreddedpaper-server'], {cwd: repo, encoding: 'utf8'}),
     jarSha256: sha(await fs.readFile(jar)), java, args, javaVersion: execFileSync(java, ['--version'], {encoding: 'utf8'}),
     template, host: {arch: os.arch(), cpus: os.cpus().length, freeMemory: os.freemem(), load: os.loadavg()},
-    players: 80, mobs, mobType: 'cow', phases: [], configHashes: {},
+    players, mobs, cramming, mobType: 'cow', phases: [], configHashes: {},
 };
 for (const name of [...configFiles, 'config/paper-global.yml', 'config/paper-world-defaults.yml']) {
     manifest.configHashes[name] = sha(await fs.readFile(path.join(dir, name)));
@@ -87,7 +114,7 @@ let clients;
 try {
     await awaitLog(server, path.join(dir, 'console.log'), 'For help, type "help"', 180);
     console.log(`READY ${dir} pid=${server.child.pid}`);
-    clients = launch('node', [path.join(import.meta.dirname, 'clients.mjs'), '80', '190',
+    clients = launch('node', [path.join(import.meta.dirname, 'clients.mjs'), String(players), '190',
         path.join(dir, 'clients.json'), 'moving'], repo, path.join(dir, 'clients.log'));
     await awaitLog(clients, path.join(dir, 'clients.log'), 'Sampling;', 240);
     async function profile(name, seconds) {
@@ -110,7 +137,7 @@ try {
     }
     await profile('players', 45);
     const commands = [
-        'gamerule minecraft:max_entity_cramming 0',
+        `gamerule minecraft:max_entity_cramming ${cramming}`,
         'fill 0 -60 0 24 -57 0 minecraft:glass', 'fill 0 -60 24 24 -57 24 minecraft:glass',
         'fill 0 -60 0 0 -57 24 minecraft:glass', 'fill 24 -60 0 24 -57 24 minecraft:glass',
     ];
