@@ -1,0 +1,9 @@
+package net.minecraft.world.entity;
+
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
+
+@Suite
+@SelectClasses(BoundedCollisionQueryTest.class)
+public class BoundedCollisionQueryTestSuite {
+}
