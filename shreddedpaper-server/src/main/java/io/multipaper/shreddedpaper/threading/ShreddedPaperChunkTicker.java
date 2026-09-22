@@ -200,10 +200,13 @@ public class ShreddedPaperChunkTicker {
             }
 
             if (ShreddedPaperConfiguration.get().multithreading.independentRegionTicking || !ShreddedPaperConfiguration.get().optimizations.processTrackQueueInParallel) {
-                region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
-                    ShreddedPaperEntityTicker.processTrackQueue(entity);
-                    return true;
-                }));
+                try (var flushScope = ShreddedPaperConfiguration.get().multithreading.independentRegionTicking
+                        ? io.multipaper.shreddedpaper.network.RegionPacketFlushScope.open() : null) {
+                    region.setTrackerCursor(processRoundRobin(region.getTrackedEntitiesSnapshot(), region.getTrackerCursor(), entity -> entity.getId(), entity -> {
+                        ShreddedPaperEntityTicker.processTrackQueue(entity);
+                        return true;
+                    }));
+                }
             }
 
             try (var ignored = level.chunkScheduler.getRegionLocker().promoteCurrentThreadLocksToWrite()) {

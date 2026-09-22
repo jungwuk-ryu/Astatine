@@ -31,7 +31,9 @@ public class ShreddedPaperPlayerTicker {
         tickPlayerChunkLoader(serverPlayer);
         serverPlayer.connection.chunkSender.sendNextChunks(serverPlayer);
         serverPlayer.connection.keepConnectionAlive();
-        serverPlayer.connection.resumeFlushing();
+        if (!io.multipaper.shreddedpaper.config.ShreddedPaperConfiguration.get().multithreading.independentRegionTicking) {
+            serverPlayer.connection.resumeFlushing();
+        }
     }
 
     public static boolean canTickPlayer(ServerPlayer serverPlayer) {
