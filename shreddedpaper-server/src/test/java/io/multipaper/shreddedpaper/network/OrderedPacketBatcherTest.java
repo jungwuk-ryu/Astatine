@@ -44,15 +44,16 @@ class OrderedPacketBatcherTest {
         final List<Integer> packets = new ArrayList<>();
         final List<Integer> flushes = new ArrayList<>();
         final var batcher = new OrderedPacketBatcher<Integer>(packets::add, () -> flushes.add(packets.size()), failure -> fail(failure));
-        for (int i = 0; i < 150; i++) batcher.send(loop.executor, i, true, false);
-        assertEquals(3, loop.queue.size());
+        for (int i = 0; i < 150; i++) batcher.send(loop.executor, i, i == 149);
+        assertEquals(1, loop.queue.size());
+        loop.queue.addLast(() -> assertEquals(64, packets.size(), "Drain must yield to other event-loop work"));
         loop.drain();
         assertEquals(java.util.stream.IntStream.range(0, 150).boxed().toList(), packets);
-        assertEquals(List.of(64, 128, 150), flushes);
-        batcher.send(loop.executor, 150, false, false);
+        assertEquals(List.of(150), flushes);
+        batcher.send(loop.executor, 150, false);
         batcher.execute(loop.executor, () -> flushes.add(packets.size()));
         loop.drain();
-        assertEquals(List.of(64, 128, 150, 151), flushes);
+        assertEquals(List.of(150, 151), flushes);
     }
 
     @Test
@@ -60,11 +61,11 @@ class OrderedPacketBatcherTest {
         final Loop loop = new Loop();
         final List<String> events = new ArrayList<>();
         final var batcher = new OrderedPacketBatcher<String>(events::add, () -> events.add("flush"), failure -> fail(failure));
-        batcher.send(loop.executor, "old-protocol", false, false);
+        batcher.send(loop.executor, "old-protocol", false);
         batcher.execute(loop.executor, () -> events.add("configure"));
-        batcher.send(loop.executor, "new-protocol", false, false);
+        batcher.send(loop.executor, "new-protocol", false);
         batcher.execute(loop.executor, () -> events.add("callback"));
-        batcher.send(loop.executor, "last-packet", true, false);
+        batcher.send(loop.executor, "last-packet", true);
         batcher.execute(loop.executor, () -> events.add("close"));
         loop.drain();
         assertEquals(List.of("old-protocol", "configure", "new-protocol", "callback", "last-packet", "flush", "close"), events);
@@ -79,11 +80,11 @@ class OrderedPacketBatcherTest {
         final var batcher = new OrderedPacketBatcher<Integer>(packet -> {
             lockHeld.set(lockHeld.get() || Thread.holdsLock(reference.get()));
             seen.add(packet);
-            if (packet == 1) reference.get().send(loop.executor, 3, false, false);
+            if (packet == 1) reference.get().send(loop.executor, 3, false);
         }, () -> {}, failure -> fail(failure));
         reference.set(batcher);
-        batcher.send(loop.executor, 1, false, false);
-        batcher.send(loop.executor, 2, false, false);
+        batcher.send(loop.executor, 1, false);
+        batcher.send(loop.executor, 2, false);
         loop.drain();
         assertFalse(lockHeld.get());
         assertEquals(List.of(1, 3, 2), seen);
@@ -98,10 +99,25 @@ class OrderedPacketBatcherTest {
             if (packet == 1) throw new IllegalStateException("encoder failure");
             seen.add(packet);
         }, () -> seen.add(-1), failures::add);
-        batcher.send(loop.executor, 1, true, false);
-        batcher.send(loop.executor, 2, false, false);
+        batcher.send(loop.executor, 1, true);
+        batcher.send(loop.executor, 2, false);
         loop.drain();
         assertEquals(List.of(2, -1), seen);
+        assertEquals(1, failures.size());
+    }
+
+    @Test
+    void failedFlushDoesNotDiscardTheFollowingCallbackOrPacket() {
+        final Loop loop = new Loop();
+        final List<Integer> seen = new ArrayList<>();
+        final List<Throwable> failures = new ArrayList<>();
+        final var batcher = new OrderedPacketBatcher<Integer>(seen::add,
+            () -> { throw new IllegalStateException("flush failure"); }, failures::add);
+        batcher.send(loop.executor, 1, true);
+        batcher.execute(loop.executor, () -> seen.add(-1));
+        batcher.send(loop.executor, 2, false);
+        loop.drain();
+        assertEquals(List.of(1, -1, 2), seen);
         assertEquals(1, failures.size());
     }
 
@@ -111,11 +127,33 @@ class OrderedPacketBatcherTest {
         final List<Integer> seen = new ArrayList<>();
         final var batcher = new OrderedPacketBatcher<Integer>(seen::add, () -> {}, failure -> fail(failure));
         loop.reject = true;
-        assertThrows(RejectedExecutionException.class, () -> batcher.send(loop.executor, 1, true, false));
+        assertThrows(RejectedExecutionException.class, () -> batcher.send(loop.executor, 1, true));
         loop.reject = false;
-        batcher.send(loop.executor, 2, true, false);
+        batcher.send(loop.executor, 2, true);
         loop.drain();
         assertEquals(List.of(2), seen);
+    }
+
+    @Test
+    void rejectedContinuationStillCompletesPreviouslyAcceptedWritesAndCallbacks() {
+        final Loop loop = new Loop();
+        final List<Integer> seen = new ArrayList<>();
+        final List<Throwable> failures = new ArrayList<>();
+        final var batcher = new OrderedPacketBatcher<Integer>(packet -> {
+            seen.add(packet);
+            loop.reject = true; // Event loop begins shutdown during the first drain.
+        }, () -> seen.add(-1), failures::add);
+        for (int i = 0; i < 100; i++) {
+            batcher.send(loop.executor, i, false);
+            if (i == 70) batcher.execute(loop.executor, () -> {});
+        }
+        batcher.execute(loop.executor, () -> seen.add(-2));
+        loop.drain();
+        assertEquals(101, seen.size());
+        assertEquals(-2, seen.getLast());
+        assertEquals(java.util.stream.IntStream.range(0, 100).boxed().toList(), seen.subList(0, 100));
+        assertEquals(1, failures.size());
+        assertInstanceOf(RejectedExecutionException.class, failures.getFirst());
     }
 
     @Test
@@ -130,7 +168,7 @@ class OrderedPacketBatcherTest {
                 final int producer = p;
                 producers.add(pool.submit(() -> {
                     start.await();
-                    for (int i = 0; i < 1000; i++) batcher.send(loop.executor, producer * 1000 + i, i == 999, false);
+                    for (int i = 0; i < 1000; i++) batcher.send(loop.executor, producer * 1000 + i, i == 999);
                     return null;
                 }));
             }
@@ -157,7 +195,7 @@ class OrderedPacketBatcherTest {
             for (int p = 0; p < 4; p++) {
                 final int producer = p;
                 producers.add(pool.submit(() -> {
-                    for (int i = 0; i < 1000; i++) batcher.send(loop, producer * 1000 + i, i % 64 == 63, true);
+                    for (int i = 0; i < 1000; i++) batcher.send(loop, producer * 1000 + i, i % 64 == 63);
                 }));
             }
             for (var producer : producers) producer.get(10, TimeUnit.SECONDS);

@@ -5,7 +5,7 @@ Subject: [PATCH] perf: batch tracking packets in owner flush scopes
 
 ---
 diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
-index da26090..b1911e6 100644
+index da26090..53494e3 100644
 --- a/net/minecraft/network/Connection.java
 +++ b/net/minecraft/network/Connection.java
 @@ -5,6 +5,8 @@ import com.google.common.collect.Queues;
@@ -17,7 +17,13 @@ index da26090..b1911e6 100644
  import io.multipaper.shreddedpaper.privacy.AnonymousMode;
  import io.netty.bootstrap.Bootstrap;
  import io.netty.channel.Channel;
-@@ -26,7 +28,6 @@ import io.netty.channel.local.LocalServerChannel;
+@@ -21,12 +23,12 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
+ import io.netty.channel.ChannelPipeline;
+ import io.netty.channel.ChannelPromise;
+ import io.netty.channel.SimpleChannelInboundHandler;
++import io.netty.util.concurrent.AbstractEventExecutor;
+ import io.netty.channel.local.LocalChannel;
+ import io.netty.channel.local.LocalServerChannel;
  import io.netty.handler.flow.FlowControlHandler;
  import io.netty.handler.timeout.ReadTimeoutHandler;
  import io.netty.handler.timeout.TimeoutException;
@@ -25,7 +31,7 @@ index da26090..b1911e6 100644
  import java.net.InetSocketAddress;
  import java.net.SocketAddress;
  import java.nio.channels.ClosedChannelException;
-@@ -66,6 +67,12 @@ import org.slf4j.Marker;
+@@ -66,6 +68,12 @@ import org.slf4j.Marker;
  import org.slf4j.MarkerFactory;
  
  public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
@@ -38,7 +44,7 @@ index da26090..b1911e6 100644
      private static final float AVERAGE_PACKETS_SMOOTHING = 0.75F;
      private static final Logger LOGGER = LogUtils.getLogger();
      public static final Marker ROOT_MARKER = MarkerFactory.getMarker("NETWORK");
-@@ -342,7 +349,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -342,7 +350,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
                  inboundConfigurationTask = inboundConfigurationTask.andThen(ctx -> ctx.pipeline().addAfter("decoder", "bundler", packetBundlePacker));
              }
  
@@ -47,7 +53,7 @@ index da26090..b1911e6 100644
          }
      }
  
-@@ -358,10 +365,19 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -358,10 +366,19 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
              }
  
              boolean flag = protocolInfo.id() == ConnectionProtocol.LOGIN;
@@ -58,23 +64,22 @@ index da26090..b1911e6 100644
  
 +    private ChannelFuture writeOrderedConfiguration(Object task) {
 +        final ChannelPromise promise = this.channel.newPromise();
-+        this.trackingBatcher.execute(this.channel.eventLoop(), () -> {
++        this.executePacketAction(() -> {
 +            try { this.channel.writeAndFlush(task, promise); }
 +            catch (Throwable failure) { promise.tryFailure(failure); }
-+        });
++        }, true);
 +        return promise;
 +    }
 +
      public void setListenerForServerboundHandshake(PacketListener packetListener) {
          if (this.packetListener != null) {
              throw new IllegalStateException("Listener already set");
-@@ -460,18 +476,18 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -460,18 +477,30 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
  
      private void sendPacket(Packet<?> packet, @Nullable ChannelFutureListener sendListener, boolean flush) {
          this.sentPackets++;
 -        if (this.channel.eventLoop().inEventLoop()) {
 -            this.doSendPacket(packet, sendListener, flush);
-+        final boolean lazy = ShreddedPaperConfiguration.get().optimizations.useLazyExecuteWhenNotFlushing;
 +        // Restrict coalescing to small tracking packets without completion hooks.
 +        // Large packets, bundles, keepalives and protocol changes remain ordering barriers.
 +        if (BATCH_TRACKING_PACKETS && sendListener == null && !packet.hasFinishListener() && !packet.isTerminal()
@@ -83,7 +88,7 @@ index da26090..b1911e6 100644
 +                || packet instanceof net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket
 +                || packet instanceof net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket)) {
 +            final boolean flushNow = flush && !RegionPacketFlushScope.defer(this);
-+            this.trackingBatcher.send(this.channel.eventLoop(), packet, flushNow, lazy);
++            this.trackingBatcher.send(this.channel.eventLoop(), packet, flushNow);
          } else {
 -            // ShreddedPaper start - Use lazyExecute if we are not flushing
 -            if (ShreddedPaperConfiguration.get().optimizations.useLazyExecuteWhenNotFlushing && !flush) {
@@ -94,11 +99,24 @@ index da26090..b1911e6 100644
 -            }
 -            // ShreddedPaper end - Use lazyExecute if we are not flushing
 -            this.channel.eventLoop().execute(() -> this.doSendPacket(packet, sendListener, flush));
-+            this.trackingBatcher.execute(this.channel.eventLoop(), () -> this.doSendPacket(packet, sendListener, flush), lazy && !flush);
++            this.executePacketAction(() -> this.doSendPacket(packet, sendListener, flush), flush);
++        }
++    }
++
++    private void executePacketAction(Runnable action, boolean flush) {
++        final var executor = this.channel.eventLoop();
++        if (BATCH_TRACKING_PACKETS) {
++            this.trackingBatcher.execute(executor, action);
++        } else if (executor.inEventLoop()) {
++            action.run();
++        } else if (!flush && ShreddedPaperConfiguration.get().optimizations.useLazyExecuteWhenNotFlushing) {
++            ((AbstractEventExecutor) executor).lazyExecute(action);
++        } else {
++            executor.execute(action);
          }
      }
  
-@@ -512,17 +528,13 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -512,17 +541,13 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
      public void flushChannel() {
          if (this.isConnected()) {
              this.flush();
@@ -114,17 +132,26 @@ index da26090..b1911e6 100644
 -        } else {
 -            this.channel.eventLoop().execute(() -> this.channel.flush());
 -        }
-+        this.trackingBatcher.execute(this.channel.eventLoop(), () -> this.channel.flush());
++        this.executePacketAction(() -> this.channel.flush(), true);
      }
  
      // Paper start - Optimize network: Rewrite this to be safer if ran off main thread
-@@ -667,8 +679,8 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -624,7 +649,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+ 
+         if (this.channel != null) {
+-            if (enableExplicitFlush) this.channel.eventLoop().execute(() -> this.channel.flush()); // Paper - Disable explicit network manager flushing; we don't need to explicit flush here, but allow opt in incase issues are found to a better version
++            if (enableExplicitFlush) this.flush(); // Paper - Disable explicit network manager flushing; we don't need to explicit flush here, but allow opt in incase issues are found to a better version
+         }
+ 
+         if (this.tickCount++ % 20 == 0) {
+@@ -667,8 +692,8 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
          }
  
          if (this.isConnected()) {
 -            this.channel.close(); // We can't wait as this may be called from an event loop.
              this.disconnectionDetails = disconnectionDetails;
-+            this.trackingBatcher.execute(this.channel.eventLoop(), () -> this.channel.close()); // Ordered, without waiting on the event loop.
++            this.executePacketAction(() -> this.channel.close(), true); // Ordered, without waiting on the event loop.
          }
      }
  

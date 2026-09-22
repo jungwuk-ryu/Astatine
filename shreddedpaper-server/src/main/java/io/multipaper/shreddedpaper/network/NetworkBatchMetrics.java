@@ -14,6 +14,7 @@ public final class NetworkBatchMetrics {
     private static final LongAdder scheduled = new LongAdder();
     private static final LongAdder drained = new LongAdder();
     private static final LongAdder packets = new LongAdder();
+    private static final LongAdder enqueuedPackets = new LongAdder();
     private static final LongAdder queueNanos = new LongAdder();
     private static final AtomicLong maxQueueNanos = new AtomicLong();
 
@@ -24,6 +25,7 @@ public final class NetworkBatchMetrics {
             event.scheduledBatches = scheduled.sum();
             event.drainedBatches = drained.sum();
             event.drainedPackets = packets.sum();
+            event.enqueuedPackets = enqueuedPackets.sum();
             event.totalQueueNanos = queueNanos.sum();
             event.maxQueueNanos = maxQueueNanos.getAndSet(0L);
             event.commit();
@@ -41,9 +43,13 @@ public final class NetworkBatchMetrics {
         if (ENABLED) scheduled.increment();
     }
 
-    static void drainedBatch(final int count, final long enqueued) {
+    static void enqueuedPacket() {
+        if (ENABLED) enqueuedPackets.increment();
+    }
+
+    static void drainedBatch(final int count, final long enqueued, final long started) {
         if (!ENABLED) return;
-        final long delay = Math.max(0L, System.nanoTime() - enqueued);
+        final long delay = Math.max(0L, started - enqueued);
         drained.increment();
         packets.add(count);
         queueNanos.add(delay);
@@ -57,6 +63,7 @@ public final class NetworkBatchMetrics {
         public long scheduledBatches;
         public long drainedBatches;
         public long drainedPackets;
+        public long enqueuedPackets;
         public long totalQueueNanos;
         public long maxQueueNanos;
     }

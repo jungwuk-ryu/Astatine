@@ -1,25 +1,27 @@
 package io.multipaper.shreddedpaper.network;
 
-import io.netty.util.concurrent.AbstractEventExecutor;
 import io.netty.util.concurrent.EventExecutor;
-import java.util.Arrays;
+import io.netty.util.internal.PlatformDependent;
+import java.util.Queue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * Coalesces small writes into bounded event-loop tasks. Barriers seal the current
- * task, so later writes cannot move ahead of a protocol change or explicit flush.
- * No encoder, callback or plugin code is invoked while holding the producer lock.
+ * A connection's producers append directly to Netty's MPSC array queue. The event
+ * loop drains at most 64 entries per task, then yields to other connections.
+ * Packet writes, callbacks and barriers keep queue order without a producer lock.
+ * No packet, encoder or plugin callback executes under a synchronization monitor.
  */
 public final class OrderedPacketBatcher<T> {
     static final int MAX_PACKETS = 64;
-    private static final int MAX_RECYCLED_BATCHES = 4;
-    private static final Runnable WAKEUP = () -> {};
+    private final Queue<Object> pending = PlatformDependent.newMpscQueue();
+    private final AtomicBoolean scheduled = new AtomicBoolean();
     private final Consumer<T> writer;
     private final Runnable flusher;
     private final Consumer<Throwable> failureHandler;
-    private Batch pending;
-    private Batch recycled;
-    private int recycledCount;
+    private final Runnable drainTask = this::run;
+    private volatile EventExecutor executor;
+    private volatile long queuedNanos;
 
     public OrderedPacketBatcher(final Consumer<T> writer, final Runnable flusher, final Consumer<Throwable> failureHandler) {
         this.writer = writer;
@@ -27,153 +29,130 @@ public final class OrderedPacketBatcher<T> {
         this.failureHandler = failureHandler;
     }
 
-    public void send(final EventExecutor executor, final T packet, final boolean flush, final boolean lazy) {
+    public void send(final EventExecutor executor, final T packet, final boolean flush) {
         if (executor.inEventLoop()) {
-            this.seal();
             this.writer.accept(packet);
             if (flush) this.flusher.run();
             return;
         }
-        synchronized (this) {
-            Batch batch = this.pending;
-            if (batch != null && batch.executor == executor && batch.size < MAX_PACKETS) {
-                if (flush && !batch.wakeupScheduled) {
-                    executor.execute(WAKEUP);
-                    batch.wakeupScheduled = true;
-                }
-                batch.add(packet, flush);
-                return;
-            }
-            batch = this.takeBatch();
-            batch.executor = executor;
-            batch.firstQueuedNanos = NetworkBatchMetrics.enabled() ? System.nanoTime() : 0L;
-            batch.add(packet, flush);
-            this.pending = batch;
+        // Flush intent is atomic with its packet. A concurrent close must not be
+        // inserted between a write and a separately submitted flush marker.
+        this.pending.offer(flush ? new FlushedPacket(packet) : packet);
+        NetworkBatchMetrics.enqueuedPacket();
+        this.schedule(executor);
+    }
+
+    /** Ordinary sends, callbacks, configuration and close are ordered queue entries. */
+    public void execute(final EventExecutor executor, final Runnable action) {
+        if (executor.inEventLoop()) {
+            action.run();
+            return;
+        }
+        this.pending.offer(new Action(action));
+        this.schedule(executor);
+    }
+
+    private void schedule(final EventExecutor executor) {
+        if (!this.scheduled.get() && this.scheduled.compareAndSet(false, true)) {
+            this.executor = executor;
+            this.queuedNanos = NetworkBatchMetrics.enabled() ? System.nanoTime() : 0L;
             try {
-                if (!flush && lazy && executor instanceof AbstractEventExecutor abstractExecutor) {
-                    abstractExecutor.lazyExecute(batch);
-                } else {
-                    batch.wakeupScheduled = true;
-                    executor.execute(batch);
-                }
+                // One wakeup per idle-to-active transition, including urgent work
+                // appended behind deferred writes. No per-packet wakeup tasks.
+                executor.execute(this.drainTask);
                 NetworkBatchMetrics.scheduledBatch();
             } catch (RuntimeException failure) {
-                this.pending = null;
-                batch.clear();
-                this.recycle(batch);
+                // Rejection occurs at the event loop's shutdown boundary. Release
+                // references instead of leaving an unscheduled connection backlog.
+                this.pending.clear();
+                this.scheduled.set(false);
                 throw failure;
             }
         }
     }
 
-    /** Register non-batch work at the same ordering boundary as packet submission. */
-    public void execute(final EventExecutor executor, final Runnable action) {
-        this.execute(executor, action, false);
-    }
-
-    public void execute(final EventExecutor executor, final Runnable action, final boolean lazy) {
-        if (executor.inEventLoop()) {
-            this.seal();
-            action.run();
-        } else {
-            synchronized (this) {
-                this.pending = null;
-                if (lazy && executor instanceof AbstractEventExecutor abstractExecutor) {
-                    abstractExecutor.lazyExecute(action);
-                } else {
-                    executor.execute(action);
-                }
-            }
-        }
-    }
-
-    private synchronized void seal() {
-        this.pending = null;
-    }
-
-    private Batch takeBatch() {
-        if (this.recycled == null) {
-            return new Batch();
-        }
-        final Batch result = this.recycled;
-        this.recycled = result.next;
-        this.recycledCount--;
-        result.next = null;
-        return result;
-    }
-
-    private void recycle(final Batch batch) {
-        batch.executor = null;
-        if (this.recycledCount < MAX_RECYCLED_BATCHES) {
-            batch.next = this.recycled;
-            this.recycled = batch;
-            this.recycledCount++;
-        }
-    }
-
-    private final class Batch implements Runnable {
-        private Object[] packets = new Object[8];
-        private int size;
-        private boolean flush;
-        private boolean wakeupScheduled;
-        private EventExecutor executor;
-        private long firstQueuedNanos;
-        private Batch next;
-
-        void add(final T packet, final boolean flush) {
-            if (this.size == this.packets.length) {
-                this.packets = Arrays.copyOf(this.packets, Math.min(MAX_PACKETS, this.size * 2));
-            }
-            this.packets[this.size++] = packet;
-            this.flush |= flush;
-        }
-
-        void clear() {
-            Arrays.fill(this.packets, 0, this.size, null);
-            this.size = 0;
-            this.flush = false;
-            this.wakeupScheduled = false;
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public void run() {
-            final int count;
-            final boolean flushAtEnd;
-            synchronized (OrderedPacketBatcher.this) {
-                if (OrderedPacketBatcher.this.pending == this) {
-                    OrderedPacketBatcher.this.pending = null;
-                }
-                count = this.size;
-                flushAtEnd = this.flush;
-            }
-            NetworkBatchMetrics.drainedBatch(count, this.firstQueuedNanos);
+    private void run() {
+        final long started = NetworkBatchMetrics.enabled() ? System.nanoTime() : 0L;
+        final long enqueued = this.queuedNanos;
+        final int packets = this.drain(MAX_PACKETS);
+        NetworkBatchMetrics.drainedBatch(packets, enqueued, started);
+        if (!this.pending.isEmpty()) {
+            this.queuedNanos = NetworkBatchMetrics.enabled() ? System.nanoTime() : 0L;
             try {
-                for (int i = 0; i < count; i++) {
-                    final T packet = (T) this.packets[i];
-                    this.packets[i] = null;
-                    try {
-                        OrderedPacketBatcher.this.writer.accept(packet);
-                    } catch (Throwable failure) {
-                        // Netty normally isolates failures between separate tasks. Preserve
-                        // that behavior inside a batch so later packets are not silently lost.
-                        try {
-                            OrderedPacketBatcher.this.failureHandler.accept(failure);
-                        } catch (Throwable handlerFailure) {
-                            org.slf4j.LoggerFactory.getLogger(OrderedPacketBatcher.class).error("Packet batch exception handler failed", handlerFailure);
+                this.executor.execute(this.drainTask);
+                NetworkBatchMetrics.scheduledBatch();
+            } catch (RuntimeException failure) {
+                // Already accepted work must still complete when a shutting-down
+                // event loop rejects the continuation. We are its consumer thread.
+                while (!this.pending.isEmpty()) this.drain(MAX_PACKETS);
+                this.scheduled.set(false);
+                this.reportFailure(failure);
+            }
+            return;
+        }
+        this.scheduled.set(false);
+        if (!this.pending.isEmpty()) {
+            try {
+                this.schedule(this.executor);
+            } catch (RuntimeException failure) {
+                this.reportFailure(failure);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private int drain(final int limit) {
+        boolean flush = false;
+        int packets = 0;
+        try {
+            for (int i = 0; i < limit; i++) {
+                final Object entry = this.pending.poll();
+                if (entry == null) break;
+                try {
+                    if (entry instanceof Action action) {
+                        if (flush) {
+                            flush = false;
+                            this.flushSafely();
+                        }
+                        action.runnable.run();
+                        // Large writes and control callbacks remain scheduling
+                        // boundaries, not a run of 64 large encodes in one task.
+                        break;
+                    } else {
+                        packets++;
+                        if (entry instanceof FlushedPacket flushed) {
+                            flush = true;
+                            this.writer.accept((T) flushed.packet);
+                        } else {
+                            this.writer.accept((T) entry);
                         }
                     }
-                }
-            } finally {
-                try {
-                    if (flushAtEnd) OrderedPacketBatcher.this.flusher.run();
-                } finally {
-                    this.clear();
-                    synchronized (OrderedPacketBatcher.this) {
-                        OrderedPacketBatcher.this.recycle(this);
-                    }
+                } catch (Throwable failure) {
+                    this.reportFailure(failure);
                 }
             }
+        } finally {
+            if (flush) this.flushSafely();
         }
+        return packets;
+    }
+
+    private void flushSafely() {
+        try { this.flusher.run(); }
+        catch (Throwable failure) { this.reportFailure(failure); }
+    }
+
+    private void reportFailure(final Throwable failure) {
+        try {
+            this.failureHandler.accept(failure);
+        } catch (Throwable handlerFailure) {
+            org.slf4j.LoggerFactory.getLogger(OrderedPacketBatcher.class).error("Packet batch exception handler failed", handlerFailure);
+        }
+    }
+
+    private record Action(Runnable runnable) {
+    }
+
+    private record FlushedPacket(Object packet) {
     }
 }
