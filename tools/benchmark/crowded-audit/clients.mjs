@@ -25,6 +25,9 @@ if (!isMainThread) {
             client.write('position', {...client.position, flags: {onGround: true, hasHorizontalCollision: false}});
         }
     }, 100);
+    const ticks = workerData.mode === 'stationary' ? setInterval(() => {
+        for (const client of clients) if (client.ready && client.state === 'play') client.write('tick_end', {});
+    }, 50) : undefined;
     parentPort.on('message', async message => {
         if (message.action === 'move') moving = true;
         if (message.action === 'reset-delay') delay.reset();
@@ -35,12 +38,14 @@ if (!isMainThread) {
                 faults: [...faults], eventLoopDelayMaxMs: delay.max / 1e6,
                 receivedBytes: clients.reduce((sum, c) => sum + (c.socket?.bytesRead ?? 0), 0),
                 keepAlivesReceived: clients.reduce((sum, c) => sum + (c.keepAlivesReceived ?? 0), 0),
+                pongsSent: clients.reduce((sum, c) => sum + (c.pongsSent ?? 0), 0),
                 oldestKeepAliveMs: Math.max(0, ...clients.map(c => c.lastKeepAliveAt ? Date.now() - c.lastKeepAliveAt : 0)),
             }});
         }
         if (message.action === 'close') {
             closing = true;
             clearInterval(movement);
+            clearInterval(ticks);
             delay.disable();
             for (const client of clients) client.end();
             await sleep(1000);
@@ -54,6 +59,7 @@ if (!isMainThread) {
                 version: '1.21.11', hideErrors: true, checkTimeoutInterval: 120000,
                 clientSettings: {viewDistance: 2}});
             client.visiblePlayers = new Set();
+            client.on('ping', data => { client.write('pong', {id: data.id}); client.pongsSent = (client.pongsSent ?? 0) + 1; });
             client.on('keep_alive', () => { client.keepAlivesReceived = (client.keepAlivesReceived ?? 0) + 1; client.lastKeepAliveAt = Date.now(); });
             client.on('error', error => { if (!closing) faults.push({name: client.username, error: error.message}); });
             client.on('end', reason => { if (!closing) faults.push({name: client.username, end: reason}); });
@@ -76,8 +82,9 @@ if (!isMainThread) {
     }
 } else {
     const count = Number(process.argv[2]), duration = Number(process.argv[3]), output = process.argv[4];
-    if ((!Number.isInteger(count) || count < 4 || count > 80 || count % 4) || !Number.isInteger(duration) || duration < 140 || duration > 300 || !output) {
-        throw new Error('Usage: node clients.mjs <4..80 clients, divisible by four> <140..300 seconds> <output.json>');
+    const mode = process.argv[5] ?? 'moving';
+    if ((!Number.isInteger(count) || count < 4 || count > 80 || count % 4) || !Number.isInteger(duration) || duration < 140 || duration > 3600 || !output || !['moving', 'stationary'].includes(mode)) {
+        throw new Error('Usage: node clients.mjs <4..80 clients, divisible by four> <140..3600 seconds> <output.json> [moving|stationary]');
     }
     const rcon = command => sendRconCommand(25686, 'local-tracker-benchmark', command, 15000);
     const workers = [], samples = [], faults = [];
@@ -100,12 +107,12 @@ if (!isMainThread) {
         if (faults.length) throw new Error(JSON.stringify(faults));
         return states;
     }
-    const result = {count, duration, mode: 'moving', warmupSeconds: 90, clientWorkers: 4, faults, samples};
+    const result = {count, duration, mode, warmupSeconds: 90, clientWorkers: 4, faults, samples};
     try {
         for (const command of ['team add density', 'team modify density collisionRule never', 'difficulty peaceful',
             'gamerule minecraft:spawn_mobs false']) await rcon(command);
         for (let shard = 0; shard < 4; ++shard) {
-            const worker = new Worker(new URL(import.meta.url), {workerData: {offset: shard * (count / 4), count: count / 4, total: count}});
+            const worker = new Worker(new URL(import.meta.url), {workerData: {offset: shard * (count / 4), count: count / 4, total: count, mode}});
             worker.on('message', message => pending.get(message.id)?.(message));
             worker.on('error', error => faults.push({worker: shard, error: error.stack}));
             worker.on('exit', code => { if (!closing) faults.push({worker: shard, unexpectedExit: code}); });
@@ -121,8 +128,8 @@ if (!isMainThread) {
         if (!ready) throw new Error('Login timeout');
         await rcon('team join density @a');
         await rcon('tp @a 8 -60 8');
-        for (const worker of workers) worker.postMessage({action: 'move'});
-        console.log(`Warming 90 seconds: ${count} clients across four workers, moving`);
+        if (mode === 'moving') for (const worker of workers) worker.postMessage({action: 'move'});
+        console.log(`Warming 90 seconds: ${count} clients across four workers, ${mode}`);
         await sleep(90000);
         await validate();
         if (!(await rcon('list')).startsWith(`There are ${count} of`)) throw new Error('Server population mismatch');

@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -16,6 +17,8 @@ parser.add_argument('server_jar', type=Path)
 parser.add_argument('packetevents', type=Path)
 parser.add_argument('protocollib', type=Path)
 parser.add_argument('output', type=Path)
+parser.add_argument('--transport', choices=['epoll', 'io_uring'])
+parser.add_argument('--grim', type=Path)
 args = parser.parse_args()
 with socket.socket() as probe:
     probe.bind(('127.0.0.1', 25687))
@@ -30,13 +33,21 @@ for name in ['libraries', 'cache']:
     (work / name).symlink_to(template / name, target_is_directory=True)
 for name in ['eula.txt', 'bukkit.yml', 'spigot.yml', 'purpur.yml', 'shreddedpaper.yml']:
     shutil.copyfile(template / name, work / name)
+if args.transport is not None:
+    config = work / 'shreddedpaper.yml'
+    content, count = re.subn(r'(?m)^(\s*prefer-io-uring-transport: )(?:true|false)$',
+                            lambda m: m[1] + str(args.transport == 'io_uring').lower(), config.read_text())
+    if count != 1: raise RuntimeError('Expected exactly one io_uring preference')
+    config.write_text(content)
 properties = dict(line.split('=', 1) for line in (template / 'server.properties').read_text().splitlines() if '=' in line and not line.startswith('#'))
 properties.update({'server-ip': '127.0.0.1', 'server-port': '25687', 'enable-rcon': 'false', 'enable-query': 'false',
     'online-mode': 'false', 'allow-flight': 'true', 'management-server-enabled': 'false',
     'network-compression-threshold': '128', 'view-distance': '2', 'simulation-distance': '2'})
+if args.transport is not None: properties['use-native-transport'] = 'true'
 (work / 'server.properties').write_text(''.join(f'{key}={value}\n' for key, value in properties.items()))
 plugins = work / 'plugins'; plugins.mkdir()
 for path in [args.packetevents, args.protocollib]: shutil.copyfile(path, plugins / path.name)
+if args.grim is not None: shutil.copyfile(args.grim, plugins / args.grim.name)
 classes = work / 'smoke-classes'; classes.mkdir()
 classpath = os.pathsep.join(map(str, [repo / 'shreddedpaper-server/build/classes/java/main',
     repo / 'shreddedpaper-api/build/classes/java/main', args.packetevents.resolve(), *sorted((template / 'libraries').rglob('*.jar'))]))
@@ -46,8 +57,10 @@ subprocess.run(['jar', '--create', '--file', str(plugins / 'network-plugin-smoke
 shutil.copyfile(args.server_jar, work / 'server.jar')
 java = os.environ.get('AUDIT_JAVA', 'java')
 command = [java, '--enable-preview', '-Dterminal.jline=false', '-Dterminal.ansi=false', '-Dastatine.networkPluginSmoke=true',
-    '-Dastatine.packet-batch-diagnostics=true', '-XX:ActiveProcessorCount=2', '-Xms512m', '-Xmx2G', '-jar', 'server.jar', '--nogui']
-manifest = {'artifacts': {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in [args.server_jar, args.packetevents, args.protocollib]}, 'command': command}
+    '-Dastatine.packet-batch-diagnostics=true', '-Dio.netty.eventLoopThreads=4', '-XX:ActiveProcessorCount=2', '-Xms512m', '-Xmx2G', '-jar', 'server.jar', '--nogui']
+artifacts = [args.server_jar, args.packetevents, args.protocollib] + ([] if args.grim is None else [args.grim])
+manifest = {'artifacts': {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in artifacts},
+            'command': command, 'requestedTransport': args.transport}
 with (work / 'console.log').open('w') as log:
     server = subprocess.Popen(command, cwd=work, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, text=True)
     try:
@@ -56,6 +69,21 @@ with (work / 'console.log').open('w') as log:
             if 'For help, type "help"' in (work / 'console.log').read_text(errors='replace'): break
             time.sleep(1)
         else: raise TimeoutError('Server startup timed out')
+        if args.transport is not None:
+            threads = []
+            for task in Path(f'/proc/{server.pid}/task').iterdir():
+                try: name = (task / 'comm').read_text().strip()
+                except OSError: continue
+                if name.startswith('Netty'): threads.append(name)
+            rings = 0
+            for fd in Path(f'/proc/{server.pid}/fd').iterdir():
+                try: target = os.readlink(fd)
+                except OSError: continue
+                if target in ['anon_inode:[io_uring]', 'anon_inode:io_uring']: rings += 1
+            selected = ('io_uring' if rings and any(name.startswith('Netty io_uring') for name in threads)
+                        else 'epoll' if any(name.startswith('Netty Epoll') for name in threads) else 'unknown')
+            manifest['observedTransport'] = {'type': selected, 'rings': rings, 'threads': threads}
+            if selected != args.transport: raise RuntimeError('Requested transport did not activate')
         with (work / 'clients.log').open('w') as clients_log:
             result = subprocess.run(['node', str(source / 'network-smoke-clients.mjs'), str(work / 'clients.json')],
                 cwd=repo, stdout=clients_log, stderr=subprocess.STDOUT, timeout=90)

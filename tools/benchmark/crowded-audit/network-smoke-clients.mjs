@@ -8,6 +8,7 @@ let closing = false;
 for (let i = 0; i < 4; i++) {
     const client = mc.createClient({host: '127.0.0.1', port: 25687, username: `batch${i}`, auth: 'offline', version: '1.21.11'});
     client.count = 0; client.echoes = 0; client.dimensionChanges = 0; client.expectedSequence = 0;
+    client.on('ping', data => client.write('pong', {id: data.id}));
     client.on('error', error => { if (!closing) faults.push(error.message); });
     client.on('end', reason => { if (!closing) faults.push(String(reason)); });
     client.on('kick_disconnect', data => { if (!closing) faults.push(JSON.stringify(data)); });
