@@ -1,13 +1,15 @@
 # Netty 4.2.18 / io_uring 검증 결과
 
-검증일: 2026-09-30 KST. Netty 4.2.18을 기존 epoll 구성으로 Earth에 배포했다. io_uring 활성화는 보류한다. 성능 이득이 반복 실행에서 일관되지 않았고, Grim을 포함한 40명 합성 클라이언트 장시간 검사도 완주하지 못했다. Netty 업그레이드의 배포 대상은 기존 epoll 구성이다.
+현재 Earth는 **Netty 4.2.18의 io_uring을 사용한다**. 2026-10-02 KST에 사용자의 명시적 활성화 요청으로 운영 설정을 변경하고 서버를 정상 재시작했다. 실제 인증 계정의 운영 서버 입장과 연결 유지까지 확인했다.
+
+2026-09-30 검증에서는 Netty 4.2.18을 epoll 구성으로 배포하고 io_uring 활성화를 보류했다. 성능 이득이 반복 실행에서 일관되지 않았고, Grim을 포함한 40명 합성 클라이언트 장시간 검사도 완주하지 못했다. 이번 활성화로 이 성능·부하 검사 결과가 바뀐 것은 아니며, 운영 성능 향상 폭은 아직 확정하지 않는다.
 
 ## 검증한 아티팩트
 
 - 서버 엔진 변경: `6ee8f2b96ccc0e34e029e231031c2bdf5cd76559` (`fix: update Netty native transports to 4.2.18.Final`). BOM과 세 io_uring native classifier를 함께 변경했다. 번들 Netty 모듈 20개 모두 `4.2.18.Final`이고 혼합 버전은 없었다.
 - Paperclip SHA-256: `1ef48f36fa9ce64d5187239258905ef41938c27b2642984624e7a30bb5eba906`.
 - 이전 Earth JAR SHA-256: `cab18ab7d2c8dbfba3a2350cfaa4fe408f0e307b2cbd7c6f56586ba30aa6c547`.
-- 기존 로컬 ownership 변경도 빌드에 포함되어 있다. 해당 소스 diff SHA-256은 `9626ae9af28d665a7d73ba2a8b6d3ed8d5d021151cebdac1091d32c2e8b44057`이며 이전 운영 아티팩트와 동일한 변경이다. 이번 작업의 커밋에는 포함하지 않았다. 기존 작업 파일 9개의 해시도 보존했다.
+- 당시 로컬 ownership 변경도 빌드에 포함되어 있다. 해당 소스 diff SHA-256은 `9626ae9af28d665a7d73ba2a8b6d3ed8d5d021151cebdac1091d32c2e8b44057`이며 이전 운영 아티팩트와 동일한 변경이다. 당시 기존 작업 파일 9개의 해시를 보존했고, 이후 소스·회귀 테스트는 `4ff488a`, 벤치마크·검증 기록은 `563c085`로 별도 커밋했다.
 - API/서버 전체 테스트: 총 9,613개, 성공 9,589개, skipped 24개, 실패/오류 0개. Paperclip 생성 및 최종 ZIP CRC 검사를 통과했다.
 
 [공식 4.2.18 릴리스](https://netty.io/news/2026/09/09/4-2-18-Final.html)의 [#17238](https://github.com/netty/netty/pull/17238)은 특정 io_uring 쓰기 오류 및 `shutdownOutput()`과 진행 중 쓰기가 겹칠 때 버퍼 수명을 보호한다. 사용자가 기억하는 과거 접속 오류의 원인이 이 수정이었다는 증거는 없다.
@@ -83,7 +85,7 @@ PacketEvents·ProtocolLib 두 플러그인으로 분리한 epoll 검사는 40명
 
 첫 epoll 30분 native 검사의 외부 runner가 약 20분 후 exit 143으로 종료했다. 이후에도 독립된 서버 JVM과 vanilla JVM은 살아 있었고 실제 player list에 NativeUringQA 1명이 있었다. 이 기록은 `native-long-epoll-interrupted`로 분리하여 완주 결과에서 제외했고, 해당 client/server/display만 정리한 뒤 detached screen에서 다시 검사했다.
 
-## Earth 배포
+## Earth 배포 (2026-09-30)
 
 Netty 4.2.18을 **epoll 구성으로 배포 완료**했다. `optimizations.prefer-io-uring-transport=false`, 실제 io_uring ring 0개다. 새 PID는 `1708280`, 엔진 버전은 `6ee8f2b`이며 실제 프로세스가 연 core Netty JAR 20개 모두 `4.2.18.Final`이다. 운영 인증/whitelist 설정과 최신 플러그인 JAR 해시는 보존했다.
 
@@ -95,6 +97,21 @@ Netty 4.2.18을 **epoll 구성으로 배포 완료**했다. `optimizations.prefe
 - TCP status ping: protocol 774, max players 45, 정상 응답. 확인 시 온라인 0명이며 이 건강 상태를 운영 플레이 또는 최대 용량 검증으로 표현하지 않는다.
 - 18:50 이후 재확인에서도 동일 PID와 플러그인 64개 enabled / disabled 0을 유지했고, 복구 이후 새 ERROR/Exception 또는 reload protocol violation은 없었다. 기존 작업 파일 9개 해시도 유지됐다.
 - 이전 JAR·설정과 rollback helper는 `.runtime/releases/io-uring-20260930-6ee8f2b/`에 보존한다. 초기 준비 실패, 재개, 네 drain token, 저장, 부팅 및 복구 로그도 원본에 포함했다.
+
+## Earth io_uring 활성화 (2026-10-02)
+
+`optimizations.prefer-io-uring-transport` 하나를 `false`에서 `true`로 변경했다. 기존 Netty 4.2.18 Paperclip 및 운영 플러그인 JAR 전체 해시는 동일하다. `use-native-transport=true`, `online-mode=true`, `white-list=true`, 포트 25555와 최대 인원 45도 유지했다. `server.properties`의 부팅 시각 주석은 JVM 시작 시 다시 기록되므로 원본 파일 해시를 설정 보존 판정에 사용하지 않았다.
+
+- 접속자 0명에서 Wars·WorldGuard·Border·Trade 모두 `SAFE_TO_RELOAD`, Trade writer TERMINATED / queue 0/0 / token PRESENT를 확인하고 `save-all flush`의 저장 완료 응답을 받았다.
+- 서버 정상 재시작 **1회**. 기존 PID `2440754`는 18:16:52 KST에 종료됐고 새 PID `2994500`은 18:18:05에 기본 부팅을 완료했다. 엔진 JAR을 교체하지 않았다.
+- `/proc`의 실제 io_uring ring **4개**, `Netty io_uring IO #0..3` 스레드, `io.netty.channel.uring.IoUringIoHandler`와 native `ioUringEnter` 실행 스택을 확인했다. 실제 열린 core Netty JAR 20개는 모두 `4.2.18.Final`이다.
+- 기존 Multiverse 월드 로드 순서 문제가 다시 발생했다. Earth 월드 로드 후 기존 Border·EarthTravel JAR을 각각 PlugMan reload하여 Border ACTIVE, EarthTravel Ready 및 orbital gate 검증을 복구했다. 추가 JVM 재시작은 없었다. 재시작 전에도 Border의 기존 bare command가 비활성 인스턴스를 참조했으므로, 재등록된 `eartopiaborder:eborder` 명령으로 종료 준비 및 최종 상태를 검증했다.
+- 운영 TCP status ping **20/20**, RSA/AES 암호화 로그인 핸드셰이크 **3/3** 통과. 자동 로그인 probe는 인증 정보가 없으므로 암호화된 `Failed to verify username` 거부 응답을 확인했다. 이 probe를 인증 계정의 플레이 성공으로 계산하지 않았다. 최초 probe의 실패는 검사 도구가 1.21.11 로그인 `disconnect` 대신 `kick_disconnect` 이벤트를 기다린 오류였으며, 원본을 보존하고 수정 후 세 번 재검증했다.
+- 실제 whitelist 계정의 인증 및 운영 월드 입장을 18:22:01에 확인했다. 18:33:41까지 **700초 연결 유지**, 서버 좌표 변경과 서버 측 player list를 확인했다. 클라이언트의 화면·이동 체감 확인은 사용자에게 요청했으며 이 기록 시점에는 답변 대기 중이다.
+- 최종 readback: 플러그인 **64 enabled / 0 disabled**, Wars RUNNING, WorldGuard active/pending 0, Border ACTIVE / viewers 1 / inFlight 0 / packetFailures 0, Trade READY / writer ACCEPTING / queue 0/0 / token ABSENT / unsafe false. TPS 5s/1m/5m/15m는 **20.0/20.0/20.0/20.0**이었다. 접속자 1명의 관찰이며 최대 인원 성능 검증으로 해석하지 않는다.
+- 복구 후 예상하지 않은 ERROR는 0건이다. 인증 없는 probe 네 번의 의도된 invalid-session 거부 로그는 보존하고 구분했다. 이번 적용에서 성능 A/B나 40명 장시간 검사를 새로 실행하지 않았다.
+
+설정·JAR 백업, 종료 준비 및 저장 응답, 시작·복구 로그, 네트워크 검사와 실제 계정 관찰은 `run/io-uring-earth-20261002/` 및 운영 `.runtime/releases/io-uring-20261002-activate/`에 보존한다. 롤백은 현재 설정의 `prefer-io-uring-transport`만 `false`로 되돌리고 동일한 종료 준비·저장·정상 재시작 절차를 사용한다. 다른 최신 설정과 엔진·플러그인 JAR을 보존하며, 부팅 후 Earth 월드와 Border·EarthTravel 상태를 다시 확인한다.
 
 ## 원본과 재현
 
