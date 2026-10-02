@@ -1,4 +1,4 @@
-# Tracker visibility validation
+# Tracker and box ownership validation
 
 The normal tracker previously scanned candidate players, then copied `seenBy`
 and looked each connection up in the candidate set before checking visibility.
@@ -98,3 +98,30 @@ Repeat in alternating baseline/candidate order with no simultaneous compiler
 or benchmark. Region MSPT values are overlapping five-second moving averages;
 percentiles of those samples are not individual-tick p99. Shared-host results
 must be reported as observations for this workload.
+
+## Box ownership benchmark
+
+The same plugin also measures the installed `ShreddedPaper.isSync(level, box)`
+method on a real region worker. Run on an empty isolated server:
+
+```text
+ownershipbench 20
+ownershipbench 40
+ownershipbench 80
+```
+
+Each case checks a batch of varied, preconstructed entity-sized boxes inside
+the current owner. It performs one million queries per sample, 20 warmup samples
+and nine measured samples, verifies every result and publishes a volatile sink.
+CPU time and allocated bytes come from the executing JVM thread. This isolates
+the ownership query; it excludes box construction and the rest of entity ticks.
+It is not a claim about that many connected players. Repeat using the same plugin
+in sequential baseline and candidate JVMs. Results are written to
+`plugins/TrackerBenchmark/ownership-<count>.json`.
+
+The optimized path checks every packed region key, preserves explicit write-lock
+and shutdown access, and creates scheduling arrays only when work must be
+deferred. [ShreddedPaperBoxOwnershipTest](../../../shreddedpaper-server/src/test/java/io/multipaper/shreddedpaper/region/ShreddedPaperBoxOwnershipTest.java)
+covers negative coordinates, inclusive edges, merged-owner holes, different
+worlds, read-only locks and promotions, mixed owner/lock access, large queries,
+inline execution, and scheduling the complete box plus an outlying entity.

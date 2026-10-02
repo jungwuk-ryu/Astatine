@@ -4,6 +4,9 @@ main: io.multipaper.benchmark.TrackerBenchmark
 api-version: '1.21.11'
 folia-supported: true
 commands:
+  ownershipbench:
+    description: Measure box ownership queries on an empty isolated server
+    permission: trackerbench.run
   trackerbench:
     description: Measure tracker validation on an empty isolated server
     permission: trackerbench.run

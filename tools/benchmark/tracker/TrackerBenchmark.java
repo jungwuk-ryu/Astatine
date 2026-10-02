@@ -46,7 +46,8 @@ public final class TrackerBenchmark extends JavaPlugin {
         final var world = getServer().getWorlds().getFirst();
         getServer().getRegionScheduler().execute(this, world, 0, 0, () -> {
             try {
-                benchmark(((CraftWorld) world).getHandle(), count, hidden);
+                if (command.getName().equals("ownershipbench")) OwnershipBenchmark.run(this, ((CraftWorld) world).getHandle(), count);
+                else benchmark(((CraftWorld) world).getHandle(), count, hidden);
             } catch (Throwable exception) {
                 getLogger().log(java.util.logging.Level.SEVERE, "TRACKER_BENCH_FAILED", exception);
             } finally {

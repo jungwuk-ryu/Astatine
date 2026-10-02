@@ -29,7 +29,7 @@ function run(command, args) {
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error(`${command} exited with ${result.status}`);
 }
-run('javac', ['--enable-preview', '--release', '25', '-cp', dependencies.join(path.delimiter), '-d', output, path.join(here, 'TrackerBenchmark.java')]);
+run('javac', ['--enable-preview', '--release', '25', '-cp', dependencies.join(path.delimiter), '-d', output, path.join(here, 'TrackerBenchmark.java'), path.join(here, 'OwnershipBenchmark.java')]);
 await fs.copyFile(path.join(here, 'plugin.yml'), path.join(output, 'plugin.yml'));
 const manifest = path.join(output, 'benchmark-manifest.mf');
 await fs.writeFile(manifest, 'Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n\n');
