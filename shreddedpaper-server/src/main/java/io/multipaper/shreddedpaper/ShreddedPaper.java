@@ -17,8 +17,6 @@ import org.bukkit.craftbukkit.CraftWorld;
 import io.multipaper.shreddedpaper.region.RegionPos;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -237,12 +235,9 @@ public class ShreddedPaper {
     }
 
     public static void ensureSync(ServerLevel serverLevel, BoundingBox box, Runnable runnable) {
-        RegionPos[] regionPositions = regionsForBox(box);
-        for (RegionPos regionPos : regionPositions) {
-            if (!isSync(serverLevel, regionPos)) {
-                serverLevel.chunkScheduler.scheduleOnMany(runnable, regionPositions);
-                return;
-            }
+        if (!isSync(serverLevel, box)) {
+            serverLevel.chunkScheduler.scheduleOnMany(runnable, regionsForBox(box));
+            return;
         }
 
         runnable.run();
@@ -252,13 +247,12 @@ public class ShreddedPaper {
         final ServerLevel entityLevel = (ServerLevel) entity.level();
         if (entityLevel != serverLevel) {
             final RegionPos entityRegion = RegionPos.forChunk(entity.chunkPosition());
-            final RegionPos[] boxRegions = regionsForBox(box);
             if (!isSync(entityLevel, entityRegion) || !isSync(serverLevel, box)) {
                 ShreddedPaperRegionScheduler.scheduleAcrossLevels(
                         entityLevel,
                         new RegionPos[]{entityRegion},
                         serverLevel,
-                        boxRegions,
+                        regionsForBox(box),
                         () -> ensureSync(entity, serverLevel, box, runnable)
                 );
                 return;
@@ -269,11 +263,10 @@ public class ShreddedPaper {
         }
 
         final RegionPos entityRegion = RegionPos.forChunk(entity.chunkPosition());
-        final RegionPos[] boxRegions = regionsForBox(box);
         if (!isSync(serverLevel, entityRegion) || !isSync(serverLevel, box)) {
             serverLevel.chunkScheduler.scheduleOnMany(
                     () -> ensureSync(entity, serverLevel, box, runnable),
-                    includeRegion(entityRegion, boxRegions)
+                    includeRegion(entityRegion, regionsForBox(box))
             );
             return;
         }
@@ -282,9 +275,25 @@ public class ShreddedPaper {
     }
 
     public static boolean isSync(ServerLevel serverLevel, BoundingBox box) {
-        for (RegionPos regionPos : regionsForBox(box)) {
-            if (!isSync(serverLevel, regionPos)) {
-                return false;
+        if (TickThread.isShutdownThread()) {
+            return true;
+        }
+        final int minRegionX = SectionPos.blockToSectionCoord(box.minX()) >> RegionPos.REGION_SHIFT;
+        final int minRegionZ = SectionPos.blockToSectionCoord(box.minZ()) >> RegionPos.REGION_SHIFT;
+        final int maxRegionX = SectionPos.blockToSectionCoord(box.maxX()) >> RegionPos.REGION_SHIFT;
+        final int maxRegionZ = SectionPos.blockToSectionCoord(box.maxZ()) >> RegionPos.REGION_SHIFT;
+        final var currentRegion = ShreddedPaperChunkTicker.currentlyTickingRegion();
+        final var owner = currentRegion != null && serverLevel.equals(currentRegion.getLevel()) ? currentRegion.getOwner() : null;
+        final var locker = serverLevel.chunkScheduler.getRegionLocker();
+        // Most entity boxes fit in the current owner. Check packed cell keys directly;
+        // materialize positions only for explicit locks outside that owner, and never
+        // build a region list just to answer an ownership query.
+        for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+            for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+                final long key = RegionPos.asLong(regionX, regionZ);
+                if ((owner == null || !owner.ownsCellKey(key)) && !locker.hasWriteLock(new RegionPos(key))) {
+                    return false;
+                }
             }
         }
 
@@ -330,15 +339,16 @@ public class ShreddedPaper {
         final int minRegionZ = SectionPos.blockToSectionCoord(box.minZ()) >> RegionPos.REGION_SHIFT;
         final int maxRegionX = SectionPos.blockToSectionCoord(box.maxX()) >> RegionPos.REGION_SHIFT;
         final int maxRegionZ = SectionPos.blockToSectionCoord(box.maxZ()) >> RegionPos.REGION_SHIFT;
-        final List<RegionPos> regionPositions = new ArrayList<>((maxRegionX - minRegionX + 1) * (maxRegionZ - minRegionZ + 1));
+        final RegionPos[] regionPositions = new RegionPos[(maxRegionX - minRegionX + 1) * (maxRegionZ - minRegionZ + 1)];
+        int index = 0;
 
         for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
             for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
-                regionPositions.add(new RegionPos(regionX, regionZ));
+                regionPositions[index++] = new RegionPos(regionX, regionZ);
             }
         }
 
-        return regionPositions.toArray(RegionPos[]::new);
+        return regionPositions;
     }
 
     private static RegionPos[] includeRegion(RegionPos regionPos, RegionPos[] regionPositions) {
